@@ -1,0 +1,29 @@
+/* ===== 미니맵 (Ctrl+M) — renderer/minimap.js =====
+   오른쪽 아래 구석. 어두운 틀 (밝은 · 어두운 배경 모두) */
+#minimap {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 998;
+  width: 220px;
+  height: 150px;
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.86);
+  border: 1px solid rgba(100, 150, 200, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  overflow: hidden;
+  animation: minimap-in 0.18s ease-out;
+}
+#minimap canvas {
+  display: block;
+  width: 220px;
+  height: 150px;
+}
+@keyframes minimap-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #minimap { animation: none; }
+}

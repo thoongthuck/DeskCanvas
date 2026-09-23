@@ -1,0 +1,66 @@
+/* ===== 쪽지 글꼴 (앱 안에 함께 넣은 무료 글꼴) =====
+   쓰는 곳: 쪽지 스타일의 글꼴 선택(손글씨·명조·코딩), 코드 셀 템플릿 — code/icons/아이콘_가이드.md 8장
+   'font-family'에 아래 이름을 쓰면 됩니다. 기본 글꼴은 지금 앱 글꼴 그대로라 파일이 없습니다.
+
+     손글씨  'Nanum Pen Script'     400        (같은 크기 단계에서 1.4배로 키워 씀)
+     명조    'Nanum Myeongjo'       400 · 700
+     코딩    'Nanum Gothic Coding'  400 · 700
+     코드 칸 'JetBrains Mono'       100~800 (가변)  — 한글이 없어서 'Nanum Gothic Coding'을 뒤에 둡니다
+
+   파일은 원본(Google Fonts)을 woff2로 바꾸기만 한 것이고 글자는 손대지 않았습니다(한글 11,172자 모두 포함).
+   라이선스: SIL Open Font License 1.1 — licenses 폴더의 파일을 글꼴과 함께 두어야 합니다.
+   빼려면 index.html에서 이 파일을 불러오는 한 줄을 지우면 됩니다. */
+
+@font-face {
+  font-family: 'Nanum Pen Script';
+  src: url("NanumPenScript-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Nanum Myeongjo';
+  src: url("NanumMyeongjo-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Nanum Myeongjo';
+  src: url("NanumMyeongjo-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Nanum Gothic Coding';
+  src: url("NanumGothicCoding-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Nanum Gothic Coding';
+  src: url("NanumGothicCoding-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url("JetBrainsMono.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: block;
+}
+
+/* 바로 쓸 수 있게 묶어 둔 이름 (써도 되고 안 써도 됨) */
+:root {
+  --font-pen:   'Nanum Pen Script', 'Malgun Gothic', sans-serif;
+  --font-serif: 'Nanum Myeongjo', Batang, serif;
+  --font-mono:  'Nanum Gothic Coding', Consolas, monospace;
+  --font-code:  'JetBrains Mono', 'Nanum Gothic Coding', Consolas, monospace;
+}

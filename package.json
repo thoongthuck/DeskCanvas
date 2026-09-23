@@ -1,0 +1,16 @@
+{
+  "name": "wallpaper-canvas",
+  "version": "1.0.0",
+  "description": "Infinite canvas wallpaper with sticky notes and file support",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": ["wallpaper", "canvas", "sticky-notes"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "44.4.3"
+  }
+}

@@ -1,0 +1,5 @@
+# 설치 파일 — npm install 로 다시 받음
+node_modules/
+
+# 문제 찾기용 기록 (예전에 코드 폴더에 쌓이던 것 — 지금은 앱 데이터 폴더에 씀)
+debug-log.txt

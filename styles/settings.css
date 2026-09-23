@@ -1,0 +1,281 @@
+/* ===== 설정 창 (아이콘_가이드.md 7장, 설정창_미리보기.png) =====
+   값은 시안에서 잰 px. 캔버스 확대와 상관없음 */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 247, 249, 0.35);
+  backdrop-filter: blur(8px);
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  user-select: none;
+}
+body.theme-dark .settings-overlay { background: rgba(15, 20, 25, 0.35); }
+
+.settings-overlay button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.settings-window {
+  position: relative;
+  display: flex;
+  width: min(944px, 100vw - 48px);
+  height: min(895px, 100vh - 48px);
+  border-radius: 18px;
+  overflow: hidden;
+  background: #212A33;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+              0 24px 60px rgba(15, 23, 42, 0.30),
+              0 2px 8px rgba(15, 23, 42, 0.12);
+  color: #FFFFFF;
+}
+
+/* ---- 사이드바 ---- */
+.settings-sidebar {
+  flex: 0 0 238px;
+  padding: 20px 14px 20px 16px;
+  background: #1E262D;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  height: 44px;
+  margin-bottom: 17px;
+  padding-left: 14px;
+  font-size: 24px;
+  font-weight: 700;
+}
+.settings-heading-icon { width: 32px; height: 32px; }
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  height: 54px;
+  padding-left: 14px !important;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: left;
+}
+.settings-nav-item:hover { background: rgba(255, 255, 255, 0.05) !important; }
+.settings-nav-item.current { background: #384C62 !important; }
+.settings-nav-icon { width: 32px; height: 32px; flex-shrink: 0; }
+
+/* ---- 내용 ---- */
+.settings-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 20px 26px 20px 21px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings-close {
+  position: absolute;
+  top: 17px;
+  right: 21px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+.settings-close:hover { background: rgba(255, 255, 255, 0.08) !important; }
+.settings-close img { width: 20px; height: 20px; }
+
+.settings-section + .settings-section { margin-top: 16px; }
+
+.settings-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding-right: 48px;                  /* 닫기 버튼 자리 */
+  border-bottom: 1px solid #2E3A46;
+  font-size: 18px;
+  font-weight: 600;
+}
+.settings-section-icon { width: 28px; height: 28px; flex-shrink: 0; }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 62px;
+  padding: 10px 9px 10px 7px;
+  border-bottom: 1px solid #2E3A46;
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row.tall { min-height: 73px; }
+.settings-row.link { cursor: pointer; }
+.settings-row.link:hover { background: rgba(255, 255, 255, 0.03); }
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  line-height: 1.35;
+}
+.settings-row-title { font-size: 15px; font-weight: 500; color: #FFFFFF; }
+.settings-row-desc { font-size: 12.5px; color: #A3B6C6; }
+
+.settings-row-control {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* 켜기/끄기 */
+.set-toggle {
+  position: relative;
+  width: 48px;
+  height: 24px;
+  border-radius: 12px;
+  background: #354150 !important;
+  transition: background 0.15s;
+}
+.set-toggle.on { background: #5A98FE !important; }
+.set-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+.set-toggle.on .set-toggle-knob { transform: translateX(24px); }
+
+/* 밝게 / 어둡게 */
+.set-theme-buttons {
+  display: flex;
+  gap: 10px;
+}
+.set-theme-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 122px;
+  height: 52px;
+  border-radius: 8px;
+  border: 1px solid #36424F !important;
+  font-size: 14px;
+  font-weight: 500;
+  color: #FFFFFF;
+}
+.set-theme-button:hover { border-color: #46556A !important; }
+.set-theme-button.current {
+  background: #2C3E55 !important;
+  border: 1.5px solid #5A98FE !important;
+}
+.set-theme-button img { width: 20px; height: 20px; }
+
+/* 드롭다운 */
+.set-dropdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 160px;
+  height: 40px;
+  padding: 0 14px !important;
+  border-radius: 8px;
+  background: #26313C !important;
+  font-size: 15px;
+  color: #FFFFFF;
+  white-space: nowrap;
+}
+.set-dropdown:hover { background: #2C3845 !important; }
+.set-dropdown-arrow { width: 20px; height: 20px; flex-shrink: 0; }
+
+/* 기본 쪽지 색상: 무작위 · 6색 · 직접 고르기 (지름 26, 사이 18) */
+.set-color-dots {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-right: 6px;
+}
+.set-dot {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.set-dot.current { box-shadow: 0 0 0 4px #212A33, 0 0 0 6px #58A1F3; }
+.set-dot.random-dot {
+  background: conic-gradient(#FDE7AE 0 20%, #FEAAAD 0 40%, #98C5FE 0 60%, #99D3C8 0 80%, #C5B0FD 0) !important;
+}
+.set-dot.custom-dot.current::after { inset: 4px; }
+
+/* 단축키 안내 › */
+.set-link-arrow { width: 20px; height: 20px; opacity: 0.6; }
+
+/* 초기화 */
+.set-reset-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 16px !important;
+  border-radius: 8px;
+  background: rgba(248, 113, 113, 0.12) !important;
+  font-size: 14px;
+  font-weight: 500;
+  color: #F28B85 !important;
+}
+.set-reset-button:hover { background: rgba(248, 113, 113, 0.18) !important; }
+.set-reset-button img { width: 20px; height: 20px; }
+
+/* 설정 창 위에 뜨는 목록 (드롭다운 · 초기화 확인) */
+.popup-menu.settings-popup { z-index: 3100; }
+
+/* 단축키 안내 화면 */
+.settings-back { cursor: pointer; }
+.settings-back-arrow {
+  width: 20px;
+  height: 20px;
+  transform: rotate(180deg);
+  opacity: 0.7;
+}
+.settings-back:hover .settings-back-arrow { opacity: 1; }
+
+.set-key {
+  display: inline-block;
+  min-width: 28px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid #36424F;
+  background: #26313C;
+  color: #E6EBF0;
+  font-size: 13px;
+  text-align: center;
+  white-space: nowrap;
+}
+.set-key-plus {
+  margin: 0 6px;
+  font-size: 12px;
+  color: #A3B6C6;
+}

@@ -1,0 +1,631 @@
+/* ===== 판 — 캘린더 · 연대표 (아이콘_가이드.md 12장, 시안_캘린더판.png · 시안_연대표판.png) =====
+   renderer/boards.js · calendar.js · timeline.js — 모든 값은 zoom 1 기준 (--zoom 을 곱해 씀)
+   판은 쪽지 · 사진 · 파일보다 아래 (z-index 0) */
+.board {
+  --z: var(--zoom, 1);
+  position: absolute;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  pointer-events: auto;
+  overflow: hidden;
+  background: #FCFBF9;
+  border: 1px solid #E7E4DF;
+  border-radius: calc(16px * var(--z));
+  box-shadow: 0 calc(10px * var(--z)) calc(30px * var(--z)) rgba(31, 47, 69, 0.10),
+              0 calc(2px * var(--z)) calc(6px * var(--z)) rgba(31, 47, 69, 0.06);
+  color: #1F2F45;
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  user-select: none;
+}
+
+/* 판 머리 — 높이 60, 잡고 끌면 판이 옮겨짐 */
+.board-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--z));
+  height: calc(60px * var(--z));
+  padding: 0 calc(14px * var(--z));
+  border-bottom: 1px solid #EFEDE9;
+  cursor: grab;
+}
+.board-head:active { cursor: grabbing; }
+.board.pinned .board-head { cursor: default; }
+
+.board-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(32px * var(--z));
+  height: calc(32px * var(--z));
+  padding: 0;
+  border: none;
+  border-radius: calc(8px * var(--z));
+  background: none;
+  cursor: pointer;
+}
+.board-btn img {
+  display: block;
+  width: calc(20px * var(--z));
+  height: calc(20px * var(--z));
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.board-btn:hover { background: #F1EEE9; }
+
+/* 글자 버튼 ('오늘') */
+.board-text-btn {
+  flex: 0 0 auto;
+  height: calc(30px * var(--z));
+  margin-left: calc(6px * var(--z));
+  padding: 0 calc(13px * var(--z));
+  border: 1px solid #E3DFD9;
+  border-radius: calc(8px * var(--z));
+  background: none;
+  font: inherit;
+  font-size: calc(13px * var(--z));
+  color: #4A5568;
+  cursor: pointer;
+}
+.board-text-btn:hover { background: #F1EEE9; }
+
+/* 고르개 (세그먼트) — 바탕 #F1EEE9, 고른 칸은 흰 바탕 + 600 + 그림자 */
+.board-seg {
+  flex: 0 0 auto;
+  display: flex;
+  margin-left: calc(8px * var(--z));
+  padding: calc(3px * var(--z));
+  border-radius: calc(8px * var(--z));
+  background: #F1EEE9;
+}
+.board-seg button {
+  height: calc(24px * var(--z));
+  padding: 0 calc(11px * var(--z));
+  border: none;
+  border-radius: calc(6px * var(--z));
+  background: none;
+  font: inherit;
+  font-size: calc(12.5px * var(--z));
+  color: #6B7686;
+  cursor: pointer;
+}
+.board-seg button.current {
+  background: #FFFFFF;
+  font-weight: 600;
+  color: #1F2F45;
+  box-shadow: 0 1px 2px rgba(31, 47, 69, 0.12);
+}
+
+.cal-month,
+.board-name.tl-title {
+  font-size: calc(20px * var(--z));
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cal-month { padding: 0 calc(4px * var(--z)); }
+.board-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: calc(10px * var(--z));
+  font-size: calc(14px * var(--z));
+  color: #8A94A2;
+}
+.board-name:empty { display: none; }
+.board-name.tl-title {
+  margin-left: calc(6px * var(--z));
+  color: inherit;
+}
+.board-name-input {
+  min-width: 0;
+  width: calc(200px * var(--z));
+  height: calc(28px * var(--z));
+  margin-left: calc(8px * var(--z));
+  padding: 0 calc(8px * var(--z));
+  border: none;
+  outline: none;
+  border-radius: calc(4px * var(--z));
+  background: #EAF2FE;
+  box-shadow: inset 0 0 0 1.5px #7FB2F7;
+  font: inherit;
+  font-size: calc(15px * var(--z));
+  color: #1F2F45;
+}
+.board-spacer { flex: 1; }
+
+/* 판 크기 조절 — 오른쪽 아래 ⌟ */
+.board-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  width: calc(18px * var(--z));
+  height: calc(18px * var(--z));
+  cursor: nwse-resize;
+}
+.board-resize::after {
+  content: '';
+  position: absolute;
+  right: calc(5px * var(--z));
+  bottom: calc(5px * var(--z));
+  width: calc(8px * var(--z));
+  height: calc(8px * var(--z));
+  border-right: calc(1.8px * var(--z)) solid #CBC7C0;
+  border-bottom: calc(1.8px * var(--z)) solid #CBC7C0;
+  border-bottom-right-radius: calc(2px * var(--z));
+}
+.board-timeline .board-resize { cursor: ew-resize; }   /* 연대표는 폭만 (높이는 걸린 쪽지 층 수) */
+.board.pinned .board-resize { display: none; }
+
+/* ---- 캘린더 판 ---- */
+.cal-weekdays {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  align-items: center;
+  height: calc(34px * var(--z));
+  padding: 0 calc(14px * var(--z));
+  font-size: calc(12.5px * var(--z));
+  font-weight: 600;
+  color: #6B7686;
+  text-align: center;
+}
+.cal-wd.sun { color: #D9646B; }
+.cal-wd.sat { color: #4A7FD0; }
+
+.cal-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin: 0 calc(14px * var(--z)) calc(14px * var(--z));
+  border-top: 1px solid #EDEBE7;
+  border-left: 1px solid #EDEBE7;
+}
+.cal-cell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid #EDEBE7;
+  border-bottom: 1px solid #EDEBE7;
+}
+.cal-cell.sun { background: rgba(217, 100, 107, 0.035); }
+.cal-cell.sat { background: rgba(74, 127, 208, 0.035); }
+.cal-cell.other { background: #FAF9F7; }
+.cal-cell.holiday { background: rgba(217, 100, 107, 0.06); }
+.cal-cell.today { background: rgba(90, 152, 254, 0.05); }
+.board:not(.pinned) .cal-cell:hover { background: #F5F3EF; }
+.cal-cell.stacked { cursor: pointer; }
+.cal-cell.fan-open { background: rgba(90, 152, 254, 0.09); }
+.cal-cell.drop-target { background: rgba(90, 152, 254, 0.07); }
+.cal-cell.drop-target::after {                  /* 끌어다 놓을 칸 — 안쪽 3 자리에 점선 */
+  content: '';
+  position: absolute;
+  inset: calc(3px * var(--z));
+  border: calc(2px * var(--z)) dashed #7FB2F7;
+  border-radius: calc(12px * var(--z));
+  pointer-events: none;
+}
+
+/* 날짜 + 빨간 날 이름 (칸이 좁으면 이름을 자름) */
+.cal-head {
+  position: absolute;
+  left: calc(9px * var(--z));
+  right: calc(52px * var(--z));
+  top: calc(4px * var(--z));
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--z));
+  height: calc(20px * var(--z));
+  min-width: 0;
+}
+.cal-date {
+  flex: 0 0 auto;
+  font-size: calc(12.5px * var(--z));
+  font-weight: 600;
+  line-height: calc(20px * var(--z));
+  color: #5A6472;
+}
+.cal-holiday {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(10.5px * var(--z));
+  font-weight: 600;
+  color: #D9646B;
+}
+.cal-cell.sun .cal-date { color: #D9646B; }
+.cal-cell.sat .cal-date { color: #4A7FD0; }
+.cal-cell.other .cal-date { color: #C3C7CE; }
+.cal-cell.holiday .cal-date { color: #D9646B; }             /* 빨간 날은 지난달 · 다음 달 칸에서도 빨갛게 */
+.cal-cell.other .cal-holiday { color: #E2A9AC; }             /* 이름만 연하게 */
+.cal-cell.today .cal-date {                                  /* 오늘 — 파란 알약 */
+  margin-left: calc(-4px * var(--z));
+  min-width: calc(20px * var(--z));
+  height: calc(20px * var(--z));
+  padding: 0 calc(5px * var(--z));
+  box-sizing: border-box;
+  border-radius: calc(10px * var(--z));
+  background: #5A98FE;
+  color: #FFFFFF;
+  text-align: center;
+}
+
+/* 여러 장 쌓인 칸 — 장수 배지 (누르면 펼침) */
+.cal-count {
+  position: absolute;
+  right: calc(8px * var(--z));
+  top: calc(5px * var(--z));
+  min-width: calc(18px * var(--z));
+  height: calc(18px * var(--z));
+  padding: 0 calc(5px * var(--z));
+  box-sizing: border-box;
+  border-radius: calc(9px * var(--z));
+  background: #E9E5DF;
+  font-size: calc(11px * var(--z));
+  font-weight: 600;
+  line-height: calc(18px * var(--z));
+  color: #5A6472;
+  text-align: center;
+}
+.cal-cell.fan-open .cal-count { background: #5A98FE; color: #FFFFFF; }
+.board:not(.pinned) .cal-cell:hover .cal-count { right: calc(30px * var(--z)); }
+
+/* 마우스를 올린 칸 — 오른쪽 위 + (그 날짜에 새 쪽지) */
+.cal-add {
+  position: absolute;
+  right: calc(5px * var(--z));
+  top: calc(3px * var(--z));
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: calc(22px * var(--z));
+  height: calc(22px * var(--z));
+  padding: 0;
+  border: none;
+  border-radius: calc(6px * var(--z));
+  background: none;
+  cursor: pointer;
+}
+.cal-add img {
+  display: block;
+  width: calc(16px * var(--z));
+  height: calc(16px * var(--z));
+  pointer-events: none;
+}
+.cal-add:hover { background: rgba(31, 47, 69, 0.06); }
+.cal-cell:hover .cal-add { display: flex; }
+
+/* 판에 붙은 쪽지 (board-notes.js) — 시각 표시 · 크기 손잡이는 숨김
+   캘린더: 칸 크기로 맞춰지고, 겹친 뒤 쪽지는 살짝 비켜 돌아가서 가장자리가 보임 */
+.sticky-note.on-board {
+  overflow: hidden;
+  padding-bottom: calc(12px * var(--z));
+  transform: translate(calc(var(--stack-dx, 0px) * var(--z)), calc(var(--stack-dy, 0px) * var(--z))) rotate(var(--stack-rot, 0deg));
+}
+.sticky-note.on-board.selected {
+  transform: translate(calc(var(--stack-dx, 0px) * var(--z)), calc((var(--stack-dy, 0px) - 3px) * var(--z))) rotate(var(--stack-rot, 0deg));
+}
+.sticky-note.on-board .note-header { padding-top: calc(12px * var(--z)); }
+.sticky-note.on-board .note-time,
+.sticky-note.on-board .note-resize { display: none; }
+.sticky-note.stack-top { z-index: 2; }
+.sticky-note.board-hidden { display: none; }
+.sticky-note.locked,
+.sticky-note.locked:active { cursor: default; }
+
+/* 겹친 쪽지 펼치기 — 날짜를 가운데 두고 둥글게 (calendar.js)
+   펼치고 접히는 동안(fan-anim)은 둥근 바탕보다 위에서 움직이고, 맨 위 쪽지가 끝까지 맨 위 */
+.sticky-note.on-board.fanned { z-index: 20; }
+.sticky-note.on-board.fan-anim { z-index: 20; }
+.sticky-note.on-board.fan-anim.stack-top { z-index: 21; }
+.sticky-note.fan-anim {
+  transition: left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 0.28s ease-out, filter 0.2s ease-out;
+}
+.fan-overlay {
+  position: absolute;
+  z-index: 19;
+  pointer-events: none;
+  animation: fan-in 0.2s ease-out;
+}
+.fan-overlay.closing { animation: fan-out 0.2s ease-in forwards; }   /* 접을 때 서서히 사라짐 */
+.fan-overlay svg { display: block; overflow: visible; }
+.fan-halo { fill: rgba(252, 251, 249, 0.8); }
+.fan-spokes line { stroke: #7FB2F7; }
+.fan-hub { fill: #5A98FE; }
+.fan-hub-text {
+  fill: #FFFFFF;
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+@keyframes fan-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes fan-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fan-overlay,
+  .fan-overlay.closing { animation: none; }
+}
+
+/* ---- 연대표 판 (timeline.js) ---- */
+/* 걸이 막대 — 높이 26, 모서리 8, 위 #FDFCFA → 아래 #E5E1DA. 캘린더 모드에서는 잡고 끌면 보이는 때가 옮겨감 */
+.tl-rail {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: calc(8px * var(--z));
+  background: linear-gradient(#FDFCFA, #F1EEE9 55%, #E5E1DA);
+  box-shadow: 0 calc(2px * var(--z)) calc(4px * var(--z)) rgba(31, 47, 69, 0.10), inset 0 1px 0 #FFFFFF;
+  cursor: grab;
+}
+.tl-rail:active { cursor: grabbing; }
+.board.tl-direct .tl-rail { cursor: default; }
+
+.tl-screw {                                     /* 나사 — 지름 7, 양 끝에서 9 */
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: calc(7px * var(--z));
+  height: calc(7px * var(--z));
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #FFFFFF, #D8D3CB);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.tl-screw.left { left: calc(9px * var(--z)); }
+.tl-screw.right { left: calc(100% - 9px * var(--z)); }
+
+.tl-tick {                                      /* 눈금선 — 해가 바뀌는 자리는 조금 굵게 */
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #DCD7CF;
+  pointer-events: none;
+}
+.tl-tick.year { width: 1.5px; background: #C3BCB1; }
+.tl-label {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+  font-size: calc(12px * var(--z));
+  font-weight: 600;
+  color: #7A8290;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* 주말 · 빨간 날 띠 — 막대 아래 절반, 하루 폭 */
+.tl-strip {
+  position: absolute;
+  top: calc(13px * var(--z));
+  height: calc(13px * var(--z));
+}
+.tl-strip.sat { background: rgba(74, 127, 208, 0.13); }
+.tl-strip.sun { background: rgba(217, 100, 107, 0.13); }
+.tl-strip.holiday { background: rgba(217, 100, 107, 0.34); }
+.tl-holiday-name {                              /* 일 눈금: 막대 위에 빨간 날 이름 */
+  position: absolute;
+  top: calc(68px * var(--z));
+  transform: translateX(-50%);
+  font-size: calc(10.5px * var(--z));
+  font-weight: 600;
+  color: #C4615F;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* 오늘 — 막대 안 2px 빨간 선 + 아래로 점선(5/5), 막대 위 '오늘' */
+.tl-today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: calc(2px * var(--z));
+  background: #E4746E;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.tl-today-drop {
+  position: absolute;
+  bottom: 0;
+  width: calc(1.5px * var(--z));
+  background: repeating-linear-gradient(to bottom, #E4746E 0 calc(5px * var(--z)), transparent calc(5px * var(--z)) calc(10px * var(--z)));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.tl-today-label {
+  position: absolute;
+  top: calc(68px * var(--z));
+  transform: translateX(-50%);
+  font-size: calc(11px * var(--z));
+  font-weight: 700;
+  color: #E4746E;
+  pointer-events: none;
+}
+
+/* 걸이 · 줄 — 걸이는 막대 뒤에서 나오고, 줄은 쪽지 가운데 위까지 */
+.tl-hangs {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.tl-hook {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.tl-string {
+  position: absolute;
+  width: calc(1.5px * var(--z));
+  background: #C9C4BB;
+  transform: translateX(-50%);
+}
+/* 끄는 동안 걸릴 자리 — 파란 걸이 · 줄 */
+.tl-hook.target {
+  filter: brightness(0) saturate(100%) invert(56%) sepia(64%) saturate(2585%) hue-rotate(199deg) brightness(101%) contrast(99%)
+          drop-shadow(0 0 calc(3px * var(--z)) rgba(90, 152, 254, 0.55));
+}
+.tl-string.target { width: calc(2px * var(--z)); background: #9CC4F8; }
+
+/* 끄는 쪽지 위 풍선 — 날짜 또는 칸 이름 */
+.tl-balloon {
+  position: fixed;
+  z-index: 3000;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 11px;
+  background: #373B42;
+  color: #FFFFFF;
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 22px;
+  white-space: nowrap;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+}
+
+/* 연동한 캘린더 쪽지를 막대에 따라 그린 것 — 모양은 쪽지 그대로 */
+.tl-hangs .note-mirror { pointer-events: auto; }
+.note-mirror .note-title,
+.note-mirror .note-text,
+.note-mirror .check-text {
+  white-space: pre-wrap;
+  overflow: hidden;
+  user-select: none;
+}
+.note-mirror .note-text { flex: 1 1 auto; min-height: 0; }
+
+/* 직접 작성 모드 — 내가 만든 칸 */
+.tl-seg {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+.tl-seg-label {
+  max-width: 100%;
+  padding: 0 calc(8px * var(--z));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(12px * var(--z));
+  font-weight: 600;
+  color: #7A8290;
+  cursor: text;
+}
+.tl-seg-label.empty { color: #B3B9C2; font-weight: 500; }
+.tl-seg-input {
+  width: calc(100% - 16px * var(--z));
+  height: calc(20px * var(--z));
+  padding: 0 calc(6px * var(--z));
+  border: none;
+  outline: none;
+  border-radius: calc(4px * var(--z));
+  background: #EAF2FE;
+  box-shadow: inset 0 0 0 1.5px #7FB2F7;
+  font: inherit;
+  font-size: calc(12px * var(--z));
+  font-weight: 600;
+  color: #1F2F45;
+  text-align: center;
+}
+.tl-seg-handle {                                /* 칸 경계 손잡이 — 마우스를 올렸을 때만 */
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: calc(5px * var(--z));
+  height: calc(16px * var(--z));
+  border-radius: calc(3px * var(--z));
+  background: #A9B2BD;
+  box-shadow: 0 0 0 calc(2px * var(--z)) #FFFFFF;
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tl-rail:hover .tl-seg-handle { opacity: 1; }
+.tl-add-seg {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--z));
+  height: calc(22px * var(--z));
+  padding: 0 calc(6px * var(--z));
+  border: none;
+  border-radius: calc(6px * var(--z));
+  background: none;
+  font: inherit;
+  font-size: calc(13px * var(--z));
+  color: #8A94A2;
+  cursor: pointer;
+}
+.tl-add-seg img {
+  display: block;
+  width: calc(16px * var(--z));
+  height: calc(16px * var(--z));
+  pointer-events: none;
+}
+.tl-add-seg:hover { background: #F1EEE9; color: #5A6472; }
+
+/* ---- 어두운 배경일 때 (설정 → 캔버스 → 배경 테마) — 쪽지 색은 그대로 ---- */
+body.theme-dark .board {
+  background: #2A3038;
+  border-color: #3A424C;
+  color: #E7EAEE;
+}
+body.theme-dark .board-head { border-bottom-color: #3A424C; }
+body.theme-dark .board-btn:hover,
+body.theme-dark .board-text-btn:hover,
+body.theme-dark .cal-add:hover,
+body.theme-dark .tl-add-seg:hover { background: rgba(255, 255, 255, 0.07); }
+body.theme-dark .board-text-btn { border-color: #4A5360; color: #C9D1DB; }
+body.theme-dark .board-seg { background: #353D47; }
+body.theme-dark .board-seg button { color: #AEB6C2; }
+body.theme-dark .board-seg button.current { background: #4A5360; color: #FFFFFF; box-shadow: none; }
+body.theme-dark .board-name { color: #8A94A2; }
+body.theme-dark .board-name.tl-title { color: inherit; }
+body.theme-dark .cal-weekdays { color: #8A94A2; }
+body.theme-dark .cal-wd.sun { color: #D9646B; }
+body.theme-dark .cal-wd.sat { color: #4A7FD0; }
+body.theme-dark .cal-grid,
+body.theme-dark .cal-cell { border-color: #353D47; }
+body.theme-dark .cal-cell.other { background: #242A31; }
+body.theme-dark .cal-cell.other .cal-date { color: #6B7480; }
+body.theme-dark .cal-cell.holiday .cal-date { color: #D9646B; }
+body.theme-dark .cal-cell.today { background: rgba(90, 152, 254, 0.12); }
+body.theme-dark .cal-cell.fan-open { background: rgba(90, 152, 254, 0.16); }
+body.theme-dark .cal-date { color: #AEB6C2; }
+body.theme-dark .board:not(.pinned) .cal-cell:hover { background: rgba(255, 255, 255, 0.04); }
+body.theme-dark .cal-count { background: #3A424C; color: #C9D1DB; }
+body.theme-dark .fan-halo { fill: rgba(31, 37, 44, 0.82); }
+body.theme-dark .tl-rail {
+  background: linear-gradient(#434B56, #3A424C 55%, #313840);
+  box-shadow: 0 calc(2px * var(--z)) calc(4px * var(--z)) rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+body.theme-dark .tl-screw { background: radial-gradient(circle at 35% 35%, #8A94A2, #4A5360); }
+body.theme-dark .tl-tick { background: #4E5763; }
+body.theme-dark .tl-tick.year { background: #6B7480; }
+body.theme-dark .tl-label,
+body.theme-dark .tl-seg-label { color: #AEB6C2; }
+body.theme-dark .tl-string { background: #5E6772; }

@@ -1,0 +1,234 @@
+/* ===== 파일 묶음 — 파일 아이콘을 담는 큰 포스트잇 (renderer/groups.js, 메모장.md Phase 4) =====
+   판(.board — styles/boards.css) 틀 위에 쪽지 모양(색 · 접힌 모서리 · 그림자)을 덮어씀
+   모든 값은 zoom 1 기준 × --zoom. 색 --note-bg 는 styles.css 의 .note-<색>, 접힌 모서리 그림은 아래 --group-fold
+   머리(54) · 좌우 여백(14) · 아래 여백(30)은 groups.js 의 HEAD · PAD 와 같게
+   어두운 배경(배경 테마 '어둡게')이어도 쪽지처럼 포스트잇 색 그대로 — 판의 어두운 색(boards.css)을 덮어씀 */
+.board.board-group,
+body.theme-dark .board.board-group {
+  --fold: calc(28px * var(--z));
+  overflow: visible;
+  border: none;
+  border-radius: calc(12px * var(--z));
+  box-shadow: none;
+  /* 오른쪽 아래 28×28 칸은 접힘 그림이 채우고, 나머지만 포스트잇 색으로 칠함 (쪽지와 같은 방법) */
+  background:
+    var(--group-fold) right bottom / var(--fold) var(--fold) no-repeat,
+    linear-gradient(var(--note-bg) 0 0) left top / calc(100% - var(--fold) + 1px) 100% no-repeat,
+    linear-gradient(var(--note-bg) 0 0) left top / 100% calc(100% - var(--fold) + 1px) no-repeat;
+  filter: drop-shadow(0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(31, 47, 69, 0.08))
+          drop-shadow(0 calc(1px * var(--z)) calc(2px * var(--z)) rgba(31, 47, 69, 0.05));
+  color: #1F2F45;
+}
+/* 선택됨 (가이드 4장) — 파란 테두리 2px + 진한 그림자. 머리 아이콘은 note-selected.svg (groups.js)
+   쪽지처럼 떠오르게(transform) 하지 않음: 담긴 파일은 따로 그려져서 어긋나므로 */
+.board.board-group.selected,
+body.theme-dark .board.board-group.selected {
+  outline: calc(2px * var(--z)) solid #4A99EB;
+  filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.24))
+          drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.14));
+}
+.board.board-group { cursor: grab; }
+.board.board-group:active { cursor: grabbing; }
+.board.board-group.pinned { cursor: default; }
+
+.board-group.note-yellow { --group-fold: url("../icons/fold-yellow.svg"); }
+.board-group.note-pink   { --group-fold: url("../icons/fold-pink.svg"); }
+.board-group.note-blue   { --group-fold: url("../icons/fold-blue.svg"); }
+.board-group.note-green  { --group-fold: url("../icons/fold-green.svg"); }
+.board-group.note-purple { --group-fold: url("../icons/fold-purple.svg"); }
+.board-group.note-gray   { --group-fold: url("../icons/fold-gray.svg"); }
+
+/* 머리 — 위 여백 15 + 아이콘 24 (쪽지 머리와 같은 자리). 잡고 끌면 묶음이 옮겨짐 */
+.board-group .board-head.group-head {
+  box-sizing: content-box;
+  height: calc(24px * var(--z));
+  padding: calc(15px * var(--z)) calc(14px * var(--z)) calc(15px * var(--z)) calc(20px * var(--z));
+  gap: calc(8px * var(--z));
+  border-bottom: none;
+}
+.group-icon {
+  flex: 0 0 auto;
+  display: block;
+  width: calc(24px * var(--z));
+  height: calc(24px * var(--z));
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.board-name.group-title,
+body.theme-dark .board-name.group-title {
+  margin-left: 0;
+  font-size: calc(15px * var(--z));
+  font-weight: 600;
+  color: #1F2F45;
+}
+.board-name.group-title.untitled,
+body.theme-dark .board-name.group-title.untitled { color: rgba(31, 47, 69, 0.55); }
+.group-count {
+  flex: 0 0 auto;
+  font-size: calc(12.5px * var(--z));
+  color: rgba(31, 47, 69, 0.5);
+}
+.group-more {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(28px * var(--z));
+  height: calc(28px * var(--z));
+  padding: 0;
+  border: none;
+  border-radius: calc(6px * var(--z));
+  background: none;
+  cursor: pointer;
+}
+.group-more img {
+  display: block;
+  width: calc(24px * var(--z));
+  height: calc(24px * var(--z));
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.group-more:hover,
+.group-toggle:hover { background: rgba(31, 47, 69, 0.07); }
+
+/* 접기 · 펼치기 단추 — 펼친 동안 ⌄ (arrow-right 를 90° 돌림), 접으면 › */
+.group-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(28px * var(--z));
+  height: calc(28px * var(--z));
+  padding: 0;
+  border: none;
+  border-radius: calc(6px * var(--z));
+  background: none;
+  cursor: pointer;
+}
+.group-toggle img {
+  display: block;
+  width: calc(20px * var(--z));
+  height: calc(20px * var(--z));
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.board-group.collapsed .group-toggle img { transform: none; }
+
+/* 접은 묶음 — 머리 한 줄 (몸통 · 크기 손잡이 숨김). 오른쪽 끝은 접힌 모서리 자리라 단추를 조금 안으로 */
+.board-group.collapsed .group-body,
+.board-group.collapsed .board-resize { display: none; }
+.board-group.collapsed .board-head.group-head { padding-right: calc(32px * var(--z)); }
+.board-group.folding { transition: height 0.2s ease; }
+.group-peek {                                   /* 접었을 때 담긴 파일 그림 */
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--z));
+  margin-left: calc(4px * var(--z));
+  overflow: hidden;
+}
+.group-peek img {
+  flex: 0 0 auto;
+  display: block;
+  width: calc(20px * var(--z));
+  height: calc(20px * var(--z));
+  object-fit: contain;
+  -webkit-user-drag: none;
+}
+.group-peek-more {
+  flex: 0 0 auto;
+  font-size: calc(12px * var(--z));
+  color: rgba(31, 47, 69, 0.55);
+}
+/* 접은 묶음 위로 파일을 끌어 올렸을 때 */
+.board-group.collapsed.drop-target {
+  outline: calc(2px * var(--z)) dashed #7FB2F7;
+  outline-offset: calc(2px * var(--z));
+}
+.board-group .board-name-input { margin-left: 0; background: rgba(255, 255, 255, 0.75); }
+
+/* 몸통 — 파일이 놓이는 칸 자리 (파일 아이콘은 판 위에 따로 그려짐) */
+.group-body {
+  position: absolute;
+  left: calc(14px * var(--z));
+  right: calc(14px * var(--z));
+  top: calc(54px * var(--z));
+  bottom: calc(30px * var(--z));
+  border-radius: calc(10px * var(--z));
+  pointer-events: none;
+}
+.group-empty {                                  /* 빈 묶음 — 점선 안에 안내 */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 calc(12px * var(--z));
+  border: calc(1.5px * var(--z)) dashed rgba(31, 47, 69, 0.2);
+  border-radius: calc(10px * var(--z));
+  font-size: calc(13px * var(--z));
+  color: rgba(31, 47, 69, 0.45);
+  text-align: center;
+}
+/* 파일을 끌어 묶음 위에 올렸을 때 — 들어갈 자리 */
+.board-group.drop-target .group-body { background: rgba(255, 255, 255, 0.35); }
+.board-group.drop-target .group-body::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: calc(2px * var(--z)) dashed #7FB2F7;
+  border-radius: calc(10px * var(--z));
+}
+.board-group.drop-target .group-empty { border-color: transparent; color: #4A7FD0; }
+
+/* 크기 조절 — 오른쪽 아래 접힌 모서리 전체가 손잡이 (쪽지와 같음) */
+.board-group .board-resize {
+  width: var(--fold);
+  height: var(--fold);
+}
+.board-group .board-resize::after { display: none; }
+
+/* 묶음에 든 파일 — 포스트잇이 틀이 되니 점선 상자는 숨기고, 마우스를 올리면 살짝 */
+.file-icon.in-group,
+body.theme-dark .file-icon.in-group {
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+}
+.file-icon.in-group:hover,
+body.theme-dark .file-icon.in-group:hover {
+  background: rgba(31, 47, 69, 0.06);
+  border-color: rgba(31, 47, 69, 0.14);
+}
+.file-icon.in-group.selected,
+body.theme-dark .file-icon.in-group.selected {
+  background: linear-gradient(135deg, rgba(100, 150, 200, 0.3) 0%, rgba(100, 180, 220, 0.2) 100%);
+  border: max(1px, calc(2px * var(--zoom))) solid rgba(100, 150, 200, 0.8);
+  box-shadow: 0 0 calc(12px * var(--zoom)) rgba(100, 150, 200, 0.4);
+}
+body.theme-dark .file-icon.in-group .file-icon-name {       /* 어두운 배경이어도 묶음 안은 밝은 종이 위 */
+  color: #333;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
+}
+.file-icon.in-group.locked { cursor: default; }            /* 잠근 묶음 — 열기만 */
+.file-icon.group-hidden { display: none; }                   /* 접은 묶음 속 */
+@media (prefers-reduced-motion: no-preference) {
+  .file-icon.group-appear { animation: group-file-in 0.24s ease-out both; }
+}
+@keyframes group-file-in {
+  from { opacity: 0; transform: translateY(calc(-8px * var(--zoom))); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 우클릭 메뉴 하위 목록의 색 동그라미 (묶음 › 색상) */
+.context-menu-swatch {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-right: -4px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}

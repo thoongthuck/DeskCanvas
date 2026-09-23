@@ -1,0 +1,618 @@
+/* ===== 다용도 배경화면 — 기본 · 메뉴 · 쪽지 · 사진 · 파일 =====
+   부품별 스타일은 styles 폴더에 나눠 둠 (설정 창 · 스타일 창 · 코드/마크다운 쪽지 · 사진 틀 · 판 · 찾기 · 미니맵)
+   값의 출처: code/icons/아이콘_가이드.md */
+@import url("styles/style-panel.css");
+@import url("styles/settings.css");
+@import url("styles/code-markdown.css");
+@import url("styles/photos.css");
+@import url("styles/boards.css");
+@import url("styles/groups.css");
+@import url("styles/search.css");
+@import url("styles/minimap.css");
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', 'Apple Color Emoji', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+  background: #f5f5f5;
+}
+
+#canvas-container {
+  width: 100vw;
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  background: transparent;
+}
+
+#infinite-canvas {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  background: #f5f5f5;
+}
+
+#ui-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+/* 배경 테마: 어둡게 (설정 → 캔버스 → 배경 테마) */
+body.theme-dark,
+body.theme-dark #infinite-canvas {
+  background: #1F252C;
+}
+
+/* ===== 쪽지 · 사진 · 파일 우클릭 메뉴 (디자인/팝업/팝업.png) ===== */
+#context-menu,
+#context-submenu {                 /* 하위 목록 (주 시작 요일 › 등) 도 같은 틀 */
+  background: #373b42;
+  border-radius: 8px;
+  padding: 8px 0;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  min-width: 228px;
+  border: none;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 40px;
+  padding: 0 16px 0 20px;
+  color: #e5e7eb;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  user-select: none;
+}
+
+.context-menu-item:hover,
+.context-menu-item.open {          /* 스타일 창이 열려 있는 동안 '스타일 변경' 줄 */
+  background-color: #4a5568;
+  color: #ffffff;
+}
+
+/* 삭제하기: 빨간 글자 */
+.context-menu-item.danger,
+.context-menu-item.danger:hover {
+  color: #e3a09e;
+}
+
+.context-menu-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: block;
+  position: relative;
+  top: 1px;
+  -webkit-user-drag: none;
+}
+
+.context-menu-item:hover .context-menu-icon {
+  filter: brightness(1.2);
+}
+
+/* 체크박스 아이콘(checkbox · checkbox-checked)은 쪽지용 진한 잉크라 어두운 메뉴에서는 밝게 뒤집어 보여 줌
+   (격자 모드 등 — 메뉴용 밝은 체크박스 아이콘은 icons 폴더에 없음) */
+.popup-icon[src$="checkbox.svg"],
+.popup-icon[src$="checkbox-checked.svg"],
+.context-menu-icon[src$="checkbox.svg"],
+.context-menu-icon[src$="checkbox-checked.svg"] {
+  filter: invert(1) grayscale(1) brightness(1.15);
+}
+
+/* 하위 목록에서 고를 수 없는 줄 (예: 캘린더 판이 없어요) */
+.context-menu-item.disabled,
+.context-menu-item.disabled:hover {
+  background: none;
+  color: #8A94A2;
+  cursor: default;
+}
+
+.context-menu-label {
+  font-size: 16px;
+  flex: 1;
+  font-weight: 400;
+}
+
+.context-menu-arrow {
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  flex-shrink: 0;
+  display: block;
+  position: relative;
+  top: 1px;
+  -webkit-user-drag: none;
+}
+
+.context-menu-item:hover .context-menu-arrow,
+.context-menu-item.open .context-menu-arrow {
+  filter: brightness(1.3);
+}
+
+.context-menu-separator {
+  height: 1px;
+  background-color: #525356;
+  margin: 7px 20px 3px;
+}
+
+/* ===== 바탕 메뉴 · 옆 팝업 · 목록 (아이콘_가이드.md 6장) =====
+   크기·모양은 6-3, 색은 쪽지 우클릭 메뉴(#context-menu)와 통일 */
+.popup-menu {
+  position: fixed;
+  z-index: 2000;
+  width: 240px;
+  padding: 6px 0;
+  background: #373b42;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  user-select: none;
+}
+
+.popup-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 36px;
+  margin: 0 8px;              /* 호버 배경은 좌우 8px 안쪽 둥근 알약 */
+  padding: 0 12px;            /* → 아이콘은 메뉴 왼쪽에서 20px */
+  border-radius: 6px;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.popup-item:hover,
+.popup-item.open {            /* 옆 팝업이 열려 있는 동안 그 줄 ('쪽지 추가' · '템플릿') */
+  background: #4a5568;
+}
+
+.popup-item:hover .popup-icon {
+  filter: brightness(1.2);
+}
+
+.popup-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: block;
+  -webkit-user-drag: none;
+}
+
+.popup-label {
+  flex: 1;
+  font-size: 15px;
+}
+
+.popup-arrow {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: block;
+  -webkit-user-drag: none;
+}
+
+.popup-item:hover .popup-arrow,
+.popup-item.open .popup-arrow {
+  filter: brightness(1.3);
+}
+
+.popup-separator {
+  height: 1px;
+  margin: 6px 20px;
+  background: #525356;
+}
+
+/* 아이콘 없는 목록 (코드 언어 · 설정 드롭다운 · 초기화 확인) */
+.popup-menu.popup-compact {
+  width: auto;
+  min-width: 160px;
+  max-height: 70vh;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.popup-compact .popup-item {
+  height: 34px;
+}
+.popup-compact .popup-label {
+  font-size: 14px;
+  white-space: nowrap;
+}
+.popup-item.current .popup-label {
+  color: #ffffff;
+  font-weight: 600;
+}
+.popup-item.current::after {                /* 지금 고른 값 */
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5A98FE;
+  flex-shrink: 0;
+}
+.popup-item.danger .popup-label {
+  color: #f28b85;
+}
+
+/* ===== 쪽지 (아이콘_가이드.md 1~5장 · 8장) =====
+   크기는 모두 zoom 1 기준 값 × var(--zoom). --zoom 은 renderer 가 쪽지마다 넣어줌 */
+.sticky-note {
+  --z: var(--zoom, 1);
+  --fold: calc(28px * var(--z));
+  --ink: #1F2F45;
+  --title-size: 15px;          /* 크기 '보통' */
+  --body-size: 13px;
+  --title-weight: 500;
+  --font-scale: 1;
+  --line: 1.5;
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 0 calc(20px * var(--z)) calc(30px * var(--z));   /* 아래는 시각 표시 자리 */
+  border-radius: calc(12px * var(--z));
+  /* 오른쪽 아래 28×28 칸은 접힘 이미지가 채우고, 나머지만 쪽지 색으로 칠함 */
+  background:
+    var(--fold-img) right bottom / var(--fold) var(--fold) no-repeat,
+    linear-gradient(var(--note-bg) 0 0) left top / calc(100% - var(--fold) + 1px) 100% no-repeat,
+    linear-gradient(var(--note-bg) 0 0) left top / 100% calc(100% - var(--fold) + 1px) no-repeat;
+  filter: drop-shadow(0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(31, 47, 69, 0.08))
+          drop-shadow(0 calc(1px * var(--z)) calc(2px * var(--z)) rgba(31, 47, 69, 0.05));
+  color: var(--ink);
+  pointer-events: auto;
+  user-select: none;
+  z-index: 1;
+  cursor: grab;
+  /* 선택할 때 떠오르고 내려앉는 변화만 부드럽게 (위치 left/top 은 바로 따라감) */
+  transition: transform 0.2s ease-out, filter 0.2s ease-out;
+}
+
+/* 쪽지 색 (배경 + 같은 색 접힘). 직접 고른 색은 renderer 가 --note-bg · --fold-img 를 넣어줌 */
+.note-yellow { --note-bg: #FDF2C2; --fold-img: url("icons/fold-yellow.svg"); }
+.note-pink   { --note-bg: #FDE0E3; --fold-img: url("icons/fold-pink.svg"); }
+.note-blue   { --note-bg: #DCECFC; --fold-img: url("icons/fold-blue.svg"); }
+.note-green  { --note-bg: #E0F4E2; --fold-img: url("icons/fold-green.svg"); }
+.note-purple { --note-bg: #E4E0FC; --fold-img: url("icons/fold-purple.svg"); }
+.note-gray   { --note-bg: #EFF0F0; --fold-img: url("icons/fold-gray.svg"); }
+
+/* 어두운 색을 직접 고른 쪽지: 글자·아이콘을 밝게 */
+.sticky-note.note-dark { --ink: #F3F4F6; }
+.note-dark .note-state-icon,
+.note-dark .note-more,
+.note-dark .check-box,
+.note-dark .md-check {
+  filter: invert(1) hue-rotate(180deg) brightness(1.1);
+}
+.note-dark .note-time { color: rgba(255, 255, 255, 0.5); }
+.note-dark .note-title::placeholder,
+.note-dark .note-text::placeholder,
+.note-dark .check-text::placeholder { color: rgba(255, 255, 255, 0.35); }
+
+/* 글자 크기 단계 (스타일 창 → 크기): 제목 / 본문·할 일 */
+.sticky-note.size-s  { --title-size: 14px; --body-size: 12px; }
+.sticky-note.size-l  { --title-size: 17px; --body-size: 15px; }
+.sticky-note.size-xl { --title-size: 20px; --body-size: 17px; }
+
+/* 글꼴 (스타일 창 → 글꼴). 글꼴 파일은 fonts/fonts.css */
+.sticky-note.font-pen   { --note-font: var(--font-pen); --title-weight: 400; --font-scale: 1.4; --line: 1.25; }
+.sticky-note.font-serif { --note-font: var(--font-serif); --title-weight: 700; }
+.sticky-note.font-mono  { --note-font: var(--font-mono); --title-weight: 700; }
+
+/* 상태: 고정됨 = 항상 위
+   선택됨 = 그림자가 진해지고 살짝 떠올라 벽에서 떼어낸 듯한 모습 (다른 쪽지 위로). 고정된 쪽지는 선택 표시 없음 */
+.sticky-note.pinned { z-index: 10; }
+.sticky-note.selected {
+  z-index: 5;
+  transform: translateY(calc(-3px * var(--z)));
+  filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.24))
+          drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.14));
+}
+
+/* 고정된 쪽지: 옮기기·크기 조절 잠금 (캔버스를 움직이면 같이 움직임) */
+.sticky-note.pinned,
+.sticky-note.pinned:active,
+.sticky-note.pinned .note-resize {
+  cursor: default;
+}
+
+/* 수정 중이 아닐 때: 글자칸은 읽기만 (안내 문구·글자 커서 없음), 잡으면 쪽지가 옮겨짐 */
+.sticky-note:not(.editing) .note-title,
+.sticky-note:not(.editing) .note-text,
+.sticky-note:not(.editing) .check-text {
+  cursor: inherit;
+  user-select: none;
+}
+.sticky-note:not(.editing) .note-title::placeholder,
+.sticky-note:not(.editing) .note-text::placeholder,
+.sticky-note:not(.editing) .check-text::placeholder {
+  color: transparent;
+}
+
+/* 헤더: 위 여백 15 + 높이 24, 왼쪽 상태/종류 아이콘 · 오른쪽 더보기 */
+.note-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: content-box;                 /* 높이 24 + 위 여백 15 (시안·미리보기의 아이콘 위치에 맞춤) */
+  height: calc(24px * var(--z));
+  margin: 0 calc(-20px * var(--z));
+  padding: calc(15px * var(--z)) calc(20px * var(--z)) 0;
+}
+
+.sticky-note:active { cursor: grabbing; }
+
+.note-state-icon,
+.note-more {
+  width: calc(24px * var(--z));
+  height: calc(24px * var(--z));
+  display: block;
+  flex-shrink: 0;
+  cursor: pointer;
+  -webkit-user-drag: none;
+}
+.note-state-icon { cursor: default; }
+.note-state-icon.clickable { cursor: pointer; }     /* 수정 중: 글 ↔ 할 일 */
+
+/* 제목 + 본문 */
+.note-title,
+.note-text,
+.check-text {
+  font-family: var(--note-font, inherit);
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  user-select: text;
+  resize: none;
+}
+
+.note-title {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-top: calc(9px * var(--z));
+  font-size: calc(var(--title-size) * var(--font-scale) * var(--z));
+  font-weight: var(--title-weight);
+  line-height: 1.35;
+  field-sizing: content;          /* 줄이 넘어가면 제목 칸도 늘어남 */
+  overflow: hidden;
+}
+
+.note-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: calc(6px * var(--z));
+}
+
+.note-text {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: calc(var(--body-size) * var(--font-scale) * var(--z));
+  line-height: var(--line);
+}
+
+.note-title::placeholder,
+.note-text::placeholder,
+.check-text::placeholder {
+  color: rgba(31, 47, 69, 0.35);
+}
+
+/* 사진을 넣은 쪽지: 왼쪽 사진 + 오른쪽 내용 */
+.note-photo-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: calc(12px * var(--z));
+}
+
+.note-photo {
+  width: 48%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: calc(8px * var(--z));
+  flex-shrink: 0;
+  -webkit-user-drag: none;
+}
+
+.note-photo-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 쪽지 안 스크롤바는 숨김 (내용이 길면 휠로 스크롤) */
+.note-title,
+.note-text,
+.note-checklist,
+.check-text {
+  scrollbar-width: none;
+}
+.note-text::-webkit-scrollbar,
+.note-checklist::-webkit-scrollbar {
+  display: none;
+}
+
+/* 할 일: 체크박스 20 + 간격 8 + 글자 (글이 길면 여러 줄) */
+.note-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: calc(5px * var(--z));
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(8px * var(--z));
+}
+
+.check-box {
+  width: calc(20px * var(--z));
+  height: calc(20px * var(--z));
+  flex-shrink: 0;
+  /* 첫 줄 가운데에 맞춤 */
+  margin-top: calc((var(--body-size) * var(--font-scale) * var(--line) - 20px) / 2 * var(--z));
+  cursor: pointer;
+  -webkit-user-drag: none;
+}
+
+.check-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: calc(var(--body-size) * var(--font-scale) * var(--z));
+  line-height: var(--line);
+  field-sizing: content;
+  overflow: hidden;
+}
+
+.check-item.done .check-text {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+/* 글이 넘칠 때 '자동 확장': 줄을 넘기지 않고 쪽지를 넓힘 */
+body.overflow-expand .note-title,
+body.overflow-expand .note-text,
+body.overflow-expand .check-text {
+  white-space: pre;
+  overflow-x: hidden;
+}
+
+/* 시각: 왼쪽 아래, 12px, 잉크색 45% (글꼴·글자 색을 바꿔도 그대로) */
+.note-time {
+  position: absolute;
+  left: calc(20px * var(--z));
+  bottom: calc(14px * var(--z));
+  font-size: calc(12px * var(--z));
+  color: rgba(31, 47, 69, 0.45);
+  pointer-events: none;
+}
+
+/* 접힌 모서리 = 크기 조절 손잡이 */
+.note-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: var(--fold);
+  height: var(--fold);
+  cursor: nwse-resize;
+}
+
+/* ===== 파일 아이콘 ===== */
+.file-icon {
+  --zoom: 1;
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;                      /* 많이 줄였을 때 속 내용이 테두리 밖으로 안 나가게 */
+  cursor: move;
+  user-select: none;
+  background: linear-gradient(135deg, rgba(200, 200, 200, 0.15) 0%, rgba(220, 220, 220, 0.08) 100%);
+  border-radius: calc(6px * var(--zoom));
+  border: max(1px, calc(2px * var(--zoom))) dashed rgba(100, 100, 100, 0.25);
+  padding: calc(8px * var(--zoom));
+  pointer-events: auto;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;   /* 위치·크기는 바로 따라감 */
+  backdrop-filter: blur(4px);
+}
+
+/* 격자 모드에서 놓았을 때: 칸으로 미끄러져 들어가기 */
+@media (prefers-reduced-motion: no-preference) {
+  .file-icon.settling {
+    transition: left 0.15s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.15s cubic-bezier(0.22, 0.61, 0.36, 1),
+                background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+}
+
+.file-icon:hover {
+  background: linear-gradient(135deg, rgba(200, 200, 200, 0.25) 0%, rgba(220, 220, 220, 0.15) 100%);
+  border-color: rgba(100, 100, 100, 0.4);
+}
+
+.file-icon.selected {
+  background: linear-gradient(135deg, rgba(100, 150, 200, 0.3) 0%, rgba(100, 180, 220, 0.2) 100%);
+  border: max(1px, calc(2px * var(--zoom))) solid rgba(100, 150, 200, 0.8);
+  box-shadow: 0 0 calc(12px * var(--zoom)) rgba(100, 150, 200, 0.4);
+}
+
+.file-icon-symbol {
+  font-size: 32px;
+  margin-bottom: calc(4px * var(--zoom));
+  display: block;
+  line-height: 1;
+}
+
+/* 파일 아이콘 그림 (윈도우 파일 아이콘) — 크기는 글자 크기(zoom)에 맞춰 */
+.file-icon-img {
+  width: 1em;
+  height: 1em;
+  object-fit: contain;          /* 사진 미리보기는 비율 그대로 */
+  display: block;
+  margin: 0 auto;
+  -webkit-user-drag: none;
+}
+
+.file-icon-name {
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: center;
+  color: #333;
+  word-break: break-word;
+  white-space: normal;
+  max-height: calc(30px * var(--zoom));
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
+}
+
+body.theme-dark .file-icon {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+body.theme-dark .file-icon-name {
+  color: #E5E7EB;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== 줌 표시 · 알림 ===== */
+
+.toast {                                        /* 저장했어요 등 잠깐 보이는 알림 */
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translate(-50%, 8px);
+  padding: 9px 16px;
+  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.9);
+  color: #ffffff;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 4000;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

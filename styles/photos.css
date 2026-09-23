@@ -1,0 +1,217 @@
+/* ===== 바탕에 붙인 사진 + 사진 틀 (아이콘_가이드.md 13장, 시안_사진틀.png) =====
+   renderer/photos.js — 요소 크기 = 사진 + 틀 여백
+   여백 · 테이프 길이 · 기울임은 renderer 가 --pad-* · --tape-len · --tilt 로 넣어 줌 (zoom 을 곱한 값)
+   종이 색 · 모서리 · 그림자는 쪽지와 같은 값 → 같은 벽에 붙어 있는 것처럼 */
+.canvas-photo {
+  --z: var(--zoom, 1);
+  position: absolute;
+  pointer-events: auto;
+  z-index: 1;
+  cursor: grab;
+  transform: rotate(var(--tilt, 0deg));
+  filter: drop-shadow(0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(31, 47, 69, 0.08))
+          drop-shadow(0 calc(1px * var(--z)) calc(2px * var(--z)) rgba(31, 47, 69, 0.05));
+  transition: transform 0.2s ease-out, filter 0.2s ease-out;
+}
+.canvas-photo:active { cursor: grabbing; }
+
+/* 종이 (틀 없음이면 비움) */
+.photo-paper {
+  position: absolute;
+  inset: 0;
+  background: #FCFBF8;
+  border-radius: calc(10px * var(--z));
+}
+
+.canvas-photo-img {
+  position: absolute;
+  top: var(--pad-top, 0px);
+  left: var(--pad-left, 0px);
+  width: calc(100% - var(--pad-left, 0px) - var(--pad-right, 0px));
+  height: calc(100% - var(--pad-top, 0px) - var(--pad-bottom, 0px));
+  display: block;
+  object-fit: cover;
+  border-radius: calc(4px * var(--z));
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* 손글씨 한 줄 — 종이 틀 아래 여백(46) 가운데 */
+.photo-caption {
+  position: absolute;
+  left: var(--pad-left, 0px);
+  right: var(--pad-right, 0px);
+  bottom: 0;
+  height: var(--pad-bottom, 0px);
+  line-height: var(--pad-bottom, 0px);
+  font-family: var(--font-pen);
+  font-size: calc(21px * var(--z));
+  color: rgba(31, 47, 69, 0.62);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.canvas-photo:not(.frame-paper) .photo-caption { display: none; }
+
+.photo-caption-input {
+  display: block;
+  width: 100%;
+  height: calc(30px * var(--z));
+  margin-top: calc(8px * var(--z));
+  padding: 0;
+  border: none;
+  border-bottom: max(1px, calc(1px * var(--z))) dashed rgba(31, 47, 69, 0.28);
+  outline: none;
+  background: transparent;
+  font: inherit;
+  line-height: normal;
+  color: inherit;
+  text-align: center;
+}
+.photo-caption-input::placeholder { color: rgba(31, 47, 69, 0.3); }
+
+/* 틀 없음: 지금까지처럼 사진만 (조금 진한 그림자) */
+.canvas-photo.frame-none {
+  filter: drop-shadow(0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(31, 47, 69, 0.14))
+          drop-shadow(0 calc(1px * var(--z)) calc(2px * var(--z)) rgba(31, 47, 69, 0.08));
+}
+.canvas-photo.frame-none .photo-paper { background: none; }
+.canvas-photo.frame-none .canvas-photo-img { border-radius: calc(8px * var(--z)); }
+
+/* 선택됨 — 쪽지와 같이 그림자가 진해지며 3 떠오름 / 고정됨 — 옮기기 · 크기 조절 잠금 */
+.canvas-photo.selected {
+  z-index: 5;
+  transform: translateY(calc(-3px * var(--z))) rotate(var(--tilt, 0deg));
+  filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.24))
+          drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.14));
+}
+.canvas-photo.frame-none.selected {
+  filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.28))
+          drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.16));
+}
+.canvas-photo.pinned { z-index: 10; cursor: default; }
+
+/* 크기 조절 — 오른쪽 아래 ⌟ 손잡이 (비율 유지). 마우스를 올렸거나 골랐을 때만 보임 */
+.photo-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: calc(18px * var(--z));
+  height: calc(18px * var(--z));
+  cursor: nwse-resize;
+}
+.photo-resize::after {
+  content: '';
+  position: absolute;
+  right: calc(5px * var(--z));
+  bottom: calc(5px * var(--z));
+  width: calc(7px * var(--z));
+  height: calc(7px * var(--z));
+  border-right: calc(1.6px * var(--z)) solid #CBC7C0;
+  border-bottom: calc(1.6px * var(--z)) solid #CBC7C0;
+  border-bottom-right-radius: calc(2px * var(--z));
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.canvas-photo:hover .photo-resize::after,
+.canvas-photo.selected .photo-resize::after { opacity: 1; }
+.canvas-photo.frame-none .photo-resize::after { border-color: rgba(255, 255, 255, 0.9); }
+.canvas-photo.pinned .photo-resize { cursor: default; }
+.canvas-photo.pinned .photo-resize::after { display: none; }
+
+/* 테이프 — 86 × 24, 쪽지 색 .86 + 안쪽선. 자리: 가운데(−3°) · 왼쪽 위(−42°) · 양쪽 모서리(∓42°) */
+.photo-tape {
+  position: absolute;
+  width: var(--tape-len, 86px);
+  height: calc(24px * var(--z));
+  border-radius: calc(2px * var(--z));
+  background: var(--tape-bg);
+  box-shadow: inset 0 0 0 max(1px, calc(1px * var(--z))) var(--tape-line);
+  pointer-events: none;
+}
+.photo-tape.tape-center { left: 50%; top: 0; transform: translate(-50%, -50%) rotate(-3deg); }
+.photo-tape.tape-left   { left: calc(12px * var(--z)); top: calc(10px * var(--z)); transform: translate(-50%, -50%) rotate(-42deg); }
+.photo-tape.tape-right  { left: calc(100% - 12px * var(--z)); top: calc(10px * var(--z)); transform: translate(-50%, -50%) rotate(42deg); }
+
+/* 압정 — 28, 틀 위로 반쯤 걸치게 */
+.photo-pin {
+  position: absolute;
+  top: 0;
+  width: calc(28px * var(--z));
+  height: calc(28px * var(--z));
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 calc(3px * var(--z)) calc(4px * var(--z)) rgba(31, 47, 69, 0.28));
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.photo-pin.pin-center { left: 50%; }
+.photo-pin.pin-corner { left: calc(22px * var(--z)); top: calc(2px * var(--z)); }
+
+/* ===== 틀 고르는 창 (renderer/photo-frame.js) — 스타일 창과 같은 틀 · 점 · 고르개 ===== */
+#style-panel.frame-panel {
+  width: 244px;
+  padding: 8px 0 14px;
+}
+#style-panel .frame-options {
+  display: flex;
+  flex-direction: column;
+}
+#style-panel .frame-option {
+  height: 36px;
+  padding: 0 16px;
+  text-align: left;
+  font-size: 14px;
+  color: #E5E7EB;
+  transition: background-color 0.15s ease;
+}
+#style-panel .frame-option:hover,
+#style-panel .frame-option.current {
+  background: #4A5568;
+  color: #FFFFFF;
+}
+#style-panel .frame-section {
+  padding: 0 16px;
+  margin-top: 14px;
+}
+/* 압정 색 — 압정 아이콘(photo-pin-*.svg)을 그대로 보여 주고 고름 */
+#style-panel .frame-pins {
+  display: flex;
+  gap: 6px;
+}
+#style-panel .frame-pin {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#style-panel .frame-pin img {
+  width: 24px;
+  height: 24px;
+  display: block;
+  pointer-events: none;
+}
+#style-panel .frame-pin:hover { background: #40454D; }
+#style-panel .frame-pin.current {
+  background: #3D4B5E;
+  box-shadow: inset 0 0 0 1.5px #60A5FA;
+}
+#style-panel .frame-segments {
+  display: grid;
+  padding: 3px;
+  border-radius: 8px;
+  background: #2F3338;
+}
+#style-panel .frame-segment {
+  height: 30px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: #CFD4DA;
+}
+#style-panel .frame-segment:hover { color: #FFFFFF; }
+#style-panel .frame-segment.current {
+  background: #4A5568;
+  color: #FFFFFF;
+}

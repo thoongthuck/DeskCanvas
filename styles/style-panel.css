@@ -1,0 +1,170 @@
+/* ===== 쪽지 스타일 창 (아이콘_가이드.md 8-1, 시안_쪽지스타일.png) =====
+   쪽지 우클릭 메뉴 '스타일 변경 ›' 옆에 열림. 색은 우클릭 메뉴와 같음 */
+#style-panel {
+  position: fixed;
+  z-index: 2001;
+  width: 268px;
+  padding: 14px 16px 12px;
+  background: #373B42;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  user-select: none;
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+
+#style-panel button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.style-section + .style-section { margin-top: 14px; }
+
+.style-title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #AAB2BD;
+}
+
+/* 쪽지 색: 점 22, 사이 10 (마지막 칸 = 직접 고르기) */
+.style-colors {
+  display: flex;
+  gap: 10px;
+}
+.style-dot {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.style-dot.current,
+.style-ink.current {
+  box-shadow: 0 0 0 2px #373B42, 0 0 0 4px #E5E7EB;
+}
+
+/* 직접 고르기: 무지개 동그라미, 고르면 가운데에 그 색 */
+.custom-dot {
+  display: block;
+  cursor: pointer;
+  background: conic-gradient(#F87171, #FBBF24, #A3E635, #34D399, #60A5FA, #A78BFA, #F472B6, #F87171);
+}
+.custom-dot.current::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--custom);
+  pointer-events: none;
+}
+.custom-dot input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+
+/* 글자 색: 지름 26 원 6개, 가운데 '가' */
+.style-inks {
+  display: flex;
+  gap: 8px;
+}
+.style-ink {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #F4F2EC !important;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 26px;
+  text-align: center;
+}
+
+/* 글꼴: 2 × 2 카드 */
+.style-fonts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.style-font {
+  height: 58px;
+  border-radius: 8px;
+  background: #40454D !important;
+  border: 1.5px solid transparent !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: #E5E7EB;
+}
+.style-font.current {
+  background: #3D4B5E !important;
+  border-color: #60A5FA !important;
+}
+.style-font-sample {
+  font-size: 19px;
+  line-height: 1.15;
+}
+.style-font-name {
+  font-size: 11px;
+  color: #AAB2BD;
+}
+.style-font.font-pen .style-font-sample   { font-family: var(--font-pen); font-size: 26px; line-height: 1; }
+.style-font.font-serif .style-font-sample { font-family: var(--font-serif); }
+.style-font.font-mono .style-font-sample  { font-family: var(--font-mono); }
+
+/* 크기: 네 칸 버튼 + 아래 단계 이름 */
+.style-sizes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 3px;
+  border-radius: 8px;
+  background: #2F3338;
+}
+.style-size {
+  height: 36px;
+  border-radius: 6px;
+  color: #E5E7EB !important;
+}
+.style-size.current { background: #4A5568 !important; }
+.style-size.size-s  { font-size: 12px; }
+.style-size.size-m  { font-size: 14px; }
+.style-size.size-l  { font-size: 17px; }
+.style-size.size-xl { font-size: 20px; }
+
+.style-size-names {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: #9AA3AE;
+  text-align: center;
+}
+
+.style-separator {
+  height: 1px;
+  margin: 14px 0 10px;
+  background: #525356;
+}
+
+/* 기본 스타일로 */
+.style-reset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #CFD4DA !important;
+}
+.style-reset img {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+.style-reset:hover { color: #FFFFFF !important; }

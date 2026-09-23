@@ -1,0 +1,67 @@
+/* ===== 포스트잇 붙이기 · 떼기 애니메이션 =====
+   노트가 새로 생기면 '붙이기', 지워지면 '떼기'를 재생합니다.
+   재생 시점은 note-animations.js가 정하고, 이 파일은 움직임 모양만 정합니다.
+   빼려면 index.html에서 이 파일과 note-animations.js를 불러오는 두 줄을 지우면 됩니다.
+
+   이 파일이 기대는 이름 — styles.css에 있음. 바뀌면 오류 없이 애니메이션이 멈추거나 일부만 보입니다
+   - --fold : 접힌 모서리 크기 (styles.css의 .sticky-note)
+   - --z    : 캔버스 확대 배율 (styles.css의 .sticky-note, renderer.js가 넣는 --zoom에서 옴).
+              움직임 거리·그림자도 배율에 맞춰 커짐 */
+
+/* 접힌 모서리 크기(--fold, styles.css에서 정의)를 부드럽게 바꾸려고 '길이' 값으로 등록 */
+@property --fold {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 28px;
+}
+
+/* 붙이기 (0.45초): 살짝 들린 채 나타나 → 벽에 닿으며 멈춤 (튕김 없음) */
+@keyframes note-stick {
+  0% {
+    opacity: 0;
+    translate: 0 calc(-14px * var(--z, 1));
+    scale: 1.07;
+    rotate: -2deg;
+    --fold: calc(42px * var(--z, 1));            /* 들고 있을 땐 모서리가 조금 더 들려 있음 */
+    filter: drop-shadow(0 calc(16px * var(--z, 1)) calc(22px * var(--z, 1)) rgba(31, 47, 69, 0.16))
+            drop-shadow(0 calc(3px * var(--z, 1)) calc(6px * var(--z, 1)) rgba(31, 47, 69, 0.08));
+  }
+  25% {
+    opacity: 1;
+  }
+  70% {                                          /* 벽에 닿음: 크기·위치는 여기서 끝, 그림자만 살짝 조였다가 풀림 */
+    translate: 0 0;
+    scale: 1;
+    rotate: 0deg;
+    --fold: calc(26px * var(--z, 1));
+    filter: drop-shadow(0 calc(2px * var(--z, 1)) calc(5px * var(--z, 1)) rgba(31, 47, 69, 0.10))
+            drop-shadow(0 calc(1px * var(--z, 1)) calc(1px * var(--z, 1)) rgba(31, 47, 69, 0.06));
+  }
+  /* 100%는 비워 둠 → styles.css의 원래 모양(그림자·모서리)으로 자연스럽게 돌아감 */
+}
+
+/* 떼기 (0.28초)
+   ① 0 ~ 0.16초    모서리를 당겨 들면서 노트가 화면 앞쪽으로 살짝 떨어짐
+                   (접힌 모서리가 커지고 · 노트가 조금 커지고 · 그림자가 넓어짐. 위로 날아가지 않음)
+   ② 0.16 ~ 0.28초 멈추지 않고 바로, 모습은 그대로 둔 채 흐려지며 사라짐
+   아래 % = 위 시각 ÷ 0.28초.  --peel-fold 는 note-animations.js가 노트 크기에 맞춰 넣어 줌 */
+@keyframes note-peel {
+  0% {
+    animation-timing-function: cubic-bezier(.3, 0, .2, 1);   /* 빠르게 들렸다가 부드럽게 멈춤 */
+  }
+  57.14% {                                      /* 0.16초: 살짝 뗀 모습 → 바로 흐려지기 시작 */
+    --fold: var(--peel-fold, calc(68px * var(--z, 1)));
+    scale: 1.035;
+    opacity: 1;
+    filter: drop-shadow(0 calc(12px * var(--z, 1)) calc(22px * var(--z, 1)) rgba(31, 47, 69, 0.18))
+            drop-shadow(0 calc(3px * var(--z, 1)) calc(6px * var(--z, 1)) rgba(31, 47, 69, 0.07));
+    animation-timing-function: cubic-bezier(.4, 0, .6, 1);
+  }
+  100% {                                        /* 0.28초: 흐려지기만 함 */
+    --fold: var(--peel-fold, calc(68px * var(--z, 1)));
+    scale: 1.035;
+    opacity: 0;
+    filter: drop-shadow(0 calc(12px * var(--z, 1)) calc(22px * var(--z, 1)) rgba(31, 47, 69, 0.18))
+            drop-shadow(0 calc(3px * var(--z, 1)) calc(6px * var(--z, 1)) rgba(31, 47, 69, 0.07));
+  }
+}
