@@ -68,13 +68,13 @@ export const fileMethods = {
       if (result !== true) alert(t('alert.openFail', { path: file.path }));
     });
 
-    // 우클릭: 파일 메뉴 (여럿 고른 것 가운데 하나면 여러 개 메뉴)
+    // 우클릭: 윈도우 탐색기 메뉴 + 앱 줄 (여럿 고른 것 가운데 하나면 고른 파일 모두, menus.js)
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (el.classList.contains('renaming')) return;
       this.ensureSelected(file.id);
-      if (this.multiSelected(file.id)) this.openSelectionMenu(e.clientX, e.clientY);
-      else this.openFileMenu(file, e.clientX, e.clientY);
+      this.openFileContextMenu(file, e.clientX, e.clientY);
     });
 
     // 누르면 선택 + 끌어서 옮기기 (잠근 묶음에 든 파일은 선택 · 열기만). Ctrl · Shift: 여러 개 고르기 (selection.js)
@@ -135,6 +135,89 @@ export const fileMethods = {
     if (changed) this.scheduleSave({ system: true });
   },
 
+  // 파일 이름 바꾸기 — 아이콘 아래 이름 자리에서 바로 (윈도우 우클릭 메뉴 '이름 바꾸기' · 빈 바탕 메뉴로 새로 만든 것)
+  //   Enter · 바깥 누르기: 바꿈, Esc: 그만. 확장자 앞까지 골라 둠. 바로 가기(.lnk · .url)는 보이는 이름만 바꿈
+  //   바탕화면 감시가 먼저 알려 와도 같은 아이콘으로 알아보도록 경로를 먼저 바꿔 두고, 실패하면 되돌림
+  startFileRename(file) {
+    const el = document.getElementById(file.id);
+    const label = el && el.querySelector('.file-icon-name');
+    if (!label || !file.path || !window.canvasAPI || !window.canvasAPI.renamePath || el.classList.contains('renaming')) return;
+    if (this.finishRename) this.finishRename(true);                    // 다른 파일 이름 칸이 열려 있으면 먼저 마무리
+    const base = String(file.path).split(/[\\/]/).pop();
+    const hiddenExt = /\.(lnk|url)$/i.test(base) ? base.slice(base.lastIndexOf('.')) : '';
+    const input = document.createElement('input');
+    input.className = 'file-rename-input';
+    input.value = file.name;
+    input.spellcheck = false;
+    label.textContent = '';
+    label.appendChild(input);
+    el.classList.add('renaming');
+    input.focus();
+    const dot = file.isDir || hiddenExt ? -1 : file.name.lastIndexOf('.');
+    input.setSelectionRange(0, dot > 0 ? dot : file.name.length);
+    input.addEventListener('mousedown', (e) => e.stopPropagation());     // 칸 안을 눌러도 아이콘이 끌리지 않게
+    input.addEventListener('dblclick', (e) => e.stopPropagation());      // 파일이 열리지 않게
+
+    let done = false;
+    const finish = async (commit) => {
+      if (done) return;
+      done = true;
+      if (this.finishRename === finish) this.finishRename = null;
+      el.classList.remove('renaming');
+      const value = input.value.trim();
+      input.remove();
+      label.textContent = file.name;
+      if (!commit || !value || value === file.name) return;
+      const oldPath = file.path;
+      const oldName = file.name;
+      const newBase = value + hiddenExt;
+      file.path = oldPath.slice(0, oldPath.length - base.length) + newBase;
+      file.name = value;
+      label.textContent = value;
+      el.title = file.path;
+      const result = await window.canvasAPI.renamePath(oldPath, newBase);
+      if (result && result.ok) {
+        file.path = result.path;
+        this.scheduleSave();
+        return;
+      }
+      file.path = oldPath;
+      file.name = oldName;
+      label.textContent = oldName;
+      el.title = oldPath;
+      this.showToast(result && result.reason === 'exists' ? t('toast.renameExists') : t('toast.renameFail', { msg: (result && result.reason) || '' }));
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        finish(false);
+      }
+    });
+    input.addEventListener('blur', () => finish(true));
+    this.finishRename = finish;
+  },
+
+  // 빈 바탕 윈도우 메뉴로 무언가 한 뒤 (새 폴더 · 새로 만들기 › · 붙여넣기 …) — 잠깐 동안 새로 생기는 파일은 누른 자리에 놓고,
+  //   하나만 생겼고 '새 …' 이름이면 이름 바꾸기 칸을 띄움 (탐색기처럼)
+  expectNewDesktopItems(at) {
+    this.pendingNewAt = { at, until: Date.now() + 6000, count: 0 };
+  },
+
+  // 빈 바탕 메뉴 '새로 고침' — 바탕화면 폴더를 다시 읽음
+  async refreshDesktop() {
+    if (!window.canvasAPI || !window.canvasAPI.listDesktop) return;
+    try {
+      this.syncDesktop(await window.canvasAPI.listDesktop());
+    } catch (err) {
+      console.error('바탕화면 폴더를 읽지 못했어요:', err);
+    }
+  },
+
   // ---- 바탕화면 폴더 ----
   async loadDesktop() {
     if (!window.canvasAPI || !window.canvasAPI.listDesktop) return;
@@ -152,8 +235,9 @@ export const fileMethods = {
     const current = new Map(list.map(item => [key(item.path), item]));
     let changed = false;
 
+    const restoring = this.restoringPaths || new Set();              // 휴지통에서 되살리는 중 (history.js)
     this.files = this.files.filter(f => {
-      if (f.source !== 'desktop' || current.has(key(f.path))) return true;
+      if (f.source !== 'desktop' || current.has(key(f.path)) || restoring.has(key(f.path))) return true;
       const el = document.getElementById(f.id);
       if (el) el.remove();
       this.selection.delete(f.id);
@@ -161,6 +245,8 @@ export const fileMethods = {
       return false;
     });
 
+    const pending = this.pendingNewAt && Date.now() < this.pendingNewAt.until ? this.pendingNewAt : null;
+    const created = [];
     list.forEach(item => {
       const existing = this.files.find(f => key(f.path) === key(item.path));
       if (existing) {
@@ -173,7 +259,14 @@ export const fileMethods = {
         }
         return;
       }
-      const slot = this.nextDesktopSlot();
+      let slot;
+      if (pending) {                                   // 빈 바탕 메뉴로 만든 것 — 누른 자리부터 4개씩 줄지어
+        const i = pending.count++;
+        slot = { x: pending.at.x + (i % 4) * ICON_GRID.width, y: pending.at.y + Math.floor(i / 4) * ICON_GRID.height };
+        if (this.gridSnapOn()) slot = this.snapFilePos(slot.x, slot.y);
+      } else {
+        slot = this.nextDesktopSlot();
+      }
       const file = {
         id: this.newId('file'),
         x: slot.x, y: slot.y, width: 80, height: 100,
@@ -185,8 +278,13 @@ export const fileMethods = {
       };
       this.files.push(file);
       this.createFileElement(file);
+      if (pending) created.push(file);
       changed = true;
     });
+    if (created.length === 1 && /^(새 |New )/.test(created[0].name)) {
+      this.pendingNewAt = null;
+      requestAnimationFrame(() => this.startFileRename(created[0]));
+    }
 
     if (changed) {
       this.cleanGroupMembership();                     // 사라진 파일은 파일 묶음에서도 뺌
@@ -315,14 +413,29 @@ export const fileMethods = {
   },
 
   // 휴지통으로 보내기 (바탕화면 폴더의 진짜 파일 — 되돌리기로는 못 살림)
-  async trashDesktopFile(file) {
+  // 바탕화면 파일 여럿을 휴지통으로 (Delete 키) — 못 보낸 것은 알림으로
+  //   undoEntry: 이 일을 담은 되돌리기 단계 (지우기 전 스냅숏) — 보낸 경로를 적어 두면 Ctrl+Z 로 휴지통에서 되살림 (history.js)
+  async trashDesktopFiles(files, { undoEntry = null } = {}) {
     if (!window.canvasAPI || !window.canvasAPI.trashPath) return;
-    const result = await window.canvasAPI.trashPath(file.path);
-    if (result === true) {
-      this.deleteFile(file.id, { undoable: false });
-    } else {
-      alert(t('alert.trashFail', { reason: result }));
+    const failed = [];
+    const trashed = [];
+    for (const file of files) {
+      const result = await window.canvasAPI.trashPath(file.path);
+      if (result === true) {
+        trashed.push(file.path);
+        this.deleteFile(file.id, { undoable: false });
+      } else {
+        failed.push(file.name);
+      }
     }
+    this.markTrashStep(undoEntry, trashed);
+    if (failed.length) this.showToast(t('toast.trashFail', { name: failed.join(', ') }));
+  },
+
+  // 앱 메뉴 '휴지통으로 보내기' (윈도우 메뉴를 못 띄울 때) — Ctrl+Z 로 되살림
+  async trashDesktopFile(file) {
+    this.record();
+    await this.trashDesktopFiles([file], { undoEntry: this.undoStack[this.undoStack.length - 1] });
   },
 
   // 탐색기에서 끌어다 놓은 파일 → 놓은 자리에 아이콘 (이미 있으면 그 자리로 옮김)

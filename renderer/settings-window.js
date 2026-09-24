@@ -2,12 +2,15 @@
 //   왼쪽 사이드바 + 오른쪽 한 페이지, 누르면 그 자리로 스크롤
 //   닫기: 오른쪽 위 X · Esc · 창 밖 클릭
 import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS, HOLIDAY_REGIONS } from './constants.js';
+import { PHOTO_FRAMES } from './photos.js';
 import { t } from './i18n.js';
 
 const SIDEBAR = [
   { icon: 'set-general.svg', label: 'side.general', target: 'section-general' },
   { icon: 'add-image.svg', label: 'side.canvas', target: 'section-canvas' },
   { icon: 'add-file.svg', label: 'side.notes', target: 'section-notes' },
+  { icon: 'add-board.svg', label: 'side.boards', target: 'section-boards' },
+  { icon: 'add-video.svg', label: 'side.media', target: 'section-media' },
   { icon: 'set-theme.svg', label: 'side.theme', target: 'section-theme' },
   { icon: 'set-language.svg', label: 'side.language', target: 'section-language' },
   { icon: 'set-shortcut.svg', label: 'side.shortcuts', target: 'row-shortcuts' },
@@ -24,9 +27,13 @@ const SHORTCUTS = [
   ['sc.marquee', 'key.ctrlDrag'],
   ['sc.selectAll', 'Ctrl + A'],
   ['sc.groupFiles', 'Ctrl + G'],
+  ['sc.canvasMenu', 'key.dblclickEmpty'],
+  ['sc.windowsMenu', 'key.rightClick'],
   ['sc.connect', 'key.altDrag'],
+  ['sc.noSnap', 'key.altWhileDrag'],
   ['sc.connectSelected', 'Ctrl + L'],
   ['sc.deselect', 'Esc'],
+  ['sc.rename', 'F2'],
   ['sc.popOut', 'popOutKey'],               // main.js 가 잡은 단축키 (못 잡았으면 줄을 뺌)
   ['sc.finishEdit', 'Shift + Enter'],
   ['sc.editNote', 'key.dblclick'],
@@ -74,6 +81,7 @@ export const settingsWindowMethods = {
     if (overlay) overlay.remove();
     this.closeMenus();
     this.settingsOpen = false;
+    window.canvasAPI?.holdFront?.('settings', false);     // 트레이에서 열려 앞으로 꺼냈으면 다시 바탕화면 층으로 (main.js)
   },
 
   // 설정이 바뀌거나 언어가 바뀌면 창 안을 다시 그림
@@ -193,14 +201,16 @@ export const settingsWindowMethods = {
     const canvas = section('section-canvas', 'add-image.svg', 'sec.canvas');
     row(canvas, 'row-grid', 'row.grid', 'row.grid.desc',
       this.buildToggle(s.showGrid, (on) => this.updateSetting('showGrid', on), 'grid'));
+    row(canvas, 'row-align', 'row.align', 'row.align.desc',
+      this.buildToggle(s.alignGuides, (on) => this.updateSetting('alignGuides', on), 'align'));
+    row(canvas, 'row-linkstyle', 'row.linkStyle', 'row.linkStyle.desc',
+      this.buildDropdown([
+        { label: t('linkStyle.curve'), value: 'curve' },
+        { label: t('linkStyle.straight'), value: 'straight' },
+      ], s.linkStyle, (v) => this.updateSetting('linkStyle', v), 'linkstyle'));
     row(canvas, 'row-gridgap', 'row.gridGap', 'row.gridGap.desc',
       this.buildDropdown(GRID_GAPS.map(g => ({ label: `${g} px`, value: g })), s.gridGap,
         (v) => this.updateSetting('gridGap', v), 'gridgap'));
-    row(canvas, 'row-holidays', 'row.holidays', 'row.holidays.desc',
-      this.buildToggle(s.holidays, (on) => this.updateSetting('holidays', on), 'holidays'));
-    row(canvas, 'row-holidaycountry', 'row.holidayCountry', 'row.holidayCountry.desc',
-      this.buildDropdown(HOLIDAY_REGIONS.map(r => ({ label: t(`region.${r}`), value: r })), s.holidayCountry,
-        (v) => this.updateSetting('holidayCountry', v), 'holidaycountry'));
 
     // 쪽지
     const notes = section('section-notes', 'add-file.svg', 'sec.notes');
@@ -214,6 +224,37 @@ export const settingsWindowMethods = {
         { label: t('overflow.wrap'), value: 'wrap' },
         { label: t('overflow.expand'), value: 'expand' },
       ], s.overflow, (v) => this.updateSetting('overflow', v), 'overflow'));
+
+    // 판 — 캘린더 · 연대표 · 파일 묶음
+    const boards = section('section-boards', 'add-board.svg', 'sec.boards');
+    row(boards, 'row-calview', 'row.calendarView', 'row.calendarView.desc',
+      this.buildDropdown([
+        { label: t('calView.month'), value: 'month' },
+        { label: t('calView.week'), value: 'week' },
+      ], s.calendarView, (v) => this.updateSetting('calendarView', v), 'calview'));
+    row(boards, 'row-weekstart', 'row.weekStart', 'row.weekStart.desc',
+      this.buildDropdown([
+        { label: t('weekStart.sun'), value: 0 },
+        { label: t('weekStart.mon'), value: 1 },
+      ], s.weekStart, (v) => this.updateSetting('weekStart', v), 'weekstart'));
+    row(boards, 'row-holidays', 'row.holidays', 'row.holidays.desc',
+      this.buildToggle(s.holidays, (on) => this.updateSetting('holidays', on), 'holidays'));
+    row(boards, 'row-holidaycountry', 'row.holidayCountry', 'row.holidayCountry.desc',
+      this.buildDropdown(HOLIDAY_REGIONS.map(r => ({ label: t(`region.${r}`), value: r })), s.holidayCountry,
+        (v) => this.updateSetting('holidayCountry', v), 'holidaycountry'));
+    row(boards, 'row-groupcolor', 'row.groupColor', 'row.groupColor.desc',
+      this.buildDropdown(Object.keys(NOTE_COLORS).map(c => ({ label: t(`color.${c}`), value: c })), s.groupColor,
+        (v) => this.updateSetting('groupColor', v), 'groupcolor'));
+
+    // 사진 · 영상
+    const media = section('section-media', 'add-video.svg', 'sec.media');
+    row(media, 'row-photoframe', 'row.photoFrame', 'row.photoFrame.desc',
+      this.buildDropdown(['paper', 'tape', 'pin', 'none'].filter(f => PHOTO_FRAMES.includes(f)).map(f => ({ label: t(`frame.${f}`), value: f })),
+        s.photoFrame, (v) => this.updateSetting('photoFrame', v), 'photoframe'));
+    row(media, 'row-videoautoplay', 'row.videoAutoplay', 'row.videoAutoplay.desc',
+      this.buildToggle(s.videoAutoplay, (on) => this.updateSetting('videoAutoplay', on), 'videoautoplay'));
+    row(media, 'row-videosound', 'row.videoSound', 'row.videoSound.desc',
+      this.buildToggle(s.videoSound, (on) => this.updateSetting('videoSound', on), 'videosound'));
 
     // 테마
     const theme = section('section-theme', 'set-theme.svg', 'sec.theme');

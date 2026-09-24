@@ -1,6 +1,10 @@
 // 되돌리기 · 다시 실행 (Ctrl+Z · Ctrl+Shift+Z)
 // 방식: 무언가 바뀌기 직전의 쪽지·사진·파일 상태를 통째로 저장해 두었다가 그대로 되돌림
+//   바탕화면 파일을 휴지통으로 보낸 단계는 그 경로를 적어 둠 (restore) → 되돌리면 휴지통에서 원래 자리로 되살리고
+//   (자리 · 묶음 · 연결선도 그대로), 다시 실행하면 (retrash) 다시 휴지통으로
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
+
+import { t } from './i18n.js';
 
 const LIMIT = 100;                      // 기억해 두는 단계 수
 
@@ -51,8 +55,12 @@ export const historyMethods = {
     if (this.editingId) this.stopEditing();
     if (!this.undoStack.length) return false;
     const current = this.snapshot();
-    this.applySnapshot(this.undoStack.pop());
-    this.redoStack.push(current);
+    const entry = this.undoStack.pop();
+    const restore = JSON.parse(entry).restore || [];
+    if (restore.length) this.holdRestoring(restore);         // 되살리는 동안 바탕화면 감시가 아이콘을 지우지 않게
+    this.applySnapshot(entry);
+    this.redoStack.push(restore.length ? this.markSnapshot(current, 'retrash', restore) : current);
+    if (restore.length) this.restoreTrashed(restore);
     return true;
   },
 
@@ -60,9 +68,57 @@ export const historyMethods = {
     if (this.editingId) this.stopEditing();
     if (!this.redoStack.length) return false;
     const current = this.snapshot();
-    this.applySnapshot(this.redoStack.pop());
-    this.undoStack.push(current);
+    const entry = this.redoStack.pop();
+    const retrash = JSON.parse(entry).retrash || [];
+    this.applySnapshot(entry);
+    this.undoStack.push(retrash.length ? this.markSnapshot(current, 'restore', retrash) : current);
+    if (retrash.length) {
+      const key = (p) => String(p).toLowerCase();
+      const again = new Set(retrash.map(key));
+      this.trashDesktopFiles(this.files.filter(f => f.source === 'desktop' && again.has(key(f.path))));
+    }
     return true;
+  },
+
+  // 스냅숏에 표시 더하기 — restore: 되돌릴 때 휴지통에서 되살릴 경로, retrash: 다시 실행할 때 다시 휴지통으로 보낼 경로
+  markSnapshot(json, key, paths) {
+    const data = JSON.parse(json);
+    data[key] = [...new Set([...(data[key] || []), ...paths])];
+    return JSON.stringify(data);
+  },
+
+  // 휴지통으로 보낸 단계에 표시 (trashDesktopFiles · 윈도우 메뉴 '삭제') — 그 단계가 아직 되돌리기 목록에 있을 때만
+  markTrashStep(entry, paths) {
+    if (!entry || !paths.length) return;
+    const i = this.undoStack.lastIndexOf(entry);
+    if (i >= 0) this.undoStack[i] = this.markSnapshot(entry, 'restore', paths);
+  },
+
+  // 미리 떠 둔 스냅숏을 한 단계로 (윈도우 메뉴로 지운 뒤 — 지우기 전 모습)
+  pushUndoSnapshot(json) {
+    if (!this.ready) return;
+    this.undoStack.push(json);
+    if (this.undoStack.length > LIMIT) this.undoStack.shift();
+    this.redoStack = [];
+    this.typingRecorded = false;
+  },
+
+  holdRestoring(paths) {
+    this.restoringPaths = this.restoringPaths || new Set();
+    paths.forEach(p => this.restoringPaths.add(String(p).toLowerCase()));
+  },
+
+  // 휴지통에서 되살리기 (main.js 'restore-trashed') — 못 되살린 것(휴지통을 비움 · 아주 지움)은 알림, 그리고 바탕화면을 다시 읽음
+  async restoreTrashed(paths) {
+    this.holdRestoring(paths);
+    let failed = paths;
+    try {
+      const api = window.canvasAPI;
+      if (api && api.restoreTrashed) failed = (await api.restoreTrashed(paths)).failed || [];
+    } catch (_) {}
+    paths.forEach(p => this.restoringPaths.delete(String(p).toLowerCase()));
+    if (failed.length) this.showToast(t('toast.restoreFail', { name: failed.map(p => String(p).split(/[\\/]/).pop()).join(', ') }));
+    await this.refreshDesktop();
   },
 
   applySnapshot(json) {
@@ -78,8 +134,9 @@ export const historyMethods = {
     this.boards = (snap.boards || []).map(b => this.normalizeBoard(b)).filter(Boolean);
 
     // 파일 아이콘: 바탕화면에서 이미 사라진 파일은 되살리지 않고, 새로 생긴 파일은 그대로 둠
+    const restoring = this.restoringPaths || new Set();              // 휴지통에서 되살리는 중인 파일은 남겨 둠
     const restored = (snap.files || [])
-      .filter(f => f.source !== 'desktop' || desktopNow.has(String(f.path).toLowerCase()))
+      .filter(f => f.source !== 'desktop' || desktopNow.has(String(f.path).toLowerCase()) || restoring.has(String(f.path).toLowerCase()))
       .map(f => ({ ...f, icon: f.icon || iconOf.get(String(f.path).toLowerCase()) || null }));
     const known = new Set(restored.map(f => String(f.path).toLowerCase()));
     desktopNow.forEach((file, key) => { if (!known.has(key)) restored.push(file); });

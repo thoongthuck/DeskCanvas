@@ -31,6 +31,8 @@ export const boardNoteMethods = {
   noteRect(note) {
     const d = this.drag;
     if (d && d.item === note && d.carry) return { x: note.x, y: note.y, width: d.carry.width, height: d.carry.height };
+    const anim = this.fanAnims && this.fanAnims.get(note.id);   // 펼치거나 접히는 중 (calendar.js animateFan)
+    if (anim) return anim;
     const slot = this.noteBoardSlot(note);
     if (slot && !slot.offView) return { x: slot.x, y: slot.y, width: slot.width, height: slot.height };
     const size = this.noteSize(note);

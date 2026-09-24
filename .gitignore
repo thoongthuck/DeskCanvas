@@ -3,3 +3,6 @@ node_modules/
 
 # 문제 찾기용 기록 (예전에 코드 폴더에 쌓이던 것 — 지금은 앱 데이터 폴더에 씀)
 debug-log.txt
+
+# 바탕화면 고정 모듈을 만들 때 생기는 중간 파일 (만든 desktop_pin.node 는 같이 둠)
+native/desktop-pin/build/

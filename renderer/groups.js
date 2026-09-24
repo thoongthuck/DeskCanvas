@@ -31,7 +31,7 @@ export const groupMethods = {
     return {
       width: PAD.left + PAD.right + START.cols * CELL.width,
       height: HEAD + START.rows * CELL.height + PAD.bottom,
-      color: 'yellow',
+      color: (this.settings && this.settings.groupColor) || 'yellow',   // 설정 › 판 › 새 파일 묶음 색
       collapsed: false,                            // 접어서 머리 한 줄만
       fileIds: [],
     };

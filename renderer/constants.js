@@ -68,6 +68,14 @@ export const DEFAULT_SETTINGS = {
   showGrid: false,
   gridGap: 36,
   gridSnap: false,           // 격자 모드 — 파일 아이콘이 칸에 맞춰 움직임
+  alignGuides: true,         // 자 — 끌 때 다른 것의 가장자리 · 가운데에 맞춰 붙음 (align.js)
+  calendarView: 'month',     // 새 캘린더 판 보기 — 'month' | 'week' (calendar.js)
+  weekStart: 0,              // 새 캘린더 판 주 시작 요일 — 0 일요일 | 1 월요일
+  groupColor: 'yellow',      // 새 파일 묶음 색 (groups.js)
+  photoFrame: 'paper',       // 새 사진 · 영상 틀 — 'paper' | 'tape' | 'pin' | 'none' (photos.js)
+  videoSound: false,         // 새 영상 소리 켜고 시작
+  videoAutoplay: true,       // 새 영상 바로 재생 (끄면 멈춘 채로)
+  linkStyle: 'curve',        // 연결선 모양 — 'curve' | 'straight' (선마다 따로 정할 수도 있음, links.js)
   noteColor: 'random',       // 'random' | 색 이름 | 'custom'
   noteCustomColor: '#BFD7F5',
   noteSize: 'small',         // NEW_NOTE_SIZES 의 키
@@ -88,7 +96,7 @@ export const PRELOAD_ICONS = [
   'edit.svg', 'copy.svg', 'pin.svg', 'palette.svg', 'trash.svg',
   'menu-axis.svg', 'menu-scale.svg', 'menu-link.svg', 'menu-today.svg', 'menu-weekstart.svg', 'menu-view.svg',
   'add-group.svg', 'menu-ungroup.svg', 'note-group.svg', 'note-more.svg', 'note-selected.svg', 'chevron-down.svg',
-  'menu-connect.svg', 'menu-disconnect.svg',
+  'menu-connect.svg', 'menu-disconnect.svg', 'menu-align.svg', 'menu-straight.svg',
   'add-video.svg', 'video-play.svg', 'video-pause.svg', 'video-sound.svg', 'video-mute.svg',
   'arrow-left.svg', 'arrow-right.svg', 'board-more.svg', 'plus.svg', 'rail-hook.svg',
   'photo-pin-red.svg', 'photo-pin-yellow.svg', 'photo-pin-blue.svg', 'photo-pin-green.svg',

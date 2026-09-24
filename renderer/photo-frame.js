@@ -4,7 +4,7 @@
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { ICON_DIR, NOTE_COLORS } from './constants.js';
 import { t } from './i18n.js';
-import { PHOTO_FRAMES, TAPE_COLORS, TAPE_POSITIONS, PIN_COLORS, PIN_POSITIONS } from './photos.js';
+import { PHOTO_FRAMES, TAPE_COLORS, TAPE_POSITIONS, PIN_COLORS, PIN_POSITIONS, TAPE_LINES } from './photos.js';
 
 const TILTS = [['left', -2], ['none', 0], ['right', 2]];
 
@@ -100,9 +100,20 @@ export const photoFrameMethods = {
     panel.appendChild(list);
 
     if (photo.frame === 'tape') {
-      section('frame.tapeColor').appendChild(dots(
-        TAPE_COLORS.map(k => [k, NOTE_COLORS[k].swatch, t(`color_${k}`)]),
-        photo.tapeColor, (k) => apply({ tapeColor: k })));
+      // 테이프 색 — 테이프 조각 모양 (시안 ④)
+      const tapes = document.createElement('div');
+      tapes.className = 'frame-tapes';
+      TAPE_COLORS.forEach(key => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'frame-tape' + (photo.tapeColor === key ? ' current' : '');
+        btn.title = t(`color_${key}`);
+        btn.style.setProperty('--tape-fill', NOTE_COLORS[key].bg);
+        btn.style.setProperty('--tape-edge', TAPE_LINES[key]);
+        btn.addEventListener('click', () => apply({ tapeColor: key }));
+        tapes.appendChild(btn);
+      });
+      section('frame.tapeColor').appendChild(tapes);
       section('frame.tapePos').appendChild(segments(
         TAPE_POSITIONS.map(k => [k, t(`pos.${k}`)]),
         photo.tapePos, (k) => apply({ tapePos: k })));

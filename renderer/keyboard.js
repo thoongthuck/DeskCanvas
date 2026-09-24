@@ -1,4 +1,4 @@
-// 단축키와 붙여넣기 — Ctrl+Z · Ctrl+Shift+Z · Ctrl+S · Ctrl+F · Ctrl+M · Ctrl+A · Ctrl+G · Ctrl+L · Delete · Shift+Enter(글자칸에서) · Ctrl+V · Esc
+// 단축키와 붙여넣기 — Ctrl+Z · Ctrl+Shift+Z · Ctrl+S · Ctrl+F · Ctrl+M · Ctrl+A · Ctrl+G · Ctrl+L · F2 · Delete · Shift+Enter(글자칸에서) · Ctrl+V · Esc
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
 
@@ -81,16 +81,33 @@ export const keyboardMethods = {
       this.goHome();
       return;
     }
+    if (key === 'f2' && !typing) {                         // 고른 것 이름 바꾸기 (윈도우 바탕화면처럼)
+      if (this.renameSelected()) e.preventDefault();
+      return;
+    }
     if (key === 'delete' && !typing) {
       if (this.deleteSelectedItem()) e.preventDefault();
     }
   },
 
-  // Delete: 고른 연결선 지우기, 아니면 고른 쪽지·사진 지우기 · 파일 묶음은 풀기 (파일은 그대로).
-  //   고정된 것과 파일 아이콘은 그대로 (selection.js)
+  // F2: 마지막으로 고른 것 이름 바꾸기 — 파일은 이름 칸, 파일 묶음은 이름, 쪽지는 제목 고치기, 사진 · 영상은 캡션
+  renameSelected() {
+    const entry = this.selectedId && this.itemById(this.selectedId);
+    if (!entry) return false;
+    const { kind, item } = entry;
+    if (kind === 'file') this.startFileRename(item);
+    else if (kind === 'board') this.renameBoard(item);
+    else if (kind === 'note') this.startEditing(item, 'note-title');
+    else if (kind === 'photo') this.editPhotoCaption(item);
+    else return false;
+    return true;
+  },
+
+  // Delete: 고른 연결선 지우기, 아니면 고른 쪽지·사진 지우기 · 파일 묶음은 풀기 · 바탕화면 파일은 휴지통으로
+  //   (끌어온 파일은 아이콘만 빼기, 고정된 것은 그대로 — selection.js)
   deleteSelectedItem() {
     if (this.selectedLinkId) return this.deleteLink(this.selectedLinkId);
-    return this.deleteSelection({ includeGroups: true });
+    return this.deleteSelection({ includeGroups: true, includeFiles: true });
   },
 
   // 붙여넣을 자리 = 마우스가 있는 곳

@@ -12,6 +12,9 @@ const MAX_SIDE = 360;          // 처음 놓일 때 사진의 가장 긴 변 (zo
 const MIN_SIDE = 60;
 const TAPE_LENGTH = 86;        // 테이프 길이 (사진이 작으면 틀 폭의 30%까지 줄임)
 const VIDEO_FALLBACK = { width: 320, height: 180 };   // 영상 크기를 못 읽었을 때 (16:9)
+// 테이프 — 칠은 쪽지 바탕색 .86, 테두리는 같은 색을 진하게 .45 (시안_사진틀 ④에서 잰 값)
+export const TAPE_LINES = { yellow: '#CDC074', pink: '#CD9FAB', blue: '#95B5D6', green: '#99C5A9', purple: '#A29FD6', gray: '#B4BCC2' };
+const TAPE_SHARE = 0.42;       // 사진이 작으면 테이프를 틀 폭의 이만큼까지 줄임 (시안 썸네일)
 
 export const PHOTO_FRAMES = ['none', 'paper', 'tape', 'pin'];
 export const TAPE_COLORS = ['yellow', 'pink', 'blue', 'green', 'purple', 'gray'];
@@ -151,10 +154,14 @@ export const photoMethods = {
     }
   },
 
+  // 새 사진 · 영상 — 틀 · 영상 소리 · 바로 재생은 설정 › 사진 · 영상
   async addPhotoAt(at, src, extra = {}) {
     const size = extra.media === 'video' ? await this.videoSize(src) : await this.photoSize(src);
     this.record();
-    const photo = this.newPhoto({ x: at.x, y: at.y, src, ...size, ...extra });
+    const s = this.settings || {};
+    const defaults = { frame: PHOTO_FRAMES.includes(s.photoFrame) ? s.photoFrame : 'paper' };
+    if (extra.media === 'video') Object.assign(defaults, { muted: !s.videoSound, paused: s.videoAutoplay === false });
+    const photo = this.newPhoto({ x: at.x, y: at.y, src, ...size, ...defaults, ...extra });
     this.photos.push(photo);
     this.createPhotoElement(photo);
     this.selectItem(photo.id);
@@ -234,8 +241,8 @@ export const photoMethods = {
     extras.innerHTML = '';
     if (photo.frame === 'tape') {
       const color = NOTE_COLORS[photo.tapeColor] || NOTE_COLORS.yellow;
-      el.style.setProperty('--tape-bg', hexToRgba(color.swatch, 0.86));
-      el.style.setProperty('--tape-line', hexToRgba(color.dot, 0.45));
+      el.style.setProperty('--tape-bg', hexToRgba(color.bg, 0.86));
+      el.style.setProperty('--tape-line', hexToRgba(TAPE_LINES[photo.tapeColor] || TAPE_LINES.yellow, 0.45));
       const spots = photo.tapePos === 'corners' ? ['left', 'right'] : [photo.tapePos === 'corner' ? 'left' : 'center'];
       spots.forEach(spot => {
         const tape = document.createElement('div');
@@ -280,7 +287,7 @@ export const photoMethods = {
     el.style.setProperty('--pad-right', `${pad.right * z}px`);
     el.style.setProperty('--pad-bottom', `${pad.bottom * z}px`);
     el.style.setProperty('--pad-left', `${pad.left * z}px`);
-    el.style.setProperty('--tape-len', `${Math.min(TAPE_LENGTH, size.width * 0.3) * z}px`);
+    el.style.setProperty('--tape-len', `${Math.min(TAPE_LENGTH, size.width * TAPE_SHARE) * z}px`);
     el.style.setProperty('--tilt', `${photo.tilt || 0}deg`);
     this.requestLinks();                            // 연결선도 따라감 (links.js)
   },

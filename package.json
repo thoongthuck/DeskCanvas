@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "build:native": "node native/desktop-pin/build.js"
   },
   "keywords": ["wallpaper", "canvas", "sticky-notes"],
   "author": "",

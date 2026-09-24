@@ -2,6 +2,7 @@
 //   쪽지를 캘린더 칸 위에 놓으면 그 날짜에 붙고, 칸에서 끌어내면 떨어짐 (calendar.js)
 //   파일을 파일 묶음 위에 놓으면 그 칸에 들어가고, 묶음 밖으로 끌어내면 빠짐 (groups.js)
 //   여러 개를 골랐으면 (selection.js) 잡은 것과 함께 나머지도 같은 만큼 옮겨짐 (followers)
+//   옮기거나 크기를 바꿀 때 다른 것의 가장자리 · 가운데에 맞춰 붙음 (자, align.js)
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { NOTE_MIN_WIDTH, NOTE_MIN_HEIGHT } from './constants.js';
 
@@ -49,6 +50,7 @@ export const dragMethods = {
       if (d.kind === 'file' && d.mode === 'move') this.liftFileFromGroup(d);  // 파일 묶음에서 꺼냄
     }
     d.moved = true;
+    if (d.mode === 'move') this.markDragging(d, true);                        // 끄는 것은 다른 쪽지 · 사진 · 파일 앞으로 (판에서 떼면 다시 그려져서 매번)
 
     if (d.mode === 'move') {
       d.item.x = (e.clientX - d.offX - this.panX) / this.zoom;
@@ -58,17 +60,32 @@ export const dragMethods = {
       d.followers.forEach(f => {                                              // 여러 개: 같은 만큼
         f.item.x = f.x0 + dx;
         f.item.y = f.y0 + dy;
-        this.updateItemPosition(f.kind, f.item);
       });
+      this.snapDrag(d, e);                                                     // 자: 다른 것에 맞춰 붙음 (align.js)
+      d.followers.forEach(f => this.updateItemPosition(f.kind, f.item));
     } else if (d.kind === 'photo') {
       const width = Math.max(PHOTO_MIN, d.startW + (e.clientX - d.startX) / this.zoom);
       d.item.width = width;
       d.item.height = Math.max(PHOTO_MIN, width * d.ratio);                    // 사진은 비율 유지
+      const snap = this.snapResize(d, e);
+      if (snap && snap.dw) {
+        d.item.width = Math.max(PHOTO_MIN, width + snap.dw);
+        d.item.height = Math.max(PHOTO_MIN, d.item.width * d.ratio);
+      }
     } else if (d.kind === 'board') {
-      this.resizeBoard(d.item, d.startW + (e.clientX - d.startX) / this.zoom, d.startH + (e.clientY - d.startY) / this.zoom);
+      const w = d.startW + (e.clientX - d.startX) / this.zoom;
+      const h = d.startH + (e.clientY - d.startY) / this.zoom;
+      this.resizeBoard(d.item, w, h);
+      const snap = this.snapResize(d, e);
+      if (snap && (snap.dw || snap.dh)) this.resizeBoard(d.item, w + snap.dw, h + snap.dh);
     } else {
       d.item.width = Math.max(NOTE_MIN_WIDTH, d.startW + (e.clientX - d.startX) / this.zoom);
       d.item.height = Math.max(NOTE_MIN_HEIGHT, d.startH + (e.clientY - d.startY) / this.zoom);
+      const snap = this.snapResize(d, e);
+      if (snap && (snap.dw || snap.dh)) {
+        d.item.width = Math.max(NOTE_MIN_WIDTH, d.item.width + snap.dw);
+        d.item.height = Math.max(NOTE_MIN_HEIGHT, d.item.height + snap.dh);
+      }
     }
     this.updateItemPosition(d.kind, d.item);
     // 판에 붙이기는 쪽지 하나만 끌 때 (여럿을 함께 끌면 그냥 옮기기만)
@@ -82,6 +99,7 @@ export const dragMethods = {
     if (!drag) return;
     const { kind, item, moved } = drag;
     this.drag = null;
+    if (moved && drag.mode === 'move') this.markDragging(drag, false);
     if (!moved && drag.narrowTo) this.selectItem(drag.narrowTo);   // 여럿 고른 채 하나를 그냥 눌렀으면 그것만 고름
     const followers = drag.followers || [];
     if (moved && kind === 'note' && drag.mode === 'move' && !followers.length) this.settleNoteOnBoard(item, drag);   // 칸에 붙이기 · 떼기
@@ -99,6 +117,15 @@ export const dragMethods = {
       this.justDragged = true;
       setTimeout(() => { this.justDragged = false; }, 0);
     }
+  },
+
+  // 끄는 동안 맨 앞에 (판은 빼고 — 판이 올라오면 붙은 쪽지를 가림)
+  markDragging(d, on) {
+    [{ kind: d.kind, item: d.item }, ...(d.followers || [])].forEach(en => {
+      if (en.kind === 'board') return;
+      const el = document.getElementById(en.item.id);
+      if (el && el.classList.contains('dragging') !== on) el.classList.toggle('dragging', on);
+    });
   },
 
   updateItemPosition(kind, item) {

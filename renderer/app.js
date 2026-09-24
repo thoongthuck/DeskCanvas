@@ -20,7 +20,8 @@
 //   keyboard.js         단축키 · 붙여넣기
 //   search.js           찾기 (Ctrl+F),  minimap.js  미니맵 (Ctrl+M)
 //   selection.js        여러 개 선택 (Ctrl · Shift + 누르기 · 빈 곳 끌기, Ctrl+A · Ctrl+G)
-//   links.js            연결선 (쪽지 · 사진 · 파일 · 파일 묶음 사이 곡선 — 마인드맵처럼)
+//   links.js            연결선 (쪽지 · 사진 · 파일 · 파일 묶음 사이 곡선 · 직선 — 마인드맵처럼)
+//   align.js            자 (끌 때 다른 것에 맞춰 붙기) · 고른 것 정렬
 import { DEFAULT_SETTINGS, ICON_DIR, PRELOAD_ICONS } from './constants.js';
 import { viewMethods } from './view.js';
 import { menuMethods } from './menus.js';
@@ -48,6 +49,7 @@ import { searchMethods } from './search.js';
 import { minimapMethods } from './minimap.js';
 import { selectionMethods } from './selection.js';
 import { linkMethods } from './links.js';
+import { alignMethods } from './align.js';
 
 // 휠을 확대·축소로 가로채지 않는 곳 (여기 안에서는 목록이 그대로 스크롤됨)
 const SCROLLABLE_UI = '.settings-overlay, .popup-menu, #style-panel, #search-box, #minimap';
@@ -192,6 +194,8 @@ export class InfiniteCanvas {
     this.canvas.addEventListener('mousemove', (e) => this.handleCanvasMouseMove(e));
     this.canvas.addEventListener('mouseup', () => this.handleCanvasMouseUp());
     this.canvas.addEventListener('contextmenu', (e) => this.handleContextMenu(e));
+    // 빈 곳을 두 번 누르면 캔버스 메뉴 (쪽지 추가 · 판 추가 …) — 우클릭은 윈도우 바탕화면 메뉴 (menus.js)
+    this.canvas.addEventListener('dblclick', (e) => this.openDesktopMenu(e.clientX, e.clientY));
 
     // 쪽지·사진·파일 끌기 (문서 전체에서 마우스 추적)
     document.addEventListener('mousemove', (e) => this.handleDragMove(e));
@@ -204,6 +208,9 @@ export class InfiniteCanvas {
     // 창이 닫힐 때 마지막 저장 (자동 저장이 꺼져 있으면 main 이 '저장할까요?'를 먼저 물어봄)
     window.addEventListener('beforeunload', () => this.flushSave());
     if (window.canvasAPI && window.canvasAPI.onSaveAndQuit) window.canvasAPI.onSaveAndQuit(() => this.saveAndQuit());
+    // 트레이(알림 영역 아이콘) 메뉴에서 온 부탁: 설정 창 열기 · 설정 바꾸기 (main.js)
+    if (window.canvasAPI && window.canvasAPI.onOpenSettings) window.canvasAPI.onOpenSettings(() => this.openSettings());
+    if (window.canvasAPI && window.canvasAPI.onApplySetting) window.canvasAPI.onApplySetting((key, value) => this.updateSetting(key, value));
 
     // 탐색기에서 파일 끌어다 놓기 (그냥 두면 창이 그 파일로 넘어가 버리므로 막고 아이콘으로 만듦)
     document.addEventListener('dragover', (e) => {
@@ -268,4 +275,5 @@ Object.assign(
   minimapMethods,
   selectionMethods,
   linkMethods,
+  alignMethods,
 );

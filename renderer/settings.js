@@ -28,6 +28,14 @@ export const settingsMethods = {
     s.wallpaperMode = s.wallpaperMode !== false;
     s.showGrid = !!s.showGrid;
     s.gridSnap = !!s.gridSnap;
+    s.alignGuides = s.alignGuides !== false;
+    if (s.calendarView !== 'week') s.calendarView = 'month';
+    s.weekStart = s.weekStart === 1 ? 1 : 0;
+    if (!NOTE_COLORS[s.groupColor]) s.groupColor = 'yellow';
+    if (!['paper', 'tape', 'pin', 'none'].includes(s.photoFrame)) s.photoFrame = 'paper';
+    s.videoSound = !!s.videoSound;
+    s.videoAutoplay = s.videoAutoplay !== false;
+    if (s.linkStyle !== 'straight') s.linkStyle = 'curve';
     s.holidays = !!s.holidays;
     if (!HOLIDAY_REGIONS.includes(s.holidayCountry)) s.holidayCountry = DEFAULT_SETTINGS.holidayCountry;
     delete s.showMinimap;                        // 예전 이름 — 미니맵은 이제 켤 때마다 꺼진 채로
@@ -71,6 +79,8 @@ export const settingsMethods = {
 
     if (key === 'autoSave' && s.autoSave && this.dirty) this.persist();
     if (!key || key === 'wallpaperMode') this.applyWallpaperMode();
+    if (!key || key === 'linkStyle') this.requestLinks();
+    if (!key || key === 'theme') window.canvasAPI?.setBackground?.(s.theme === 'dark' ? '#1F252C' : '#F5F5F5');   // 창 바탕색도 (main.js)
     if (!key || key === 'language') this.refreshTexts();
     if (!key || key === 'overflow') this.fitAllNotes();
     if (!key || key === 'theme') this.refreshFallbackIcons();    // 파일 기본 그림도 밝은 · 어두운 것으로

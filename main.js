@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage, screen, net, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage, screen, net, globalShortcut, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -84,15 +84,29 @@ function copyImageToStore(src) {
 let mainWindow;
 
 // 창이 덮을 영역 — 주 모니터의 작업 영역 (배율이 적용된 크기라 125% · 150% 화면에서도 딱 맞음)
+//   바탕화면 층에 있을 때 · 꺼냈을 때 모두 같은 크기 (크기가 바뀌면 다시 그리는 게 보여서)
+//   작업표시줄을 자동 숨김으로 두어 작업 영역이 화면 전체면 1 줄임 — 화면 전체를 덮는 창은 윈도우가 '전체 화면'으로 여겨 작업표시줄을 숨김
 function screenArea() {
-  const { x, y, width, height } = screen.getPrimaryDisplay().workArea;
-  return { x, y, width, height };
+  const display = screen.getPrimaryDisplay();
+  const { x, y, width, height } = display.workArea;
+  const full = width === display.bounds.width && height === display.bounds.height;
+  return { x, y, width, height: full ? height - 1 : height };
+}
+
+// 캔버스 바탕색 — 창 바탕도 같게 (창을 옮기는 동안 한 장면이 비어도 바탕색만 보이게)
+const CANVAS_BG = { light: '#F5F5F5', dark: '#1F252C' };
+function canvasBackground() {
+  try {
+    return JSON.parse(fs.readFileSync(getSettingsFile(), 'utf-8')).theme === 'dark' ? CANVAS_BG.dark : CANVAS_BG.light;
+  } catch (_) {
+    return CANVAS_BG.light;
+  }
 }
 
 // 해상도 · 배율 · 모니터 구성 · 작업표시줄 위치가 바뀌면 창도 다시 맞춤
 function fitWindowToScreen() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (wallpaper.embedded) {                         // 바탕화면 층: 새 크기로 다시 넣음 (모니터 수가 바뀌면 아이콘도)
+  if (wallpaper.embedded) {                         // 바탕화면 층: 새 크기로 다시 넣음
     embedWindow();
     return;
   }
@@ -102,12 +116,20 @@ function fitWindowToScreen() {
 }
 
 // ================ 바탕화면 층 (메모장.md Phase 5) ================
+// 설정 '바탕화면에 넣기'(기본 켬)면 캔버스를 바탕화면처럼 둠 — 두 가지 방법 중 먼저 되는 것
+//   1) 바탕화면 바로 위에 붙잡기 (native/desktop-pin — C++ 모듈, 먼저 씀)
+//      캔버스 창은 보통 창 그대로 두고 자리만 '바탕화면 바로 위 · 다른 프로그램 창들 뒤'에 붙잡음.
+//      누르면 그대로 맨 앞 창이 되어 키보드 · 한글 조합이 바로 되고, 창을 어디에 넣고 빼지 않으니 화면 전환이 없음.
+//      트레이 설정 창 · Ctrl+Alt+D 때만 잠깐 풀어 다른 창들 앞으로 (setPinnedFront)
+//   2) 바탕화면 층에 넣기 (native/desktop-bridge.ps1 — 모듈을 못 읽을 때. 아래 설명)
 // 설정 '바탕화면에 넣기'(기본 켬)면 캔버스 창을 윈도우 바탕화면 층에 넣음
 //   → 다른 프로그램 창은 늘 그 위, '바탕화면 보기'(Win+D)에도 그대로, Alt+Tab 에도 안 나옴
 //   자리는 바탕화면 창 안의 맨 위 — 윈도우 아이콘 층보다 위라 윈도우 아이콘은 가려짐 (파일 아이콘은 앱이 직접 그림).
 //   탐색기 창은 숨기거나 바꾸지 않으므로 앱이 갑자기 꺼져도 바탕화면은 그대로
-//   바탕화면 층의 창에는 키보드가 저절로 오지 않아서, 캔버스를 누를 때마다 키보드를 이 창으로 가져옴.
-//   그래도 못 가져오는 컴퓨터면 글을 쓰는 동안만 캔버스를 앞으로 꺼냄
+//   바탕화면 층의 창에는 키보드가 저절로 오지 않아서, 캔버스를 누를 때마다 키보드를 이 창으로 가져옴 (단축키용).
+//   한글 조합은 '맨 앞 창'에서만 글자 자리에 그려져서(아니면 윈도우 조합 상자가 따로 뜸) 글을 쓰는 동안은
+//   캔버스를 바탕화면 층에서 들어 올려 맨 앞 창으로 만들되 자리는 다른 창들 뒤 그대로 둠 (lift behind — 화면은 안 바뀜).
+//   트레이에서 연 설정 창 · Ctrl+Alt+D 는 다른 창들 앞으로 (lift front). 끝나면 다시 바탕화면 층으로 (holdFront)
 //   Ctrl+Alt+D: 캔버스를 다른 창들 앞으로 꺼냄 → 다른 창을 누르거나 한 번 더 누르면 다시 바탕화면 층으로
 //     (Ctrl+Alt+Space 는 Claude 앱 등이 이미 씀. 다른 프로그램이 잡고 있으면 다음 후보로)
 //   Win32 호출은 native/desktop-bridge.ps1 (윈도우에 들어 있는 PowerShell 의 C# 호출 — 새로 설치할 것 없음).
@@ -116,13 +138,16 @@ const POP_OUT_KEYS = ['Control+Alt+D', 'Control+Alt+W', 'Control+Alt+Q'];
 let popOutKey = '';     // 실제로 잡은 단축키 (설정 창 안내에 씀)
 const wallpaper = {
   wanted: false,        // 설정: 바탕화면에 넣기
+  pinned: false,        // 바탕화면 바로 위에 붙잡아 둠 (방법 1)
+  front: false,         // 붙잡은 창을 잠깐 풀어 다른 창들 앞에 꺼내 둔 중 (방법 1)
   embedded: false,      // 지금 바탕화면 층에 들어가 있음
-  poppedOut: false,     // 앞으로 꺼내 둔 중 (Ctrl+Alt+D, 또는 글 쓰는 동안)
-  autoPopped: false,    // 글 쓰는 동안만 꺼낸 것 — 다 쓰면 다시 넣음
+  poppedOut: false,     // 바탕화면 층에서 들어 올린 중 (Ctrl+Alt+D, 또는 글 쓰는 동안 · 설정 창)
+  lifted: null,         // 들어 올린 모양: 'front'(다른 창들 앞) · 'behind'(맨 앞 창이지만 다른 창들 뒤)
+  autoPopped: false,    // 까닭(holds)이 있어 꺼낸 것 — 까닭이 없어지면 다시 넣음
+  holds: new Set(),     // 앞으로 꺼내 둘 까닭: 'editing'(글 쓰는 중) · 'settings'(트레이에서 연 설정 창)
   moving: false,        // 넣고 빼는 중 (그 사이에 오는 창 활성 · 비활성은 무시)
-  dialogOpen: false,    // 파일 고르기 등 윈도우 창이 떠 있는 중 (그동안은 다시 넣지 않음)
-  keyboard: null,       // 캔버스를 눌렀을 때 키보드를 가져왔는지 — 'ok' | 'fail'
-  claim: null,          // 키보드 가져오기 (진행 중이면 기다림)
+  dialogOpen: false,    // 파일 고르기 · 윈도우 우클릭 메뉴가 떠 있는 중 (그동안은 다시 넣지 않음)
+  keyboard: null,       // 캔버스를 눌렀을 때 키보드를 가져왔는지 — 'ok' | 'fail' (기록용)
   bridge: null,         // PowerShell 다리 — 한 번 띄워 두고 한 줄씩 명령 · 답
   queue: [],
   buffer: '',
@@ -138,6 +163,84 @@ function wallpaperSetting() {
   }
 }
 
+// ---------------- 방법 1: 바탕화면 바로 위에 붙잡기 ----------------
+// 모듈: native/desktop-pin/desktop_pin.node (npm run build:native 로 다시 만듦 — 만든 것도 같이 둠)
+let deskPin;            // undefined: 아직 안 읽음 · null: 못 씀 (방법 2 로)
+function loadDeskPin() {
+  if (deskPin !== undefined) return deskPin;
+  deskPin = null;
+  if (process.platform !== 'win32') return null;
+  try {
+    const mod = require('./native/desktop-pin/desktop_pin.node');
+    if (typeof mod.pin === 'function') deskPin = mod;
+    else logLine('바탕화면 고정 모듈: 함수를 못 찾음 → 바탕화면 층에 넣기로');
+  } catch (err) {
+    logLine(`바탕화면 고정 모듈을 못 읽음 → 바탕화면 층에 넣기로: ${err && err.message}`);
+  }
+  return deskPin;
+}
+
+function pinWindow() {
+  const pin = loadDeskPin();
+  if (!pin || !mainWindow || mainWindow.isDestroyed()) return false;
+  mainWindow.setAlwaysOnTop(false);
+  const ok = pin.pin(mainWindow.getNativeWindowHandle());
+  logLine(`바탕화면 바로 위에 붙잡기: ${ok ? 'ok' : 'fail'}`);
+  if (!ok) return false;
+  wallpaper.pinned = true;
+  wallpaper.front = false;
+  wallpaper.autoPopped = false;
+  refreshTray();
+  return true;
+}
+
+function unpinWindow() {
+  if (!wallpaper.pinned) return;
+  if (deskPin) deskPin.unpin();
+  wallpaper.pinned = false;
+  wallpaper.front = false;
+  wallpaper.autoPopped = false;
+}
+
+// 붙잡은 창을 다른 창들 앞으로 꺼내거나 (front — 앞에 있는 동안 맨 위) 다시 바탕화면 바로 위로
+//   auto: 까닭(holds)이 있어 꺼냄 — 까닭이 없어지면 다시 내려감
+function setPinnedFront(front, auto = false) {
+  if (!wallpaper.pinned || !mainWindow || mainWindow.isDestroyed()) return;
+  if (front) {
+    deskPin.setBottom(false);
+    wallpaper.front = true;
+    wallpaper.autoPopped = auto;
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    wallpaper.front = false;
+    wallpaper.autoPopped = false;
+    deskPin.setBottom(true);                          // 먼저 붙잡고 → 맨 위를 풀면 앞으로 튀어 오르지 않고 바로 바탕화면 위로
+    mainWindow.setAlwaysOnTop(false);
+  }
+  logLine(`붙잡은 캔버스: ${front ? '앞으로 꺼냄' : '바탕화면 바로 위로'}`);
+  refreshTray();
+}
+
+// 가끔 확인 — 바탕화면과 캔버스 사이에 다른 창이 끼었으면 다시 내림 (모듈이 맨 앞 창이 바뀔 때마다 살피지만 혹시 몰라)
+let pinStats = '';      // 지난번 기록한 모듈 횟수 (바뀌면 기록)
+function keepPinned() {
+  const state = deskPin.state();
+  const stats = `바탕화면 보기로 띄움 ${state.raises}번 · 다시 내림 ${state.sinks}번 (알림 ${state.events}번)`;
+  if (state.raises !== undefined && stats !== pinStats) {
+    if (pinStats) logLine(`붙잡은 캔버스: ${stats}${state.raised ? ' — 지금 바탕화면 보기 중' : ''}`);
+    pinStats = stats;
+  }
+  if (!state.pinned) {
+    logLine('바탕화면 고정이 풀려 있음 → 다시 붙잡음');
+    pinWindow();
+  } else if (!wallpaper.front && !state.raised && !state.rightAboveDesktop) {
+    deskPin.setBottom(true);
+  }
+}
+
+// ---------------- 방법 2: 바탕화면 층에 넣기 ----------------
 function startBridge() {
   if (wallpaper.bridge || process.platform !== 'win32') return wallpaper.bridge;
   const script = path.join(__dirname, 'native', 'desktop-bridge.ps1');
@@ -157,6 +260,10 @@ function startBridge() {
     while ((i = wallpaper.buffer.indexOf('\n')) >= 0) {
       const line = wallpaper.buffer.slice(0, i).trim();
       wallpaper.buffer = wallpaper.buffer.slice(i + 1);
+      if (line.startsWith('evt ')) {                  // 명령과 상관없는 알림
+        bridgeEvent(line.slice(4));
+        continue;
+      }
       const next = wallpaper.queue.shift();
       if (next) next(line);
     }
@@ -169,6 +276,12 @@ function startBridge() {
     if (wallpaper.bridge === child) wallpaper.bridge = null;
   });
   return child;
+}
+
+// 다리가 먼저 알려 오는 것 — desktop-restarted: 탐색기가 다시 시작됨 (창이 사라졌으면 'closed' 가 다시 만들고, 남아 있으면 다시 넣음)
+function bridgeEvent(name) {
+  logLine(`바탕화면 다리 알림: ${name}`);
+  if (name === 'desktop-restarted') setTimeout(keepOnDesktop, 1500);
 }
 
 // 다리에 명령 한 줄 → 답 한 줄 (답이 늦으면 'fail timeout')
@@ -189,10 +302,10 @@ function windowHandle() {
   return buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
 }
 
-// 바탕화면 층에 넣기 — 주 모니터 전체 (작업표시줄 뒤까지)
+// 바탕화면 층에 넣기 — 주 모니터의 작업 영역 (들어 올렸을 때와 같은 크기)
 async function embedWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
-  const b = screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds);
+  const b = screen.dipToScreenRect(null, screenArea());
   const onTop = mainWindow.isAlwaysOnTop();
   wallpaper.moving = true;
   try {
@@ -205,10 +318,12 @@ async function embedWindow() {
     }
     wallpaper.embedded = true;
     wallpaper.poppedOut = false;
+    wallpaper.lifted = null;
     wallpaper.autoPopped = false;
     return true;
   } finally {
     wallpaper.moving = false;
+    refreshTray();
   }
 }
 
@@ -224,6 +339,7 @@ async function unembedWindow(bounds) {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBounds(bounds);
   } finally {
     wallpaper.moving = false;
+    refreshTray();
   }
 }
 
@@ -235,18 +351,69 @@ function showOnTop() {
   mainWindow.focus();
 }
 
-// 앞으로 꺼내기 — auto: 글 쓰는 동안만 (다 쓰면 다시 넣음)
+// 바탕화면 층에서 들어 올리기 — 크기 · 자리는 그대로, 키보드 · 한글 입력이 되는 맨 앞 창으로 (native/desktop-bridge.ps1 lift)
+//   mode 'front': 다른 창들 앞으로, 'behind': 다른 창들 뒤 그대로 (화면이 바뀌지 않음). 반환: 됐는지
+async function liftWindow(mode, auto) {
+  if (!mainWindow || mainWindow.isDestroyed() || wallpaper.moving) return false;
+  const b = screen.dipToScreenRect(null, screenArea());
+  wallpaper.moving = true;
+  try {
+    const reply = await bridgeCall(`lift ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height} ${mode}`);
+    logLine(`바탕화면 층에서 들어 올림 (${mode}): ${reply.slice(0, 120)}`);
+    if (!reply.startsWith('ok')) return false;
+    wallpaper.embedded = false;
+    wallpaper.poppedOut = true;
+    wallpaper.lifted = mode;
+    wallpaper.autoPopped = auto;
+    return true;
+  } finally {
+    wallpaper.moving = false;
+    refreshTray();
+  }
+}
+
+// 앞으로 꺼내기 (Ctrl+Alt+D · 트레이) — auto: 까닭(holds)이 있어 꺼냄 (까닭이 없어지면 다시 넣음)
 async function popOut(auto = false) {
   if (!wallpaper.embedded || wallpaper.moving) return;
-  await unembedWindow(screenArea());
-  wallpaper.poppedOut = true;
-  wallpaper.autoPopped = auto;
-  showOnTop();
+  await liftWindow('front', auto);
 }
+
+// 들어 올려 둘 까닭을 더하고 빼기 — 'editing'(preload.js: 글 칸에 초점 → 뒤에 둔 채) · 'settings'(설정 창 → 앞으로)
+function holdFront(reason, on) {
+  if (on) wallpaper.holds.add(reason);
+  else wallpaper.holds.delete(reason);
+  syncFront();
+}
+
+// 까닭에 맞게 들어 올리거나 다시 넣음 — 단축키로 꺼낸 것은 그대로. 옮기는 사이에 까닭이 바뀌었으면 한 번 더
+async function syncFront() {
+  if (wallpaper.moving || !wallpaper.wanted || !mainWindow || mainWindow.isDestroyed()) return;
+  if (wallpaper.pinned) {                               // 방법 1: 글 쓰기는 까닭이 아님 (붙잡은 채로 한글 조합이 됨)
+    if (wallpaper.front && !wallpaper.autoPopped) return;
+    const want = wallpaper.holds.has('settings');
+    if (want && !wallpaper.front) setPinnedFront(true, true);
+    else if (!want && wallpaper.front && !wallpaper.dialogOpen) setPinnedFront(false);
+    return;
+  }
+  if (wallpaper.poppedOut && !wallpaper.autoPopped) return;
+  const want = wallpaper.holds.has('settings') ? 'front' : wallpaper.holds.has('editing') ? 'behind' : null;
+  let moved = false;
+  if (want && want !== wallpaper.lifted && (wallpaper.embedded || wallpaper.poppedOut)) {
+    moved = await liftWindow(want, true);
+  } else if (!want && wallpaper.poppedOut && !wallpaper.dialogOpen) {
+    moved = await embedWindow();
+  }
+  if (moved) syncFront();
+}
+ipcMain.on('front-hold', (event, reason, on) => holdFront(String(reason), !!on));
 
 // Ctrl+Alt+D — 꺼내기 · 다시 넣기
 async function togglePopOut() {
   if (!mainWindow || mainWindow.isDestroyed() || !wallpaper.wanted || wallpaper.moving) return;
+  if (wallpaper.pinned) {
+    setPinnedFront(!wallpaper.front);
+    return;
+  }
   if (wallpaper.embedded) await popOut();
   else if (wallpaper.poppedOut) await embedWindow();
 }
@@ -255,13 +422,17 @@ async function togglePopOut() {
 function retryEmbed(tries = 5) {
   setTimeout(async () => {
     if (!mainWindow || mainWindow.isDestroyed() || !wallpaper.wanted) return;
-    if (wallpaper.embedded || wallpaper.poppedOut || wallpaper.moving) return;
+    if (wallpaper.pinned || wallpaper.embedded || wallpaper.poppedOut || wallpaper.moving) return;
     if (!(await embedWindow()) && tries > 1) retryEmbed(tries - 1);
   }, 3000);
 }
 
 // 바탕화면 층에 붙어 있는지 가끔 확인 — 탐색기가 다시 시작되면 떨어지고, 바탕화면을 새로 고치면 윈도우 아이콘 층이 위로 올라오기도 함
 async function keepOnDesktop() {
+  if (wallpaper.pinned && mainWindow && !mainWindow.isDestroyed()) {
+    keepPinned();
+    return;
+  }
   if (!wallpaper.embedded || wallpaper.moving || !mainWindow || mainWindow.isDestroyed()) return;
   const reply = await bridgeCall(`check ${windowHandle()}`, 3000);
   if (reply === 'ok raised') logLine('윈도우 아이콘 층이 위로 올라와 캔버스를 다시 맨 위로');
@@ -274,10 +445,10 @@ async function keepOnDesktop() {
   }
 }
 
-// 바탕화면 층의 캔버스를 누르면 키보드를 이 창으로 (preload.js 가 누를 때마다 알림)
+// 바탕화면 층의 캔버스를 누르면 키보드를 이 창으로 (preload.js 가 누를 때마다 알림) — Delete · Ctrl+Z 같은 단축키용
 function claimKeyboard() {
   if (!wallpaper.embedded || wallpaper.moving || !mainWindow || mainWindow.isDestroyed()) return;
-  wallpaper.claim = bridgeCall(`focus ${windowHandle()}`, 3000).then((reply) => {
+  bridgeCall(`focus ${windowHandle()}`, 3000).then((reply) => {
     const state = reply.startsWith('ok') ? 'ok' : 'fail';
     if (state !== wallpaper.keyboard) logLine(`바탕화면 층 키보드: ${reply}`);
     wallpaper.keyboard = state;
@@ -285,38 +456,151 @@ function claimKeyboard() {
 }
 ipcMain.on('canvas-pressed', claimKeyboard);
 
-// 글 쓰기 시작 · 끝 (preload.js) — 키보드를 못 가져오는 컴퓨터면 쓰는 동안만 앞으로 꺼냄
-ipcMain.on('editing', async (event, on) => {
-  if (on) {
-    if (!wallpaper.embedded || wallpaper.moving) return;
-    await wallpaper.claim;
-    if (wallpaper.keyboard === 'fail') await popOut(true);
-  } else if (wallpaper.autoPopped && wallpaper.poppedOut && !wallpaper.moving) {
-    await embedWindow();
+// ================ 윈도우 우클릭 메뉴 ================
+// 파일 · 바탕화면 빈 곳을 우클릭하면 윈도우 탐색기 메뉴를 그대로 띄움 (native/desktop-bridge.ps1) — 앱 줄은 위에 붙임
+//   paths: 파일들 (같은 폴더) — 비었으면 바탕화면 빈 곳 메뉴. items: [{ id, parent, label, flags }] (id 1~999)
+//   반환: { kind: 'app', id } · { kind: 'shell', verb } · { kind: 'rename' } · { kind: 'none' } · null (못 띄움 → 앱 메뉴로)
+ipcMain.handle('shell-menu', async (event, paths, items) => {
+  if (process.platform !== 'win32' || !startBridge()) return null;
+  const clean = (s) => String(s || '').replace(/[\t\r\n]/g, ' ').replace(/&/g, '&&');   // & 는 윈도우 메뉴에서 밑줄 글자
+  const lines = [
+    ...(Array.isArray(paths) ? paths : []).map(p => String(p).replace(/[\r\n]/g, '')).filter(Boolean),
+    '--',
+    ...(Array.isArray(items) ? items : []).map(it => [it.id | 0, it.parent | 0, clean(it.label), String(it.flags || '')].join('\t')),
+  ];
+  wallpaper.dialogOpen = true;                        // 메뉴가 떠 있는 동안 앞에 꺼낸 캔버스를 다시 넣지 않음
+  let reply;
+  try {
+    reply = await bridgeCall(`menu ${Buffer.from(lines.join('\n'), 'utf8').toString('base64')}`, 10 * 60 * 1000);
+  } finally {
+    wallpaper.dialogOpen = false;
+  }
+  logLine(`윈도우 우클릭 메뉴: ${reply}`);
+  if (wallpaper.embedded) claimKeyboard();            // 메뉴가 가져간 키보드를 캔버스로 (붙잡은 창은 다리가 메뉴 전 맨 앞 창으로 되돌려 줌)
+  const m = /^ok (\w+) ?(.*)$/.exec(reply);
+  if (!m) return reply.startsWith('fail invoke') ? { kind: 'shell', verb: '' } : null;
+  if (m[1] === 'app') return { kind: 'app', id: Number(m[2]) };
+  if (m[1] === 'shell') return { kind: 'shell', verb: m[2] === '-' ? '' : m[2] };
+  return { kind: m[1] };
+});
+
+// 파일 이름 바꾸기 (윈도우 우클릭 메뉴 '이름 바꾸기' — 탐색기 대신 앱이 이름 칸을 띄움)
+//   같은 폴더 안에서만. 반환: { ok: true, path } · { ok: false, reason: 'name' | 'exists' | 메시지 }
+ipcMain.handle('rename-path', async (event, filePath, newName) => {
+  const src = String(filePath || '');
+  const name = String(newName || '').trim();
+  if (!src || !name || /[\\/:*?"<>|]/.test(name) || name === '.' || name === '..') return { ok: false, reason: 'name' };
+  const dest = path.join(path.dirname(src), name);
+  if (dest === src) return { ok: true, path: src };
+  if (dest.toLowerCase() !== src.toLowerCase() && fs.existsSync(dest)) return { ok: false, reason: 'exists' };
+  try {
+    await fs.promises.rename(src, dest);
+    logLine(`이름 바꿈: ${path.basename(src)} → ${name}`);
+    return { ok: true, path: dest };
+  } catch (err) {
+    logLine(`이름 바꾸기 실패: ${err && err.message}`);
+    return { ok: false, reason: (err && err.message) || 'error' };
   }
 });
+
+// ================ 트레이 (알림 영역 아이콘) ================
+// 설정 · 종료는 여기서 (캔버스 메뉴에는 없음). 바탕화면에 넣기 켜고 끄기 · 앞으로 꺼내기도
+let tray = null;
+const TRAY_TEXT = {
+  ko: { tip: '배경화면 캔버스', front: '캔버스 앞으로 꺼내기', back: '바탕화면으로 되돌리기', wallpaper: '바탕화면에 넣기', settings: '설정…', quit: '종료' },
+  en: { tip: 'Wallpaper Canvas', front: 'Bring the canvas forward', back: 'Back to the desktop', wallpaper: 'Live on the desktop', settings: 'Settings…', quit: 'Quit' },
+};
+
+function trayText() {
+  try {
+    return TRAY_TEXT[JSON.parse(fs.readFileSync(getSettingsFile(), 'utf-8')).language === 'en' ? 'en' : 'ko'];
+  } catch (_) {
+    return TRAY_TEXT.ko;
+  }
+}
+
+function createTray() {
+  if (tray) return;
+  try {
+    tray = new Tray(path.join(__dirname, 'icons', process.platform === 'win32' ? 'tray.ico' : 'tray.png'));
+  } catch (err) {
+    logLine(`트레이 아이콘 못 만듦: ${err && err.message}`);
+    return;
+  }
+  tray.on('click', () => tray.popUpContextMenu());
+  refreshTray();
+}
+
+function refreshTray() {
+  if (!tray || tray.isDestroyed()) return;
+  const tx = trayText();
+  const key = popOutKey ? popOutKey.replace('Control', 'Ctrl') : undefined;
+  tray.setToolTip(tx.tip);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: wallpaper.poppedOut || wallpaper.front ? tx.back : tx.front, accelerator: key, registerAccelerator: false,
+      enabled: wallpaper.wanted && (wallpaper.pinned || wallpaper.embedded || wallpaper.poppedOut), click: () => togglePopOut(),
+    },
+    {
+      label: tx.wallpaper, type: 'checkbox', checked: wallpaper.wanted, enabled: process.platform === 'win32',
+      click: (item) => applySettingFromTray('wallpaperMode', item.checked),
+    },
+    { type: 'separator' },
+    { label: tx.settings, click: () => openSettingsFromTray() },
+    { type: 'separator' },
+    { label: tx.quit, click: () => quitFromTray() },
+  ]));
+}
+
+// 설정값은 화면(settings.js)이 저장하고 적용함 — 트레이는 부탁만
+function applySettingFromTray(key, value) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('apply-setting', key, value);
+}
+
+// 설정 창은 캔버스 안에 뜨므로 캔버스를 앞으로 꺼내고 엶 (설정 창을 닫으면 다시 바탕화면 층으로 — settings-window.js)
+function openSettingsFromTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (wallpaper.wanted) holdFront('settings', true);
+  else showOnTop();
+  mainWindow.webContents.send('open-settings');
+}
+
+// 종료 — 창 닫기를 거쳐야 '저장할까요?'를 물어봄
+function quitFromTray() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  else app.quit();
+}
 
 // 설정 창에서 켜고 끔 — 끄면 예전처럼 맨 위 창
 ipcMain.handle('set-wallpaper-mode', async (event, on) => {
   on = !!on && process.platform === 'win32';
-  if (on === wallpaper.wanted) return wallpaper.embedded;
+  if (on === wallpaper.wanted) return wallpaper.pinned || wallpaper.embedded;
   wallpaper.wanted = on;
   while (wallpaper.moving) await new Promise(r => setTimeout(r, 50));    // 넣고 빼는 중이면 끝난 뒤에
-  if (wallpaper.wanted !== on) return wallpaper.embedded;                  // 그사이 또 바뀜
+  if (wallpaper.wanted !== on) return wallpaper.pinned || wallpaper.embedded;   // 그사이 또 바뀜
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (on) {
+    if (pinWindow()) return true;
     if (await embedWindow()) return true;
     retryEmbed();
     return false;
   }
-  if (wallpaper.embedded) await unembedWindow(screenArea());
+  unpinWindow();
+  if (wallpaper.embedded || wallpaper.poppedOut) await unembedWindow(screenArea());
   wallpaper.poppedOut = false;
+  wallpaper.lifted = null;
   wallpaper.autoPopped = false;
   showOnTop();
+  refreshTray();
   return false;
 });
 
-ipcMain.handle('get-wallpaper-state', () => ({ wanted: wallpaper.wanted, embedded: wallpaper.embedded, key: popOutKey }));
+// 테마가 바뀌면 창 바탕색도 (settings.js)
+ipcMain.on('set-background', (event, color) => {
+  if (mainWindow && !mainWindow.isDestroyed() && /^#[0-9a-f]{6}$/i.test(String(color))) mainWindow.setBackgroundColor(color);
+});
+
+ipcMain.handle('get-wallpaper-state', () => ({ wanted: wallpaper.wanted, embedded: wallpaper.pinned || wallpaper.embedded, key: popOutKey }));
 
 function createWindow() {
   let stamp = '?';
@@ -325,10 +609,13 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     ...screenArea(),              // 주 모니터의 작업 영역 (작업표시줄 뺀 부분) — 해상도 · 배율에 맞춤
-    transparent: true,
+    backgroundColor: canvasBackground(),   // 불투명한 창 — 바탕화면 층에서 들고 날 때 한 장면이 비어도 뒤가 비치지 않게
     frame: false,
+    thickFrame: false,           // 창 틀 · 그림자 · 여닫는 움직임 없음 (불투명 창에 틀이 붙으면 페이지가 안쪽으로 줄어듦)
     hasShadow: false,
     skipTaskbar: true,           // 작업표시줄에 표시 안 함
+    minimizable: false,          // '바탕화면 보기'(Win+D) 등에 최소화되지 않게 (바탕화면처럼 남음)
+    maximizable: false,
     alwaysOnTop: !wallpaper.wanted,   // 앞에 있는 동안 맨 위 (바탕화면 층에 넣을 거면 처음부터 풀어 둠)
     focusable: true,
     show: false,
@@ -344,7 +631,14 @@ function createWindow() {
 
   // 윈도우 준비 완료 후 표시 — 바탕화면에 넣기가 켜져 있으면 바탕화면 층에 넣은 채로 (앞으로 나오지 않게)
   mainWindow.once('ready-to-show', async () => {
+    const plain = process.platform === 'win32' ? bridgeCall(`plain ${windowHandle()}`, 3000) : null;   // 윈도우 11 둥근 모서리 · 테두리 · 여닫는 움직임 없앰
     if (wallpaper.wanted) {
+      await plain;                                    // 처음 나타날 때부터 움직임 없이
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (pinWindow()) {                              // 방법 1: 바탕화면 바로 위에 붙잡고 보여 줌 (앞으로 나오지 않게)
+        mainWindow.showInactive();
+        return;
+      }
       const ok = await embedWindow();
       if (!mainWindow || mainWindow.isDestroyed()) return;
       if (ok) {
@@ -363,6 +657,10 @@ function createWindow() {
 
   // 다른 창이 활성화되면 이 창을 뒤로 보내기 (종료 X) — 앞에 꺼내 둔 캔버스는 다시 바탕화면 층으로
   mainWindow.on('blur', () => {
+    if (wallpaper.pinned) {                           // 앞에 꺼내 둔 것만 다시 바탕화면 바로 위로 (창 고르기 · 메뉴가 떠 있는 동안은 그대로)
+      if (wallpaper.front && !wallpaper.dialogOpen) setPinnedFront(false);
+      return;
+    }
     if (wallpaper.embedded || wallpaper.moving) return;
     if (wallpaper.poppedOut) {
       if (!wallpaper.dialogOpen) embedWindow();
@@ -371,14 +669,19 @@ function createWindow() {
     mainWindow.setAlwaysOnTop(false);
   });
 
-  // 이 창이 다시 포커스를 받으면 앞으로 가기 (바탕화면 층에 있을 때는 그대로)
+  // 이 창이 다시 포커스를 받으면 앞으로 가기 (바탕화면에 넣기를 켰으면 그대로 — 들어 올린 자리를 지킴)
   mainWindow.on('focus', () => {
-    if (wallpaper.embedded || wallpaper.moving) return;
+    if (wallpaper.wanted || wallpaper.embedded || wallpaper.moving) return;
     mainWindow.setAlwaysOnTop(true);
   });
 
   // "바탕화면 표시"(Win+D) 등으로 최소화되면 숨지 않고 뒤로만 보냄 (바탕화면 층은 최소화되지 않음)
   mainWindow.on('minimize', () => {
+    if (wallpaper.pinned) {                           // 붙잡은 창: 맨 앞 창은 그대로 두고 다시 보이게만
+      mainWindow.showInactive();
+      if (wallpaper.front) setPinnedFront(false);
+      return;
+    }
     if (wallpaper.embedded || wallpaper.moving) return;
     // 최소화 이벤트 무시 - 대신 뒤로 보냄 (앞에 꺼내 둔 캔버스는 바탕화면 층으로)
     mainWindow.restore();
@@ -433,8 +736,11 @@ function createWindow() {
     desktopWatchers.forEach(w => { try { w.close(); } catch (_) {} });
     desktopWatchers = [];
     mainWindow = null;
+    wallpaper.pinned = false;                      // 모듈은 창이 사라질 때 스스로 풂
+    wallpaper.front = false;
     wallpaper.embedded = false;
     wallpaper.poppedOut = false;
+    wallpaper.lifted = null;
     // 바탕화면(탐색기)이 다시 시작되면 바탕화면 층과 함께 창도 사라짐 → 잠시 뒤 다시 만들어 넣음
     if (wallpaper.wanted && !quitting) {
       logLine('바탕화면이 다시 시작돼 창이 사라짐 → 다시 만듦');
@@ -481,6 +787,8 @@ function dropAlwaysOnTop() {
       mainWindow.setAlwaysOnTop(true);
       mainWindow.setSkipTaskbar(true);
       mainWindow.focus();
+    } else if (wallpaper.pinned && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.focus();                          // 붙잡은 창: 키보드만 캔버스로 (자리는 바탕화면 바로 위 그대로)
     }
     logLine('창 맨 위 고정 되돌림');
   };
@@ -576,7 +884,11 @@ ipcMain.handle('get-settings', () => {
   }
 });
 
-ipcMain.handle('save-settings', (event, settings) => writeJsonAtomic(getSettingsFile(), settings));
+ipcMain.handle('save-settings', (event, settings) => {
+  const ok = writeJsonAtomic(getSettingsFile(), settings);
+  refreshTray();                                    // 언어 · 바탕화면에 넣기가 바뀌었을 수 있음
+  return ok;
+});
 
 // ================ 빨간 날 (공휴일) ================
 // 구글 캘린더의 나라별 공휴일 달력(공개 ics)을 받아 날짜 → 이름 표로 만들어 둠
@@ -1147,6 +1459,19 @@ ipcMain.handle('trash-path', async (event, filePath) => {
   }
 });
 
+// 휴지통으로 보낸 바탕화면 파일 되살리기 (화면의 되돌리기, native/desktop-bridge.ps1 restore) — 반환: { failed: [못 되살린 경로] }
+ipcMain.handle('restore-trashed', async (event, paths) => {
+  const list = (Array.isArray(paths) ? paths : []).map(String);
+  if (process.platform !== 'win32') return { failed: list };
+  const failed = [];
+  for (const p of list) {
+    const reply = await bridgeCall(`restore ${Buffer.from(p, 'utf8').toString('base64')}`, 30000);
+    logLine(`휴지통에서 되살리기: ${path.basename(p)} → ${reply}`);
+    if (!reply.startsWith('ok')) failed.push(p);
+  }
+  return { failed };
+});
+
 // 탐색기에서 끌어다 놓은 파일들의 이름·아이콘
 ipcMain.handle('describe-paths', async (event, paths) => {
   const items = [];
@@ -1167,15 +1492,23 @@ ipcMain.on('save-canvas-state-sync', (event, state) => {
   }
 });
 
+// 앱은 하나만 — 두 번 켜면 캔버스 두 장이 바탕화면 바로 위 자리를 서로 다투고, 같은 저장 파일에 번갈아 씀
+//   (앱 데이터 폴더마다 하나 — 시험용으로 다른 폴더를 쓰면 따로 켜짐)
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) app.quit();
+app.on('second-instance', () => logLine('앱을 한 번 더 켜려 함 → 이미 켜진 앱을 그대로 씀'));
+
 app.on('ready', () => {
+  if (!firstInstance) return;
   genericIcons();          // 윈도우 기본 그림을 창이 뜨는 동안 미리 알아 둠 (저장된 내용을 불러올 때 씀)
   wallpaper.wanted = wallpaperSetting();
-  if (wallpaper.wanted) startBridge();             // 바탕화면 다리를 창이 뜨는 동안 미리 띄워 둠 (준비에 1초쯤)
+  if (process.platform === 'win32') startBridge(); // 다리를 창이 뜨는 동안 미리 띄워 둠 (바탕화면 층 · 윈도우 우클릭 메뉴, 준비에 1초쯤)
   if (process.platform === 'win32') {
     popOutKey = POP_OUT_KEYS.find(key => globalShortcut.register(key, togglePopOut)) || '';
     logLine(popOutKey ? `앞으로 꺼내기 단축키: ${popOutKey}` : `앞으로 꺼내기 단축키를 못 잡음 (${POP_OUT_KEYS.join(' · ')} 모두 다른 프로그램이 씀)`);
     setInterval(keepOnDesktop, 5000);
   }
+  createTray();
   createWindow();
 });
 

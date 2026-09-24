@@ -1,8 +1,8 @@
 // 캘린더 판 — 한 달판 (code/icons/아이콘_가이드.md 12-3, 시안_캘린더판.png) · 한 주 보기
 //   쪽지를 칸 위로 끌어다 놓으면 그 날짜에 붙고 칸 크기(164 × 120)로 맞춰짐 → 판 밖으로 꺼내면 원래 크기로
 //   한 칸에 여러 장이면 겹쳐 쌓이고, 그 날짜를 누르면 쪽지들이 날짜를 가운데 두고 둥글게 펼쳐짐 (다시 누르면 접힘)
-//   한 주 보기 (판 메뉴 › 보기): 7일을 한 줄로, 한 날짜의 쪽지를 겹치지 않고 위에서부터 붙인 순서대로
-//     (쪽지가 많은 날이 있으면 판이 그만큼 길어짐)
+//   한 주 보기 (판 메뉴 › 보기): 7일을 한 줄로 (칸 크기는 한 달판과 같음). 여러 장이면 똑같이 겹쳐 쌓이고,
+//     그 날짜를 누르면 맨 위 쪽지는 제자리에 두고 나머지가 칸 아래로 줄지어 펼쳐짐 (다시 누르거나 밖을 누르면 접힘)
 //   빨간 날은 holidays.js (구글 캘린더 공휴일). 붙이기 · 떼기 공통 부분은 board-notes.js
 //   보고 있는 달 · 주는 저장하지 않음 (앱을 켜면 오늘이 든 달 · 주, 날짜가 바뀌면 따라감). 보기(한 달 · 한 주)는 저장
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
@@ -19,9 +19,9 @@ const MAX_SHOWN_STACK = 3;        // 한 칸에 겹쳐 보이는 장수 (나머�
 //   위로는 비키지 않음: 칸 위쪽의 날짜 · 빨간 날 이름을 가리지 않게
 const STACK_BACK = [{ rot: -6, dx: -7, dy: 6 }, { rot: 4.5, dx: 7, dy: 7 }];
 const FAN_MIN_RADIUS = 120;       // 펼칠 때 날짜 가운데에서 쪽지 가운데까지 (가장 짧을 때)
-const FAN_ANIM_MS = 360;          // 펼치기 · 접기 움직임 (styles/boards.css .fan-anim 0.28s + 여유)
-const WEEK_GAP = 8;               // 한 주 보기: 한 날짜 안 쪽지 사이
-const WEEK_MIN_NOTES = 2;         // 한 주 보기: 쪽지가 적어도 이만큼은 들어갈 높이
+const FAN_ANIM_MS = 360;          // 펼치기 · 접기 뒤 표시 정리 (styles/boards.css .fan-anim 기울기 0.28s + 여유)
+const FAN_MOVE_MS = 280;          // 펼치기 · 접기 자리 옮김 — 캔버스 좌표에서 움직여서 그사이 캔버스를 옮겨도 바로 따라감
+const WEEK_GAP = 8;               // 한 주 보기: 아래로 펼친 쪽지 사이
 // 펼친 채로 눌러도 접히지 않는 곳 — 펼친 쪽지 · 메뉴 · 쪽지 스타일 · 설정 창 · 찾기 · 미니맵 (그 캘린더 판은 따로)
 const FAN_KEEP = '.sticky-note.fanned, #context-menu, #context-submenu, #desktop-menu, #add-menu, #template-menu, '
   + '#board-add-menu, #code-lang-menu, #style-panel, #settings-dropdown, .settings-overlay, #search-box, #minimap';
@@ -38,8 +38,10 @@ const sameMonth = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() 
 const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 export const calendarMethods = {
+  // 새 캘린더 판 — 보기 · 주 시작 요일은 설정 › 판
   newCalendarData() {
-    return { width: CAL_WIDTH, height: CAL_HEIGHT, weekStart: 0, view: 'month' };
+    const s = this.settings || {};
+    return { width: CAL_WIDTH, height: CAL_HEIGHT, weekStart: s.weekStart === 1 ? 1 : 0, view: s.calendarView === 'week' ? 'week' : 'month' };
   },
 
   normalizeCalendar(board) {
@@ -89,24 +91,21 @@ export const calendarMethods = {
     const view = this.calendarView(board);
     const week = board.view === 'week';
     const first = weekFirstDay(week ? parseKey(view.focus) : new Date(view.year, view.month, 1), board.weekStart);
-    const most = week ? this.weekMostNotes(board, first) : 0;
-    const sig = [board.view, view.year, view.month, dateKey(first), board.weekStart, board.width, board.height, most].join('|');
+    const sig = [board.view, view.year, view.month, dateKey(first), board.weekStart, board.width, board.height].join('|');
     const cached = this.calendarCache.get(board.id);
     if (cached && cached.sig === sig) return cached.grid;
 
     const cellW = (board.width - BOARD_PAD * 2) / 7;
     const monthCellH = (board.height - BOARD_HEAD - BOARD_DAYS_ROW - BOARD_PAD) / 5;
     const noteH = monthCellH - SLOT.top - SLOT.bottom;          // 칸 속 쪽지 높이 — 한 주 보기도 같은 크기
-    let rows, cellH;
+    let rows;
+    const cellH = monthCellH;
     if (week) {
-      const n = Math.max(WEEK_MIN_NOTES, most);
       rows = 1;
-      cellH = SLOT.top + n * noteH + (n - 1) * WEEK_GAP + SLOT.bottom;
     } else {
       const lead = (new Date(view.year, view.month, 1).getDay() - board.weekStart + 7) % 7;
       const daysInMonth = new Date(view.year, view.month + 1, 0).getDate();
       rows = Math.max(5, Math.ceil((lead + daysInMonth) / 7));
-      cellH = monthCellH;
     }
     const dates = [];
     for (let i = 0; i < rows * 7; i++) dates.push(addDays(first, i));
@@ -118,18 +117,6 @@ export const calendarMethods = {
     };
     this.calendarCache.set(board.id, { sig, grid });
     return grid;
-  },
-
-  // 한 주 보기: 그 주에서 쪽지가 가장 많이 붙은 날의 장수
-  weekMostNotes(board, first) {
-    const from = dateKey(first);
-    const to = dateKey(addDays(first, 6));
-    const counts = new Map();
-    this.notes.forEach(n => {
-      if (n.boardId !== board.id || !n.date || n.date < from || n.date > to) return;
-      counts.set(n.date, (counts.get(n.date) || 0) + 1);
-    });
-    return Math.max(0, ...counts.values());
   },
 
   // i 번째 칸 속 (맨 위) 쪽지 자리 (월드 좌표)
@@ -167,7 +154,7 @@ export const calendarMethods = {
     const grid = this.calendarGrid(board);
     const week = grid.week;
     const today = this.todayKey();
-    const fan = !week && this.calendarFan && this.calendarFan.boardId === board.id ? this.calendarFan.date : null;
+    const fan = this.calendarFan && this.calendarFan.boardId === board.id ? this.calendarFan.date : null;
     el.classList.toggle('cal-week', week);
 
     // 판 머리: ‹ 2026년 9월 › [오늘] 이름 … [⋯]   (한 주 보기: ‹ 2026년 9월 21일 – 27일 ›)
@@ -214,7 +201,7 @@ export const calendarMethods = {
       const key = grid.keys[i];
       const dow = date.getDay();
       const holiday = this.holidayName(key);
-      const stacked = !week && (counts.get(key) || 0) > 1;     // 한 주 보기는 겹치지 않음
+      const stacked = (counts.get(key) || 0) > 1;
       const cell = document.createElement('div');
       cell.className = ['cal-cell',
         !week && date.getMonth() !== grid.month ? 'other' : '',
@@ -341,7 +328,7 @@ export const calendarMethods = {
       .sort((a, b) => (a.boardAt || 0) - (b.boardAt || 0));
   },
 
-  // 칸에 붙은 쪽지의 자리 — 겹쳐 쌓였거나, 펼친 날짜면 둥글게 펼친 자리 (한 주 보기는 위에서부터 차례로)
+  // 칸에 붙은 쪽지의 자리 — 겹쳐 쌓였거나, 펼친 날짜면 펼친 자리 (한 달: 둥글게, 한 주: 칸 아래로 줄지어)
   calendarNoteSlot(board, note) {
     if (!note.date) return null;
     const grid = this.calendarGrid(board);
@@ -350,10 +337,10 @@ export const calendarMethods = {
     const stack = this.dateStack(board.id, note.date);
     const pos = stack.indexOf(note);
     const slot = this.calendarSlot(board, grid, i);
-    if (grid.week) return { ...slot, y: slot.y + pos * (grid.noteH + WEEK_GAP), board, top: true };
     const fromTop = stack.length - 1 - pos;
     const fan = this.calendarFan;
     if (fan && fan.boardId === board.id && fan.date === note.date && stack.length > 1) {
+      if (grid.week) return { ...slot, y: slot.y + fromTop * (slot.height + WEEK_GAP), board, top: true, fanned: true };
       const spot = this.calendarFanPlacement(board, grid, i, stack, slot).spots[pos];
       return { ...slot, x: spot.cx - slot.width / 2, y: spot.cy - slot.height / 2, board, top: true, fanned: true };
     }
@@ -383,7 +370,7 @@ export const calendarMethods = {
     if (cell) cell.classList.add('drop-target');
   },
 
-  // ---- 겹친 쪽지 펼치기 (한 달 보기) ----
+  // ---- 겹친 쪽지 펼치기 (한 달 보기: 둥글게, 한 주 보기: 칸 아래로) ----
   // 날짜 가운데를 두고 둘레에 고르게 — 가장 최근 쪽지가 오른쪽(위)부터 시계 방향으로
   calendarFanPlacement(board, grid, i, stack, slot) {
     const n = stack.length;
@@ -401,19 +388,31 @@ export const calendarMethods = {
   toggleCalendarFan(board, date) {
     const before = this.calendarFan;
     if ((before && before.boardId === board.id && before.date === date)
-      || board.view === 'week' || this.dateStack(board.id, date).length < 2) {
+      || this.dateStack(board.id, date).length < 2) {
       this.collapseCalendarFan();
       return;
     }
-    this.calendarFan = { boardId: board.id, date };
-    this.animateFan([before, this.calendarFan]);
+    const next = { boardId: board.id, date };
+    const from = this.fanNoteRects([before, next]);
+    this.calendarFan = next;
+    this.animateFan([before, next], from);
   },
 
   collapseCalendarFan() {
     const before = this.calendarFan;
     if (!before) return;
+    const from = this.fanNoteRects([before]);
     this.calendarFan = null;
-    this.animateFan([before]);
+    this.animateFan([before], from);
+  },
+
+  // 펼치기 · 접기 전 자리 (움직이는 중이면 지금 자리) — 거기서부터 새 자리로
+  fanNoteRects(fans) {
+    const rects = new Map();
+    this.notes.forEach(note => {
+      if (fans.some(f => f && note.boardId === f.boardId && note.date === f.date)) rects.set(note.id, { ...this.noteRect(note) });
+    });
+    return rects;
   },
 
   // 펼친 채로 그 캘린더 밖(다른 쪽지 · 사진 · 파일 · 다른 판 · 빈 바탕)을 누르면 접힘 — 문서 전체에서 먼저 받음 (app.js)
@@ -425,17 +424,48 @@ export const calendarMethods = {
     this.collapseCalendarFan();
   },
 
-  // 펼치고 접을 때 쪽지가 제자리까지 미끄러져 감
+  // 펼치고 접을 때 쪽지가 제자리까지 미끄러져 감 — 캔버스 좌표에서 한 장면씩 옮김 (board-notes.js noteRect 가 this.fanAnims 를 봄)
+  //   그래서 그사이 캔버스를 끌어 옮겨도 쪽지가 늦지 않고 바로 따라감 (화면 좌표로 옮기면 캔버스 이동까지 천천히 따라감)
   //   접히는 동안은 맨 아래로 숨을 쪽지도 보이다가 다 들어간 뒤에 숨음 (board-notes.js applyBoardState)
-  animateFan(fans) {
+  animateFan(fans, from = new Map()) {
     const reduce = reducedMotion();
-    this.notes.forEach(note => {
-      if (!fans.some(f => f && note.boardId === f.boardId && note.date === f.date)) return;
+    const moving = this.notes.filter(note => fans.some(f => f && note.boardId === f.boardId && note.date === f.date));
+    cancelAnimationFrame(this.fanFrame);
+    this.fanAnims = new Map();
+    const targets = new Map(moving.map(note => [note.id, { ...this.noteRect(note) }]));
+    moving.forEach(note => {
       const el = document.getElementById(note.id);
       if (!el) return;
-      if (!reduce) el.classList.add('fan-anim');
+      if (!reduce) {
+        el.classList.add('fan-anim');
+        if (from.has(note.id)) this.fanAnims.set(note.id, from.get(note.id));
+      }
       this.updateNotePosition(el, note);
     });
+    if (!reduce && this.fanAnims.size) {
+      const t0 = performance.now();
+      const ease = (p) => 1 - Math.pow(1 - p, 3);
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / FAN_MOVE_MS);
+        const e = ease(p);
+        moving.forEach(note => {
+          const a = from.get(note.id);
+          const b = targets.get(note.id);
+          if (p < 1 && a && b) {
+            this.fanAnims.set(note.id, {
+              x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e,
+              width: a.width + (b.width - a.width) * e, height: a.height + (b.height - a.height) * e,
+            });
+          } else {
+            this.fanAnims.delete(note.id);
+          }
+          const el = document.getElementById(note.id);
+          if (el) this.updateNotePosition(el, note);
+        });
+        if (p < 1) this.fanFrame = requestAnimationFrame(step);
+      };
+      this.fanFrame = requestAnimationFrame(step);
+    }
     document.querySelectorAll('.cal-cell.fan-open').forEach(c => c.classList.remove('fan-open'));
     const fan = this.calendarFan;
     if (fan) {
@@ -455,11 +485,12 @@ export const calendarMethods = {
   },
 
   // 펼친 날짜 뒤에 둥근 바탕 + 가운데 날짜에서 쪽지까지 이은 선 (화면 이동 · 확대 때마다 다시 맞춤)
+  //   한 주 보기는 칸에서 아래로 내려오는 긴 바탕
   updateFanOverlay() {
     let overlay = document.getElementById('fan-overlay');
     const fan = this.calendarFan;
     const board = fan && this.findBoard(fan.boardId);
-    const grid = board && board.kind === 'calendar' && board.view !== 'week' ? this.calendarGrid(board) : null;
+    const grid = board && board.kind === 'calendar' ? this.calendarGrid(board) : null;
     const i = grid ? grid.index.get(fan.date) : undefined;
     const stack = i !== undefined ? this.dateStack(board.id, fan.date) : [];
     if (stack.length < 2) {
@@ -471,8 +502,27 @@ export const calendarMethods = {
       return;
     }
     const slot = this.calendarSlot(board, grid, i);
-    const place = this.calendarFanPlacement(board, grid, i, stack, slot);
     const z = this.zoom;
+    if (grid.week) {
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'fan-overlay';
+        overlay.className = 'fan-overlay';
+        this.uiLayer.appendChild(overlay);
+      }
+      const x = slot.x - SLOT.left + 3;                       // 날짜 줄은 가리지 않게 첫 쪽지 바로 위부터
+      const y = slot.y - 6;
+      const w = grid.cellW - 6;
+      const h = stack.length * slot.height + (stack.length - 1) * WEEK_GAP + 14;
+      overlay.style.left = `${x * z + this.panX}px`;
+      overlay.style.top = `${y * z + this.panY}px`;
+      overlay.style.width = `${w * z}px`;
+      overlay.style.height = `${h * z}px`;
+      overlay.innerHTML = `<svg width="${w * z}" height="${h * z}" viewBox="0 0 ${w * z} ${h * z}">
+        <rect class="fan-halo" x="0" y="0" width="${w * z}" height="${h * z}" rx="${12 * z}"/></svg>`;
+      return;
+    }
+    const place = this.calendarFanPlacement(board, grid, i, stack, slot);
     const reach = place.r + Math.hypot(slot.width, slot.height) / 2 + 14;    // 둥근 바탕 반지름
     const c = reach * z;
     if (!overlay) {

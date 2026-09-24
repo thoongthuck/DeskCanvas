@@ -4,7 +4,8 @@
 //   선을 누르면 고름 → Delete 로 지우기, 선 우클릭 › 지우기. 이은 것이 없어지면 선도 그리지 않고 저장할 때 버림
 //   그리기: 판 바로 뒤에 둔 SVG 한 장 (#link-layer) — 판 위 · 쪽지 · 사진 · 파일 아래.
 //     두 물건의 마주 보는 변 가운데를 잇는 곡선 + 양 끝 점. 접힌 파일 묶음 속 파일은 묶음에, 다른 달에 붙어 숨은 쪽지는 선도 숨김
-//   this.links = [{ id, a, b }] — a · b 는 물건 id (방향 없음)
+//   모양: 곡선 · 직선 — 설정 '연결선 모양'이 기본, 선마다 우클릭으로 바꿀 수 있음 (link.style)
+//   this.links = [{ id, a, b, style? }] — a · b 는 물건 id (방향 없음)
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
 
@@ -42,6 +43,23 @@ function linkGeometry(a, b, zoom) {
     ax: f(ax), ay: f(ay), bx: f(bx), by: f(by),
     d: `M${f(ax)} ${f(ay)} C${f(c1[0])} ${f(c1[1])} ${f(c2[0])} ${f(c2[1])} ${f(bx)} ${f(by)}`,
   };
+}
+
+// 직선 — 두 네모의 가운데를 잇는 선이 각 네모 테두리와 만나는 곳끼리
+function edgePoint(r, toward) {
+  const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+  const dx = toward.x - cx, dy = toward.y - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  const k = Math.min(dx ? (r.width / 2) / Math.abs(dx) : Infinity, dy ? (r.height / 2) / Math.abs(dy) : Infinity, 1);
+  return { x: cx + dx * k, y: cy + dy * k };
+}
+
+function straightGeometry(a, b) {
+  const ca = { x: a.x + a.width / 2, y: a.y + a.height / 2 };
+  const cb = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  const p = edgePoint(a, cb), q = edgePoint(b, ca);
+  const f = (v) => Math.round(v * 10) / 10;
+  return { ax: f(p.x), ay: f(p.y), bx: f(q.x), by: f(q.y), d: `M${f(p.x)} ${f(p.y)} L${f(q.x)} ${f(q.y)}` };
 }
 
 function svg(tag, className) {
@@ -163,7 +181,28 @@ export const linkMethods = {
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).map(l => ({ id: typeof l.id === 'string' ? l.id : this.newId('link'), a: l.a, b: l.b }));
+    }).map(l => {
+      const link = { id: typeof l.id === 'string' ? l.id : this.newId('link'), a: l.a, b: l.b };
+      if (l.style === 'curve' || l.style === 'straight') link.style = l.style;
+      return link;
+    });
+  },
+
+  // 선 모양 — 선마다 정한 것, 없으면 설정 '연결선 모양'
+  linkStyleOf(link) {
+    return (link && link.style) || (this.settings && this.settings.linkStyle) || 'curve';
+  },
+
+  setLinkStyle(id, style) {
+    const link = this.links.find(l => l.id === id);
+    if (!link || this.linkStyleOf(link) === style) return;
+    this.record();
+    link.style = style;
+    this.scheduleSave();
+  },
+
+  linkShape(a, b, style) {
+    return style === 'straight' ? straightGeometry(a, b) : linkGeometry(a, b, this.zoom);
   },
 
   // ---- 고르기 ----
@@ -315,7 +354,12 @@ export const linkMethods = {
       e.preventDefault();
       e.stopPropagation();
       this.selectLink(link.id);
+      const straight = this.linkStyleOf(this.links.find(l => l.id === link.id)) === 'straight';
       this.openContextMenu([
+        straight
+          ? { icon: 'menu-connect.svg', label: t('menu.linkCurve'), action: () => this.setLinkStyle(link.id, 'curve') }
+          : { icon: 'menu-straight.svg', label: t('menu.linkStraight'), action: () => this.setLinkStyle(link.id, 'straight') },
+        { separator: true },
         { icon: 'trash.svg', label: t('menu.deleteLink'), danger: true, action: () => this.deleteLink(link.id) },
       ], e.clientX, e.clientY);
     });
@@ -353,7 +397,7 @@ export const linkMethods = {
       }
       if (parts.el.parentNode !== layer) layer.appendChild(parts.el);
       seen.add(link.id);
-      place(parts, linkGeometry(ra, rb, z));
+      place(parts, this.linkShape(ra, rb, this.linkStyleOf(link)));
       parts.el.classList.toggle('selected', this.selectedLinkId === link.id);
       parts.el.classList.toggle('related', this.selection.has(link.a) || this.selection.has(link.b));
     });
@@ -379,6 +423,6 @@ export const linkMethods = {
     }
     layer.appendChild(temp.el);
     const target = this.linking.target && this.linkRect(this.linking.target);
-    place(temp, linkGeometry(from, target || { x: this.linking.x, y: this.linking.y, width: 0, height: 0 }, z));
+    place(temp, this.linkShape(from, target || { x: this.linking.x, y: this.linking.y, width: 0, height: 0 }, this.linkStyleOf(null)));
   },
 };

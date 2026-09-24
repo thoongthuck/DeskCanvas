@@ -4,7 +4,8 @@
 //   고른 것 가운데 하나를 끌면 모두 함께 옮겨짐 — 판에 붙은 쪽지 · 고정한 것 · 묶음 안 파일(묶음이 옮김)은 제자리
 //   파일을 여럿 끌어 파일 묶음 위에 놓으면 한꺼번에 들어감 (groups.js settleFileInGroup)
 //   고른 것 위에서 우클릭: 새 묶음으로 묶기(Ctrl+G) · 묶음에 넣기 › · 연결선으로 잇기(Ctrl+L) · 지우기 · 선택 해제
-//   Delete: 고른 쪽지 · 사진 지우기, 고른 묶음은 풀기 (파일 아이콘은 그대로 — 되돌리기 한 번에). Esc: 선택 풀기
+//   Delete: 고른 쪽지 · 사진 지우기, 고른 묶음은 풀기, 바탕화면 파일은 휴지통으로 · 끌어온 파일은 아이콘만 빼기
+//     (되돌리기 한 번에 모두 — 휴지통으로 보낸 파일은 휴지통에서 되살림. 파일이 둘 이상이면 먼저 물어봄). Esc: 선택 풀기
 //   this.selection (Set) 이 고른 것 전부. 예전 코드의 this.selectedId 는 '마지막으로 고른 것' (app.js)
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
@@ -158,8 +159,12 @@ export const selectionMethods = {
     return ids;
   },
 
-  // ---- 여러 개 메뉴 (고른 것 위에서 우클릭) ----
+  // ---- 여러 개 메뉴 (고른 것 위에서 우클릭 — 파일이면 윈도우 메뉴 위에 붙음, menus.js) ----
   openSelectionMenu(x, y) {
+    this.openContextMenu(this.selectionMenuItems(), x, y);
+  },
+
+  selectionMenuItems() {
     const entries = this.selectedEntries();
     const files = entries.filter(en => en.kind === 'file' && !this.fileLocked(en.item)).map(en => en.item);
     const removable = entries.filter(en => (en.kind === 'note' || en.kind === 'photo') && !en.item.pinned);
@@ -177,13 +182,14 @@ export const selectionMethods = {
     if (entries.length > 1) {                               // 처음 고른 것에 나머지를 잇기 (links.js)
       items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: entries.length }), action: () => this.connectSelection() });
     }
+    items.push(...this.alignMenuItems());                   // 정렬 › (align.js)
     if (removable.length) {
       if (items.length) items.push({ separator: true });
       items.push({ icon: 'trash.svg', label: t('menu.deleteSelected', { n: removable.length }), danger: true, action: () => this.deleteSelection() });
     }
     if (items.length) items.push({ separator: true });
     items.push({ icon: 'close.svg', label: t('menu.clearSelection', { n: entries.length }), action: () => this.clearSelection() });
-    this.openContextMenu(items, x, y);
+    return items;
   },
 
   // 고른 파일들로 새 묶음 (Ctrl+G · 여러 개 메뉴)
@@ -194,23 +200,43 @@ export const selectionMethods = {
     return true;
   },
 
-  // 고른 쪽지 · 사진 지우기 (Delete 는 고른 묶음도 풀기) — 되돌리기 한 번에 모두 돌아옴
-  deleteSelection({ includeGroups = false } = {}) {
+  // 고른 쪽지 · 사진 지우기 — 되돌리기 한 번에 모두 돌아옴
+  //   Delete 키 (keyboard.js): 고른 묶음도 풀고(includeGroups), 파일도 (includeFiles — 윈도우 바탕화면처럼)
+  //     바탕화면 파일은 휴지통으로 (Ctrl+Z 면 휴지통에서 되살림 — history.js), 끌어온 파일은 아이콘만 빼기
+  //     잠근 묶음 속 파일은 그대로. 파일이 둘 이상이면 먼저 물어봄 (Ctrl+A 뒤 잘못 눌러 바탕화면이 통째로 비지 않게)
+  deleteSelection({ includeGroups = false, includeFiles = false } = {}) {
     const entries = this.selectedEntries();
     const notes = entries.filter(en => en.kind === 'note' && !en.item.pinned);
     const photos = entries.filter(en => en.kind === 'photo' && !en.item.pinned);
     const groups = includeGroups ? entries.filter(en => en.kind === 'board' && !en.item.pinned) : [];
-    if (!notes.length && !photos.length && !groups.length) return false;
-    this.record();
-    this.batching = true;                                      // 안에서 부르는 record() 는 건너뜀 (history.js)
-    try {
-      notes.forEach(en => this.deleteNote(en.item.id));
-      photos.forEach(en => this.deletePhoto(en.item.id));
-      groups.forEach(en => this.ungroup(en.item));
-    } finally {
-      this.batching = false;
+    const files = includeFiles ? entries.filter(en => en.kind === 'file' && !this.fileLocked(en.item)) : [];
+    const trash = files.filter(en => en.item.source === 'desktop');
+    const icons = files.filter(en => en.item.source !== 'desktop');
+    if (!notes.length && !photos.length && !groups.length && !files.length) return false;
+    const run = () => {
+      this.record();                                           // 한 단계 — 휴지통으로 보낸 파일도 Ctrl+Z 로 되살림
+      const undoEntry = this.undoStack[this.undoStack.length - 1];
+      this.batching = true;                                    // 안에서 부르는 record() 는 건너뜀 (history.js)
+      try {
+        notes.forEach(en => this.deleteNote(en.item.id));
+        photos.forEach(en => this.deletePhoto(en.item.id));
+        groups.forEach(en => this.ungroup(en.item));
+        icons.forEach(en => this.deleteFile(en.item.id));
+      } finally {
+        this.batching = false;
+      }
+      if (trash.length) this.trashDesktopFiles(trash.map(en => en.item), { undoEntry });
+      this.clearSelection();
+    };
+    if (files.length < 2) {
+      run();
+      return true;
     }
-    this.clearSelection();
+    const at = this.lastMouse || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    this.openContextMenu([
+      { icon: 'trash.svg', label: t('confirm.deleteFiles', { n: files.length }), danger: true, action: run },
+      { icon: 'close.svg', label: t('quit.cancel'), action: () => {} },
+    ], at.x, at.y);
     return true;
   },
 };

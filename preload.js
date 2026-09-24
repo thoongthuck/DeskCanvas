@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // 바탕화면 층 (main.js Phase 5) — 캔버스를 누르면 키보드를 이 창으로 가져오게 알리고, 글 쓰기를 시작 · 끝내면 알림
+//   (글 쓰는 동안은 main.js 가 캔버스를 앞으로 꺼냄 — 바탕화면 층에서는 한글 조합이 글자 자리에 안 보여서)
 const TEXT_INPUTS = new Set(['text', 'search', 'url', 'email', 'number', 'password', 'tel']);
 function isEditable(el) {
   if (!el) return false;
@@ -12,13 +13,13 @@ window.addEventListener('mousedown', () => ipcRenderer.send('canvas-pressed'), t
 window.addEventListener('focusin', (e) => {
   if (!isEditable(e.target)) return;
   clearTimeout(editingTimer);
-  ipcRenderer.send('editing', true);
+  ipcRenderer.send('front-hold', 'editing', true);
 }, true);
 window.addEventListener('focusout', (e) => {
   if (!isEditable(e.target)) return;
   clearTimeout(editingTimer);
   editingTimer = setTimeout(() => {                        // 다른 글 칸으로 옮겨 가는 중이면 끝난 게 아님
-    if (!isEditable(document.activeElement)) ipcRenderer.send('editing', false);
+    if (!isEditable(document.activeElement)) ipcRenderer.send('front-hold', 'editing', false);
   }, 300);
 }, true);
 
@@ -54,9 +55,17 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   listDesktop: () => ipcRenderer.invoke('list-desktop'),
   onDesktopChanged: (callback) => ipcRenderer.on('desktop-changed', (event, list) => callback(list)),
   trashPath: (filePath) => ipcRenderer.invoke('trash-path', filePath),
-  // 바탕화면 층에 넣기 (Phase 5)
+  restoreTrashed: (paths) => ipcRenderer.invoke('restore-trashed', paths),
+  // 바탕화면 층에 넣기 (Phase 5) · 트레이에서 온 부탁 (설정 창 열기 · 설정 바꾸기)
   setWallpaperMode: (on) => ipcRenderer.invoke('set-wallpaper-mode', !!on),
   getWallpaperState: () => ipcRenderer.invoke('get-wallpaper-state'),
+  holdFront: (reason, on) => ipcRenderer.send('front-hold', reason, !!on),
+  setBackground: (color) => ipcRenderer.send('set-background', color),
+  onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),
+  onApplySetting: (callback) => ipcRenderer.on('apply-setting', (event, key, value) => callback(key, value)),
+  // 윈도우 우클릭 메뉴 · 파일 이름 바꾸기
+  shellMenu: (paths, items) => ipcRenderer.invoke('shell-menu', paths, items),
+  renamePath: (filePath, newName) => ipcRenderer.invoke('rename-path', filePath, newName),
   // 탐색기에서 끌어다 놓기
   getPathForFile: (file) => webUtils.getPathForFile(file),
   describePaths: (paths) => ipcRenderer.invoke('describe-paths', paths),

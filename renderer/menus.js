@@ -1,14 +1,64 @@
-// 우클릭 메뉴 — 쪽지 메뉴 · 사진 메뉴 · 파일 메뉴 · 바탕화면 메뉴(쪽지 추가/판 추가/설정/종료) · 템플릿 · 스타일 창
+// 우클릭 메뉴 — 쪽지 메뉴 · 사진 메뉴 · 파일 메뉴 · 캔버스 메뉴(쪽지 추가/판 추가) · 템플릿 · 스타일 창
+//   파일 · 빈 바탕 우클릭은 윈도우 탐색기 메뉴 (main.js · native/desktop-bridge.ps1), 캔버스 메뉴는 빈 바탕 두 번 누르기
+//   설정 · 종료는 트레이(알림 영역 아이콘) 메뉴에 (main.js)
 //   판 메뉴는 boards.js, 사진 틀 고르는 창은 photo-frame.js
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { ICON_DIR } from './constants.js';
 import { t } from './i18n.js';
 
 export const menuMethods = {
-  // 빈 바탕에서 우클릭: 바탕화면 메뉴
-  handleContextMenu(e) {
+  // 빈 바탕 우클릭: 윈도우 바탕화면 메뉴 (새로 만들기 › · 붙여넣기 · 디스플레이 설정 …) — 못 띄우면 캔버스 메뉴
+  //   캔버스 메뉴(쪽지 추가 · 판 추가 …)는 빈 바탕을 두 번 눌러서 (app.js)
+  async handleContextMenu(e) {
     e.preventDefault();
-    this.openDesktopMenu(e.clientX, e.clientY);
+    const x = e.clientX, y = e.clientY;
+    const at = { x: (x - this.panX) / this.zoom, y: (y - this.panY) / this.zoom };
+    const shown = await this.showNativeMenu([], [
+      { label: t('menu.refresh'), action: () => this.refreshDesktop() },
+    ], { at });
+    if (!shown) this.openDesktopMenu(x, y);
+  },
+
+  // 윈도우 메뉴로 띄우기 (main.js 'shell-menu') — 앱 메뉴 줄(글자 · 하위 목록 · 할 일)을 윈도우 메뉴 줄로 바꿔 위에 붙임
+  //   file: 그 파일의 '이름 바꾸기'를 앱이 받음, at: 빈 바탕 메뉴로 새로 만든 파일을 놓을 자리
+  //   반환: 띄웠으면 true, 못 띄웠으면 false (그때는 앱 메뉴로)
+  async showNativeMenu(paths, items, { file = null, at = null } = {}) {
+    const api = window.canvasAPI;
+    if (!api || !api.shellMenu) return false;
+    this.closeMenus();
+    const lines = [];
+    const actions = new Map();
+    let next = 1;
+    const walk = (list, parent) => list.forEach(item => {
+      if (item.separator) {
+        lines.push({ id: next++, parent, label: '', flags: 's' });
+        return;
+      }
+      if (!item.label || item.styleFor || item.panel) return;        // 옆 창이 열리는 줄은 윈도우 메뉴에 못 넣음
+      const id = next++;
+      lines.push({ id, parent, label: item.label, flags: (item.disabled ? 'd' : '') + (item.current ? 'c' : '') });
+      if (item.submenu) walk(item.submenu, id);
+      else if (item.action) actions.set(id, item.action);
+    });
+    walk(items, 0);
+    const before = paths.length ? this.snapshot() : null;           // 윈도우 메뉴로 지우면 이 모습으로 되돌림 (history.js)
+    let reply = null;
+    try {
+      reply = await api.shellMenu(paths, lines);
+    } catch (_) {
+      return false;
+    }
+    if (!reply) return false;
+    if (reply.kind === 'shell' && reply.verb === 'delete' && before) {
+      const key = (p) => String(p).toLowerCase();
+      const asked = new Set(paths.map(key));
+      const desktop = this.files.filter(f => f.source === 'desktop' && asked.has(key(f.path))).map(f => f.path);
+      if (desktop.length) this.pushUndoSnapshot(this.markSnapshot(before, 'restore', desktop));
+    }
+    if (reply.kind === 'app') actions.get(reply.id)?.();
+    else if (reply.kind === 'rename' && file) this.startFileRename(file);
+    else if (reply.kind === 'shell' && at) this.expectNewDesktopItems(at);
+    return true;
   },
 
   // 쪽지 우클릭 또는 더보기(…)
@@ -55,13 +105,38 @@ export const menuMethods = {
     ], x, y);
   },
 
-  // 파일 아이콘 우클릭: 묶음에 넣기 › · 묶음에서 빼기 (groups.js) · 연결선 잇기 · 지우기 (links.js) · ─ ·
-  //   바탕화면 폴더 파일은 휴지통으로, 끌어다 놓은 아이콘은 아이콘만 지우기
+  // 파일 아이콘 우클릭: 윈도우 탐색기 메뉴 (열기 · 복사 · 삭제 · 이름 바꾸기 · 속성 …) 위에 앱 줄 (묶음 · 연결선)
+  //   여럿 골랐으면 같은 폴더에 있는 고른 파일 모두. 윈도우 메뉴를 못 띄우면 앱 메뉴
+  async openFileContextMenu(file, x, y) {
+    const multi = this.multiSelected(file.id);
+    const folder = (p) => String(p || '').replace(/[\\/][^\\/]*$/, '').toLowerCase();
+    const paths = [file.path];
+    if (multi) {
+      this.selectedEntries().forEach(en => {
+        if (en.kind === 'file' && en.item !== file && en.item.path && folder(en.item.path) === folder(file.path)) paths.push(en.item.path);
+      });
+    }
+    const shown = file.path && await this.showNativeMenu(paths, multi ? this.selectionMenuItems() : this.fileMenuItems(file), { file });
+    if (shown) return;
+    if (multi) this.openSelectionMenu(x, y);
+    else this.openFileMenu(file, x, y);
+  },
+
+  // 앱 파일 메뉴 — 윈도우 메뉴를 못 띄울 때 (바탕화면 파일은 휴지통으로 보내기도)
   openFileMenu(file, x, y) {
-    const item = file.source === 'desktop'
-      ? { icon: 'trash.svg', label: t('menu.trash'), action: () => this.trashDesktopFile(file), danger: true }
-      : { icon: 'trash.svg', label: t('menu.removeIcon'), action: () => this.deleteFile(file.id), danger: true };
-    this.openContextMenu([...this.fileGroupMenuItems(file), ...this.linkMenuItems(file.id), { separator: true }, item], x, y);
+    this.openContextMenu(this.fileMenuItems(file, { fallback: true }), x, y);
+  },
+
+  // 파일 메뉴의 앱 줄 — 묶음에 넣기 › · 묶음에서 빼기 (groups.js) · 연결선 잇기 · 지우기 (links.js)
+  //   끌어다 놓은 파일(바탕화면 밖)은 '아이콘 지우기' (파일은 그대로). 지우기 · 휴지통은 윈도우 메뉴에 있음
+  //   fallback: 윈도우 메뉴를 못 띄울 때 — 바탕화면 파일은 휴지통으로 보내기도
+  fileMenuItems(file, { fallback = false } = {}) {
+    const items = [...this.fileGroupMenuItems(file), ...this.linkMenuItems(file.id)];
+    const remove = file.source !== 'desktop'
+      ? { icon: 'close.svg', label: t('menu.removeIcon'), action: () => this.deleteFile(file.id) }
+      : fallback ? { icon: 'trash.svg', label: t('menu.trash'), action: () => this.trashDesktopFile(file), danger: true } : null;
+    if (remove) items.push({ separator: true }, remove);
+    return items;
   },
 
   // 쪽지·사진·파일 메뉴 틀 (디자인/팝업/팝업.png)
@@ -149,6 +224,12 @@ export const menuMethods = {
     sub.style.zIndex = '2001';
     sub.anchorRow = anchor;
     items.forEach(item => {
+      if (item.separator) {
+        const sep = document.createElement('div');
+        sep.className = 'context-menu-separator';
+        sub.appendChild(sep);
+        return;
+      }
       const row = document.createElement('div');
       row.className = 'context-menu-item' + (item.current ? ' open' : '') + (item.disabled ? ' disabled' : '');
       if (item.swatch) {                                  // 색 고르기: 이름 앞에 그 색 동그라미
@@ -186,7 +267,7 @@ export const menuMethods = {
     sub.remove();
   },
 
-  // ---- 바탕화면 메뉴 (가이드 6장) ----
+  // ---- 캔버스 메뉴 (가이드 6장) — 빈 바탕 두 번 누르기 (설정 · 종료는 트레이 메뉴로 옮김) ----
   openDesktopMenu(x, y) {
     this.closeMenus();
     // 새 쪽지·파일이 놓일 자리 = 우클릭한 곳 (캔버스 좌표)
@@ -201,10 +282,6 @@ export const menuMethods = {
       { icon: this.gridSnapOn() ? 'checkbox-checked.svg' : 'checkbox.svg', label: t('menu.gridMode'), current: this.gridSnapOn(),
         onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); this.toggleGridSnap(); } },
       { icon: 'style-reset.svg', label: t('menu.goHome'), onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); this.goHome(); } },
-      { separator: true },
-      { icon: 'settings.svg', label: t('menu.settings'), onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); this.openSettings(); } },
-      { separator: true },
-      { icon: 'power.svg', label: t('menu.quit'), onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); this.requestQuit(); } },
     ]);
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;

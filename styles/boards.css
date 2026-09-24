@@ -324,9 +324,9 @@
 .sticky-note.on-board.fanned { z-index: 20; }
 .sticky-note.on-board.fan-anim { z-index: 20; }
 .sticky-note.on-board.fan-anim.stack-top { z-index: 21; }
+/* 자리 옮김은 calendar.js 가 캔버스 좌표에서 한 장면씩 (캔버스를 옮기면 바로 따라가게) — 여기서는 기울기 · 그림자만 */
 .sticky-note.fan-anim {
-  transition: left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
-              transform 0.28s ease-out, filter 0.2s ease-out;
+  transition: transform 0.28s ease-out, filter 0.2s ease-out;
 }
 .fan-overlay {
   position: absolute;
