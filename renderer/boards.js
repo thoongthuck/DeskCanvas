@@ -70,7 +70,8 @@ export const boardMethods = {
 
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('input, textarea, button')) return;       // 버튼 · 글자칸은 각자 처리
-      if (board.kind === 'group') this.selectItem(board.id);         // 파일 묶음: 누르면 선택 (쪽지처럼)
+      const group = board.kind === 'group';                         // 파일 묶음: 누르면 선택 (쪽지처럼, Ctrl · Shift 는 여러 개)
+      const canDrag = group ? this.pressSelect(e, board.id, !board.pinned) : true;
       if (e.button !== 0) return;
       if (e.target.closest('.board-resize')) {
         if (board.pinned) return;
@@ -79,9 +80,9 @@ export const boardMethods = {
         this.startItemResize(e, 'board', board);
         return;
       }
-      if (board.kind === 'group') {                                  // 파일 묶음은 어디를 잡아도 옮겨짐
+      if (group) {                                                   // 파일 묶음은 어디를 잡아도 옮겨짐
         e.preventDefault();
-        if (!board.pinned) this.startItemDrag(e, 'board', board);
+        if (canDrag && !board.pinned) this.startItemDrag(e, 'board', board);
         return;
       }
       if (e.target.closest('.board-head') && !board.pinned) {
@@ -105,7 +106,8 @@ export const boardMethods = {
       if (e.target.closest('input, textarea')) return;
       e.preventDefault();
       e.stopPropagation();
-      this.openBoardMenu(board, e.clientX, e.clientY);
+      if (board.kind === 'group' && this.multiSelected(board.id)) this.openSelectionMenu(e.clientX, e.clientY);
+      else this.openBoardMenu(board, e.clientX, e.clientY);
     });
 
     // 판은 쪽지 · 사진 · 파일보다 아래, 판끼리는 나중에 만든 판이 위 (다른 판 바로 뒤에 끼움)
@@ -137,6 +139,7 @@ export const boardMethods = {
     el.style.width = `${size.width * this.zoom}px`;
     el.style.height = `${size.height * this.zoom}px`;
     el.style.setProperty('--zoom', this.zoom);
+    this.requestLinks();                            // 파일 묶음에 이은 선도 따라감 (links.js)
   },
 
   // ---- 판 머리 부품 ----
@@ -215,10 +218,7 @@ export const boardMethods = {
   // 판의 칸 · 빈 곳을 끌면 빈 바탕을 끈 것처럼 화면이 움직임
   startBoardPan(e) {
     e.preventDefault();
-    if (this.selectedId) {
-      this.selectedId = null;
-      this.updateSelection();
-    }
+    this.clearSelection();
     let lastX = e.clientX;
     let lastY = e.clientY;
     let moved = false;

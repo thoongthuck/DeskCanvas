@@ -7,6 +7,7 @@
 @import url("styles/photos.css");
 @import url("styles/boards.css");
 @import url("styles/groups.css");
+@import url("styles/links.css");
 @import url("styles/search.css");
 @import url("styles/minimap.css");
 
@@ -593,6 +594,17 @@ body.theme-dark .file-icon {
 body.theme-dark .file-icon-name {
   color: #E5E7EB;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* 네모로 여러 개 고르기 (Ctrl · Shift + 빈 곳 끌기 — renderer/selection.js) */
+#marquee {
+  position: fixed;
+  display: none;
+  z-index: 1500;
+  border: 1px solid #5A98FE;
+  border-radius: 2px;
+  background: rgba(90, 152, 254, 0.12);
+  pointer-events: none;
 }
 
 /* ===== 줌 표시 · 알림 ===== */

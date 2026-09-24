@@ -1,5 +1,27 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+// 바탕화면 층 (main.js Phase 5) — 캔버스를 누르면 키보드를 이 창으로 가져오게 알리고, 글 쓰기를 시작 · 끝내면 알림
+const TEXT_INPUTS = new Set(['text', 'search', 'url', 'email', 'number', 'password', 'tel']);
+function isEditable(el) {
+  if (!el) return false;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+  return el.tagName === 'INPUT' && TEXT_INPUTS.has(el.type);
+}
+let editingTimer = null;
+window.addEventListener('mousedown', () => ipcRenderer.send('canvas-pressed'), true);
+window.addEventListener('focusin', (e) => {
+  if (!isEditable(e.target)) return;
+  clearTimeout(editingTimer);
+  ipcRenderer.send('editing', true);
+}, true);
+window.addEventListener('focusout', (e) => {
+  if (!isEditable(e.target)) return;
+  clearTimeout(editingTimer);
+  editingTimer = setTimeout(() => {                        // 다른 글 칸으로 옮겨 가는 중이면 끝난 게 아님
+    if (!isEditable(document.activeElement)) ipcRenderer.send('editing', false);
+  }, 300);
+}, true);
+
 // 화면(renderer)이 쓸 수 있는 기능만 골라서 내보냄
 contextBridge.exposeInMainWorld('canvasAPI', {
   // 쪽지 저장 파일
@@ -19,6 +41,7 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   quitNow: () => ipcRenderer.send('quit-now'),
   // 사진 · 파일 고르기
   pickImage: (title) => ipcRenderer.invoke('pick-image', title),
+  pickVideo: (title) => ipcRenderer.invoke('pick-video', title),
   pickFile: (title) => ipcRenderer.invoke('pick-file', title),
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
   // 문제 찾기용 기록
@@ -31,6 +54,9 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   listDesktop: () => ipcRenderer.invoke('list-desktop'),
   onDesktopChanged: (callback) => ipcRenderer.on('desktop-changed', (event, list) => callback(list)),
   trashPath: (filePath) => ipcRenderer.invoke('trash-path', filePath),
+  // 바탕화면 층에 넣기 (Phase 5)
+  setWallpaperMode: (on) => ipcRenderer.invoke('set-wallpaper-mode', !!on),
+  getWallpaperState: () => ipcRenderer.invoke('get-wallpaper-state'),
   // 탐색기에서 끌어다 놓기
   getPathForFile: (file) => webUtils.getPathForFile(file),
   describePaths: (paths) => ipcRenderer.invoke('describe-paths', paths),

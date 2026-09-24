@@ -161,12 +161,13 @@ export const noteMethods = {
       const editing = this.editingId === note.id;
       const onText = e.target.matches('input, textarea');
       if (!editing && onText) e.preventDefault();                     // 보통 상태: 글자칸에 커서가 생기지 않게
-      this.selectItem(note.id);
+      const canDrag = this.pressSelect(e, note.id, !note.pinned);   // Ctrl · Shift: 여러 개 고르기 (selection.js)
 
       if (e.button !== 0 || this.noteLocked(note)) return;           // 고정한 쪽지 · 잠근 판의 쪽지
       if (e.target.closest('.note-state-icon, .note-more, .note-resize')) return;
       if (editing && onText) return;
       e.preventDefault();
+      if (!canDrag) return;
       this.syncNoteSlotPosition(note);                                // 캘린더 칸에 붙은 쪽지: 보이는 자리에서 끌기 시작
       this.startItemDrag(e, 'note', note);
     });
@@ -183,18 +184,19 @@ export const noteMethods = {
     // 캘린더 칸에 겹쳐 쌓인 맨 위 쪽지를 누르면 → 그 날짜 쪽지들이 둥글게 펼쳐짐 (calendar.js)
     el.addEventListener('click', (e) => {
       if (e.target.closest('.check-box, .md-check, .note-state-icon, .note-more, .note-resize, .code-copy, .code-lang')) return;
-      if (this.editingId === note.id || !note.date) return;
+      if (this.editingId === note.id || !note.date || e.ctrlKey || e.shiftKey) return;   // Ctrl · Shift 는 여러 개 고르기
       const board = this.noteBoard(note);
       if (!board || board.kind !== 'calendar' || !el.classList.contains('stack-top') || el.classList.contains('fanned')) return;
       if (this.dateStack(board.id, note.date).length > 1) this.toggleCalendarFan(board, note.date);
     });
 
-    // 우클릭 → 이 쪽지의 메뉴
+    // 우클릭 → 이 쪽지의 메뉴 (여럿 고른 것 가운데 하나면 여러 개 메뉴)
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.selectItem(note.id);
-      this.openNoteMenu(note, e.clientX, e.clientY);
+      this.ensureSelected(note.id);
+      if (this.multiSelected(note.id)) this.openSelectionMenu(e.clientX, e.clientY);
+      else this.openNoteMenu(note, e.clientX, e.clientY);
     });
 
     // 헤더 왼쪽 아이콘: 텍스트 ↔ 체크리스트 (수정 중에만)
@@ -206,6 +208,7 @@ export const noteMethods = {
     const more = el.querySelector('.note-more');
     more.addEventListener('click', (e) => {
       e.stopPropagation();
+      this.selectItem(note.id);                       // 여럿 골랐어도 … 는 이 쪽지 메뉴
       const r = more.getBoundingClientRect();
       this.openNoteMenu(note, r.left, r.bottom + 4);
     });
@@ -239,7 +242,7 @@ export const noteMethods = {
   // 색·스타일·상태·아이콘·시각을 지금 값에 맞춤 (크기·글꼴 값은 styles.css 의 class 가 가지고 있음)
   refreshNote(note, el = document.getElementById(note.id)) {
     if (!el) return;
-    const selected = this.selectedId === note.id && !note.pinned;     // 고정된 쪽지는 선택 표시를 하지 않음
+    const selected = this.selection.has(note.id) && !note.pinned;    // 고정된 쪽지는 선택 표시를 하지 않음
     const editing = this.editingId === note.id;
     const custom = note.color === 'custom' && isHexColor(note.customColor);
     // 잠깐 붙는 표시(펼치기 · 접기 움직임, 찾기 반짝임)는 선택 · 수정 상태가 바뀌어도 끝까지 이어지게 남김
@@ -448,8 +451,9 @@ export const noteMethods = {
   },
 
   // ---- 선택 ----
+  // 그것 하나만 고름 (여러 개 선택은 selection.js)
   selectItem(id) {
-    if (this.selectedId === id) return;
+    if (this.selection.size === 1 && this.selection.has(id)) return;
     this.selectedId = id;
     this.updateSelection();
   },
@@ -458,9 +462,10 @@ export const noteMethods = {
     this.notes.forEach(note => this.refreshNote(note));
     this.photos.forEach(photo => this.refreshPhoto(photo));
     document.querySelectorAll('.file-icon').forEach(el => {
-      el.classList.toggle('selected', el.id === this.selectedId);
+      el.classList.toggle('selected', this.selection.has(el.id));
     });
     this.updateGroupSelection();                    // 파일 묶음 (groups.js)
+    this.requestLinks();                            // 고른 것에 이은 선은 진하게 (links.js)
   },
 
   deleteNote(id) {
@@ -470,7 +475,7 @@ export const noteMethods = {
     this.notes = this.notes.filter(n => n.id !== id);
     const el = document.getElementById(id);
     if (el) el.remove();
-    if (this.selectedId === id) this.selectedId = null;
+    this.selection.delete(id);
     if (boardId) this.refreshAllBoards();              // 캘린더 칸의 장수 · 겹침 · 연대표 층
     this.scheduleSave();
   },
@@ -486,5 +491,6 @@ export const noteMethods = {
     this.photos.forEach(photo => this.createPhotoElement(photo));
     this.files.forEach(file => this.createFileElement(file));
     this.updateSelection();
+    this.requestLinks();                           // 연결선 층도 판 바로 뒤에 다시 (links.js)
   },
 };

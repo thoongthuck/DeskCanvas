@@ -215,3 +215,59 @@
   background: #4A5568;
   color: #FFFFFF;
 }
+
+/* ===== 영상 — 사진 틀 그대로, 사진 대신 되풀이 재생하는 영상 (renderer/photos.js, 아이콘_가이드.md 17장) =====
+   재생 · 소리 단추: 영상 왼쪽 아래, 마우스를 올렸거나 골랐거나 멈췄을 때만 보임 */
+.canvas-video video.canvas-photo-img { background: #1F252C; }
+
+.video-controls {
+  position: absolute;
+  left: calc(var(--pad-left, 0px) + 8px * var(--z));
+  bottom: calc(var(--pad-bottom, 0px) + 8px * var(--z));
+  display: flex;
+  gap: calc(6px * var(--z));
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.canvas-video:hover .video-controls,
+.canvas-video.selected .video-controls,
+.canvas-video.video-paused .video-controls { opacity: 1; }
+
+.video-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(28px * var(--z));
+  height: calc(28px * var(--z));
+  padding: calc(5px * var(--z));
+  border: none;
+  border-radius: 50%;
+  background: rgba(20, 24, 31, 0.55);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.video-btn:hover { background: rgba(20, 24, 31, 0.78); }
+.video-btn img {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* 못 여는 영상 — 영상 자리에 안내 글 */
+.video-note {
+  display: none;
+  position: absolute;
+  top: var(--pad-top, 0px);
+  left: var(--pad-left, 0px);
+  width: calc(100% - var(--pad-left, 0px) - var(--pad-right, 0px));
+  height: calc(100% - var(--pad-top, 0px) - var(--pad-bottom, 0px));
+  align-items: center;
+  justify-content: center;
+  padding: calc(12px * var(--z));
+  font-size: calc(13px * var(--z));
+  color: rgba(229, 231, 235, 0.8);
+  text-align: center;
+  pointer-events: none;
+}
+.canvas-video.video-broken .video-note { display: flex; }
+.canvas-video.video-broken .video-controls { display: none; }

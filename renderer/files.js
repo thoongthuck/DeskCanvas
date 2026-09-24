@@ -68,20 +68,21 @@ export const fileMethods = {
       if (result !== true) alert(t('alert.openFail', { path: file.path }));
     });
 
-    // 우클릭: 삭제 메뉴
+    // 우클릭: 파일 메뉴 (여럿 고른 것 가운데 하나면 여러 개 메뉴)
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.selectItem(file.id);
-      this.openFileMenu(file, e.clientX, e.clientY);
+      this.ensureSelected(file.id);
+      if (this.multiSelected(file.id)) this.openSelectionMenu(e.clientX, e.clientY);
+      else this.openFileMenu(file, e.clientX, e.clientY);
     });
 
-    // 누르면 선택 + 끌어서 옮기기 (잠근 묶음에 든 파일은 선택 · 열기만)
+    // 누르면 선택 + 끌어서 옮기기 (잠근 묶음에 든 파일은 선택 · 열기만). Ctrl · Shift: 여러 개 고르기 (selection.js)
     el.addEventListener('mousedown', (e) => {
-      this.selectItem(file.id);
+      const canDrag = this.pressSelect(e, file.id, !this.fileLocked(file));
       if (e.button !== 0) return;
       e.preventDefault();
-      if (this.fileLocked(file)) return;
+      if (!canDrag || this.fileLocked(file)) return;
       this.startItemDrag(e, 'file', file);
     });
 
@@ -155,7 +156,7 @@ export const fileMethods = {
       if (f.source !== 'desktop' || current.has(key(f.path))) return true;
       const el = document.getElementById(f.id);
       if (el) el.remove();
-      if (this.selectedId === f.id) this.selectedId = null;
+      this.selection.delete(f.id);
       changed = true;
       return false;
     });
@@ -385,7 +386,7 @@ export const fileMethods = {
     this.files = this.files.filter(f => f.id !== id);
     const el = document.getElementById(id);
     if (el) el.remove();
-    if (this.selectedId === id) this.selectedId = null;
+    this.selection.delete(id);
     if (group) {                                       // 파일 묶음: 뒤 파일이 한 칸씩 당겨짐
       group.fileIds = group.fileIds.filter(x => x !== id);
       this.refreshGroup(group, { slide: true });

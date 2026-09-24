@@ -189,7 +189,7 @@ export const groupMethods = {
   // ---- 선택 · 접기 ----
   // 잠근 묶음은 쪽지처럼 선택 표시를 하지 않음
   groupSelected(group) {
-    return this.selectedId === group.id && !group.pinned;
+    return this.selection.has(group.id) && !group.pinned;
   },
 
   // 선택이 바뀌면 (notes.js updateSelection): 파란 테두리 + 머리 아이콘을 선택 아이콘으로
@@ -327,15 +327,21 @@ export const groupMethods = {
   },
 
   // 놓았을 때: 묶음 위면 그 차례에 넣고 칸으로 미끄러져 들어감 → true (아니면 false — 낱개 파일로 남음)
+  //   여러 개를 함께 끌었으면 (selection.js) 함께 끈 파일도 놓인 자리 순서(위→아래, 왼쪽→오른쪽)대로 이어서
   settleFileInGroup(file, drag) {
     const target = drag.groupTarget;
     this.groupGap = null;
     document.querySelectorAll('.board-group.drop-target').forEach(el => el.classList.remove('drop-target'));
     const group = target && this.findBoard(target.groupId);
     if (!group) return false;
-    group.fileIds.splice(Math.min(target.index, group.fileIds.length), 0, file.id);
-    const el = document.getElementById(file.id);
-    if (el) this.slideFile(el);
+    const files = [file, ...(drag.followers || []).filter(f => f.kind === 'file').map(f => f.item)]
+      .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    let index = Math.min(target.index, group.fileIds.length);
+    files.forEach(f => {
+      group.fileIds.splice(index++, 0, f.id);
+      const el = document.getElementById(f.id);
+      if (el) this.slideFile(el);
+    });
     this.refreshGroup(group);
     return true;
   },
@@ -350,35 +356,84 @@ export const groupMethods = {
 
   // 파일 메뉴 › 묶음에 넣기 › (묶음) — 그 묶음 맨 뒤로 미끄러져 들어감
   moveFileToGroup(file, group) {
+    this.moveFilesToGroup([file], group);
+  },
+
+  // 여러 파일을 그 묶음 맨 뒤로 (자리 순서대로) — 있던 묶음에서는 빠짐
+  moveFilesToGroup(files, group) {
     this.record();
-    const from = this.fileGroup(file);
-    if (from) from.fileIds = from.fileIds.filter(id => id !== file.id);
-    group.fileIds.push(file.id);
-    const el = document.getElementById(file.id);
-    if (el) this.slideFile(el);
-    if (from) this.refreshGroup(from, { slide: true });
+    const sorted = [...files].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    const from = this.takeFilesFromGroups(sorted, group);
+    sorted.forEach(f => {
+      group.fileIds.push(f.id);
+      const el = document.getElementById(f.id);
+      if (el) this.slideFile(el);
+    });
+    from.forEach(g => this.refreshGroup(g, { slide: true }));
     this.refreshGroup(group);
     this.scheduleSave();
   },
 
-  // 파일 메뉴 › 묶음에 넣기 › 새 묶음 — 파일이 있던 자리(묶음에 들어 있었으면 그 묶음 오른쪽)에 새 묶음을 만들어 첫 칸에
+  // 파일들을 지금 든 묶음에서 뺌 (keep 묶음은 그대로) — 반환: 파일이 빠진 묶음들
+  takeFilesFromGroups(files, keep = null) {
+    const changed = new Set();
+    files.forEach(f => {
+      const from = this.fileGroup(f);
+      if (!from) return;
+      from.fileIds = from.fileIds.filter(id => id !== f.id);
+      if (from !== keep) changed.add(from);
+    });
+    return [...changed];
+  },
+
+  // 파일 메뉴 › 묶음에 넣기 › 새 묶음 — 파일이 있던 자리에 새 묶음을 만들어 첫 칸에
   newGroupWithFile(file) {
+    return this.newGroupWithFiles([file]);
+  },
+
+  // 파일들로 새 묶음 (여러 개 선택 · Ctrl+G) — 파일들이 있던 곳 왼쪽 위에, 파일 수에 맞는 폭(2~4칸)으로 만들고
+  //   자리 순서대로 넣음 (파일이 칸으로 미끄러져 들어감). 다른 묶음과 겹치면 오른쪽으로 비켜 놓음. 바로 이름 쓰기
+  newGroupWithFiles(files) {
+    if (!files.length) return null;
     this.record();
-    const from = this.fileGroup(file);
-    const at = from
-      ? { x: from.x + from.width + 24, y: from.y }
-      : { x: file.x - PAD.left - (CELL.width - file.width) / 2, y: file.y - HEAD - (CELL.height - file.height) / 2 };
-    if (from) from.fileIds = from.fileIds.filter(id => id !== file.id);
-    const group = this.newBoard('group', at);
-    group.fileIds.push(file.id);
+    const sorted = [...files].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    const cols = Math.max(MIN_COLS, Math.min(START.cols, sorted.length));
+    const width = PAD.left + PAD.right + cols * CELL.width;
+    const height = HEAD + Math.max(START.rows, Math.ceil(sorted.length / cols)) * CELL.height + PAD.bottom;
+    const at = this.freeGroupSpot({
+      x: Math.min(...sorted.map(f => f.x)) - PAD.left - (CELL.width - sorted[0].width) / 2,
+      y: Math.min(...sorted.map(f => f.y)) - HEAD - (CELL.height - sorted[0].height) / 2,
+    }, width, height);
+    const from = this.takeFilesFromGroups(sorted);
+    const group = this.newBoard('group', { ...at, width });
+    group.fileIds = sorted.map(f => f.id);
     this.boards.push(group);
     this.createBoardElement(group);
-    const el = document.getElementById(file.id);
-    if (el) this.slideFile(el);
-    if (from) this.refreshGroup(from, { slide: true });
+    sorted.forEach(f => {
+      const el = document.getElementById(f.id);
+      if (el) this.slideFile(el);
+    });
+    from.forEach(g => this.refreshGroup(g, { slide: true }));
     this.updateGroupFiles(group);
+    this.selectedId = group.id;                                      // 새 묶음을 고름
+    this.updateSelection();
     this.scheduleSave();
     this.renameBoard(group);
+    return group;
+  },
+
+  // 새 묶음 자리 — 다른 묶음과 겹치면 겹치지 않을 때까지 오른쪽으로
+  freeGroupSpot(at, width, height) {
+    const spot = { ...at };
+    for (let i = 0; i < 30; i++) {
+      const hit = this.fileGroups().find(g => {
+        const size = this.groupSize(g);
+        return spot.x < g.x + size.width && spot.x + width > g.x && spot.y < g.y + size.height && spot.y + height > g.y;
+      });
+      if (!hit) break;
+      spot.x = hit.x + hit.width + 24;
+    }
+    return spot;
   },
 
   // 파일 메뉴 › 묶음에서 빼기 — 묶음 바로 아래 빈자리로
@@ -447,6 +502,7 @@ export const groupMethods = {
       },
       { icon: 'chevron-down.svg', label: t(group.collapsed ? 'menu.expandGroup' : 'menu.collapseGroup'), action: () => this.toggleGroupCollapse(group) },
       { icon: 'pin.svg', label: t(group.pinned ? 'menu.unlockGroup' : 'menu.lockGroup'), action: () => this.toggleBoardLock(group) },
+      ...this.linkMenuItems(group.id),                     // 연결선 잇기 · 지우기 (links.js)
       { separator: true },
       { icon: 'menu-ungroup.svg', label: t('menu.ungroup'), action: () => this.ungroup(group) },
     ];
@@ -456,16 +512,21 @@ export const groupMethods = {
   fileGroupMenuItems(file) {
     const current = this.fileGroup(file);
     if (current && current.pinned) return [];
-    const groups = this.fileGroups();
-    const label = (g) => g.title || (groups.length > 1 ? t('group.untitledN', { n: groups.indexOf(g) + 1 }) : t('group.untitled'));
     const items = [{
       icon: 'add-group.svg', label: t('menu.putInGroup'), arrow: true,
-      submenu: groups.filter(g => g !== current && !g.pinned)
-        .map(g => ({ label: label(g), action: () => this.moveFileToGroup(file, g) }))
+      submenu: this.fileGroups().filter(g => g !== current && !g.pinned)
+        .map(g => ({ label: this.groupLabel(g), action: () => this.moveFileToGroup(file, g) }))
         .concat([{ label: t('menu.newGroup'), action: () => this.newGroupWithFile(file) }]),
     }];
     if (current) items.push({ icon: 'menu-ungroup.svg', label: t('menu.leaveGroup'), action: () => this.takeFileOutOfGroup(file) });
     return items;
+  },
+
+  // 메뉴에 쓰는 묶음 이름 — 이름이 없으면 '파일 묶음' (묶음이 여럿이면 '파일 묶음 2' 처럼 번호)
+  groupLabel(group) {
+    const groups = this.fileGroups();
+    if (group.title) return group.title;
+    return groups.length > 1 ? t('group.untitledN', { n: groups.indexOf(group) + 1 }) : t('group.untitled');
   },
 
   // 격자 모드: 묶음이 차지한 격자 칸 (낱개 파일을 그 칸에 두지 않음)

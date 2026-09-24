@@ -19,6 +19,8 @@
 //   history.js          되돌리기 · 다시 실행
 //   keyboard.js         단축키 · 붙여넣기
 //   search.js           찾기 (Ctrl+F),  minimap.js  미니맵 (Ctrl+M)
+//   selection.js        여러 개 선택 (Ctrl · Shift + 누르기 · 빈 곳 끌기, Ctrl+A · Ctrl+G)
+//   links.js            연결선 (쪽지 · 사진 · 파일 · 파일 묶음 사이 곡선 — 마인드맵처럼)
 import { DEFAULT_SETTINGS, ICON_DIR, PRELOAD_ICONS } from './constants.js';
 import { viewMethods } from './view.js';
 import { menuMethods } from './menus.js';
@@ -44,6 +46,8 @@ import { historyMethods } from './history.js';
 import { keyboardMethods } from './keyboard.js';
 import { searchMethods } from './search.js';
 import { minimapMethods } from './minimap.js';
+import { selectionMethods } from './selection.js';
+import { linkMethods } from './links.js';
 
 // 휠을 확대·축소로 가로채지 않는 곳 (여기 안에서는 목록이 그대로 스크롤됨)
 const SCROLLABLE_UI = '.settings-overlay, .popup-menu, #style-panel, #search-box, #minimap';
@@ -75,7 +79,26 @@ export class InfiniteCanvas {
     this.calendarFan = null;      // 겹친 쪽지를 펼친 날짜 { boardId, date }
     this.holidays = new Map();    // 빨간 날 'YYYY-MM-DD' → 이름 (holidays.js)
     this.minimapOn = false;       // 미니맵 — Ctrl+M 을 눌렀을 때만 (저장하지 않음)
-    this.selectedId = null;
+    // 선택 — 고른 것 전부 (쪽지 · 사진 · 파일 · 파일 묶음 id, selection.js)
+    //   selectedId 는 마지막으로 고른 것. selectedId 에 넣으면 그것 하나만 고름 (예전 코드와 같게)
+    this.selection = new Set();
+    Object.defineProperty(this, 'selectedId', {
+      get: () => {
+        let last = null;
+        this.selection.forEach(id => { last = id; });
+        return last;
+      },
+      set: (id) => {
+        this.selection.clear();
+        if (id) this.selection.add(id);
+      },
+    });
+    this.narrowTo = null;         // 여럿 고른 채 하나를 누름 → 끌지 않고 떼면 그것만 고름
+    // 연결선 (links.js) — [{ id, a, b }], 고른 선, 잇는 중
+    this.links = [];
+    this.selectedLinkId = null;
+    this.linking = null;
+    this.linkFrame = null;
 
     // 설정 (실제 값은 restore() 에서 불러옴)
     this.settings = { ...DEFAULT_SETTINGS };
@@ -133,7 +156,7 @@ export class InfiniteCanvas {
     }, { once: true });
   }
 
-  // 문제 찾기용 기록 — main 이 code 폴더의 debug-log.txt 에 남긴다 (원인 잡으면 지울 것)
+  // 문제 찾기용 기록 — main 이 앱 데이터 폴더의 debug-log.txt 에 남긴다 (%APPDATA%\wallpaper-canvas)
   log(text) {
     try { if (window.canvasAPI && window.canvasAPI.log) window.canvasAPI.log(text); } catch (_) {}
   }
@@ -210,6 +233,9 @@ export class InfiniteCanvas {
 
     // 캘린더에서 펼친 쪽지: 그 캘린더 밖(다른 쪽지 · 사진 · 파일 · 다른 판 · 빈 바탕)을 누르면 접힘 (calendar.js)
     document.addEventListener('mousedown', (e) => this.collapseFanOnOutside(e), true);
+
+    // 연결선: 선 밖을 누르면 선 선택 풀기 · Alt + 끌기로 잇기 (links.js)
+    this.setupLinks();
   }
 }
 
@@ -240,4 +266,6 @@ Object.assign(
   keyboardMethods,
   searchMethods,
   minimapMethods,
+  selectionMethods,
+  linkMethods,
 );

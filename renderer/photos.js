@@ -1,5 +1,7 @@
 // 바탕에 붙인 사진 — 쪽지 없이 사진 한 장 ('쪽지 추가 › 이미지 추가')
 //   사진 뒤에 틀을 둠 — 종이 틀(기본) · 테이프 · 압정 · 틀 없음 (code/icons/아이콘_가이드.md 13장)
+//   영상도 같은 틀에 붙임 ('쪽지 추가 › 영상 추가', photo.media = 'video') — 소리 끈 채 되풀이 재생이 기본,
+//     멈춤 · 소리는 저장됨 (되돌리기에는 넣지 않음). 화면 밖에 있는 동안은 쉼 (아이콘_가이드.md 17장)
 //   photo.width · height 는 '사진' 크기이고, 틀 여백은 그 둘레에 더해짐 (photo.x · y 는 틀의 왼쪽 위)
 //   틀 고르는 창은 photo-frame.js
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
@@ -9,6 +11,7 @@ import { t } from './i18n.js';
 const MAX_SIDE = 360;          // 처음 놓일 때 사진의 가장 긴 변 (zoom 1 기준)
 const MIN_SIDE = 60;
 const TAPE_LENGTH = 86;        // 테이프 길이 (사진이 작으면 틀 폭의 30%까지 줄임)
+const VIDEO_FALLBACK = { width: 320, height: 180 };   // 영상 크기를 못 읽었을 때 (16:9)
 
 export const PHOTO_FRAMES = ['none', 'paper', 'tape', 'pin'];
 export const TAPE_COLORS = ['yellow', 'pink', 'blue', 'green', 'purple', 'gray'];
@@ -32,6 +35,9 @@ export const photoMethods = {
       tapeColor: 'yellow', tapePos: 'center',
       pinColor: 'red', pinPos: 'center',
       tilt: 0,                     // 기울임 (도)
+      media: 'image',              // 'image' | 'video'
+      muted: true,                 // 영상: 소리 끔
+      paused: false,               // 영상: 멈춤
     }, extra);
   },
 
@@ -49,6 +55,9 @@ export const photoMethods = {
     if (!PIN_COLORS[photo.pinColor]) photo.pinColor = 'red';
     if (!PIN_POSITIONS.includes(photo.pinPos)) photo.pinPos = 'center';
     photo.tilt = Number.isFinite(photo.tilt) ? Math.max(-3, Math.min(3, photo.tilt)) : 0;
+    photo.media = photo.media === 'video' ? 'video' : 'image';
+    photo.muted = photo.muted !== false;
+    photo.paused = !!photo.paused;
     return photo;
   },
 
@@ -72,15 +81,37 @@ export const photoMethods = {
   photoSize(src) {
     return new Promise((resolve) => {
       const img = new Image();
-      img.onload = () => {
-        const w = img.naturalWidth || MAX_SIDE;
-        const h = img.naturalHeight || MAX_SIDE;
-        const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
-        resolve({ width: Math.max(MIN_SIDE, Math.round(w * scale)), height: Math.max(MIN_SIDE, Math.round(h * scale)) });
-      };
+      img.onload = () => resolve(this.fitMediaSize(img.naturalWidth || MAX_SIDE, img.naturalHeight || MAX_SIDE));
       img.onerror = () => resolve({ width: 240, height: 180 });
       img.src = src;
     });
+  },
+
+  // 영상도 같은 규칙 (영상 정보만 읽음 — 못 읽으면 16:9)
+  videoSize(src) {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      let done = false;
+      const finish = (size) => {
+        if (done) return;
+        done = true;
+        video.removeAttribute('src');
+        video.load();
+        resolve(size);
+      };
+      video.preload = 'metadata';
+      video.muted = true;
+      video.onloadedmetadata = () => finish(this.fitMediaSize(video.videoWidth || VIDEO_FALLBACK.width, video.videoHeight || VIDEO_FALLBACK.height));
+      video.onerror = () => finish({ ...VIDEO_FALLBACK });
+      setTimeout(() => finish({ ...VIDEO_FALLBACK }), 8000);
+      video.src = src;
+    });
+  },
+
+  // 가장 긴 변을 MAX_SIDE 로 (작으면 그대로)
+  fitMediaSize(w, h) {
+    const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+    return { width: Math.max(MIN_SIDE, Math.round(w * scale)), height: Math.max(MIN_SIDE, Math.round(h * scale)) };
   },
 
   // 이미지 추가: 사진을 골라 바탕에 붙임
@@ -104,10 +135,26 @@ export const photoMethods = {
     }
   },
 
-  async addPhotoAt(at, src) {
-    const size = await this.photoSize(src);
+  // 영상 추가: 영상을 골라 바탕에 붙임 (틀 · 캡션 · 크기 조절은 사진과 같음)
+  async addVideoAt(at) {
+    this.log('영상 추가 누름');
+    if (!window.canvasAPI || !window.canvasAPI.pickVideo) return null;
+    try {
+      const src = await window.canvasAPI.pickVideo(t('dialog.pickVideo'));
+      this.log(`영상 고르기 끝: ${src || '취소'}`);
+      if (!src) return null;
+      return await this.addPhotoAt(at, src, { media: 'video' });
+    } catch (err) {
+      this.log(`영상 추가 실패: ${err && err.message}`);
+      this.showToast(t('toast.videoFail', { msg: (err && err.message) || '' }));
+      return null;
+    }
+  },
+
+  async addPhotoAt(at, src, extra = {}) {
+    const size = extra.media === 'video' ? await this.videoSize(src) : await this.photoSize(src);
     this.record();
-    const photo = this.newPhoto({ x: at.x, y: at.y, src, ...size });
+    const photo = this.newPhoto({ x: at.x, y: at.y, src, ...size, ...extra });
     this.photos.push(photo);
     this.createPhotoElement(photo);
     this.selectItem(photo.id);
@@ -116,25 +163,34 @@ export const photoMethods = {
   },
 
   createPhotoElement(photo) {
+    const video = photo.media === 'video';
     const el = document.createElement('div');
-    el.className = 'canvas-photo';
+    el.className = 'canvas-photo' + (video ? ' canvas-video' : '');
     el.id = photo.id;
     el.innerHTML = `
       <div class="photo-paper">
-        <img class="canvas-photo-img" alt="" draggable="false">
+        ${video ? '<video class="canvas-photo-img" loop playsinline preload="auto"></video><div class="video-note"></div>'
+                : '<img class="canvas-photo-img" alt="" draggable="false">'}
         <div class="photo-caption"></div>
       </div>
       <div class="photo-extras"></div>
+      ${video ? `<div class="video-controls">
+        <button type="button" class="video-btn video-play"><img alt="" draggable="false"></button>
+        <button type="button" class="video-btn video-sound"><img alt="" draggable="false"></button>
+      </div>` : ''}
       <div class="photo-resize"></div>
     `;
     el.querySelector('.canvas-photo-img').src = photo.src;
+    if (video) this.setupVideoElement(photo, el);
 
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('.photo-caption-input')) return;           // 캡션을 쓰는 중: 글자 고르기
-      this.selectItem(photo.id);
+      if (e.target.closest('.video-btn')) return;                     // 영상 재생 · 소리 단추
+      const canDrag = this.pressSelect(e, photo.id, !photo.pinned);  // Ctrl · Shift: 여러 개 고르기 (selection.js)
       if (e.button !== 0 || photo.pinned) return;
       if (e.target.closest('.photo-resize')) return;
       e.preventDefault();
+      if (!canDrag) return;
       this.startItemDrag(e, 'photo', photo);
     });
 
@@ -156,8 +212,9 @@ export const photoMethods = {
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.selectItem(photo.id);
-      this.openPhotoMenu(photo, e.clientX, e.clientY);
+      this.ensureSelected(photo.id);
+      if (this.multiSelected(photo.id)) this.openSelectionMenu(e.clientX, e.clientY);   // 여럿 고른 것 가운데 하나
+      else this.openPhotoMenu(photo, e.clientX, e.clientY);
     });
 
     this.uiLayer.appendChild(el);
@@ -198,15 +255,24 @@ export const photoMethods = {
   refreshPhoto(photo, el = document.getElementById(photo.id)) {
     if (!el) return;
     el.classList.toggle('pinned', !!photo.pinned);
-    el.classList.toggle('selected', this.selectedId === photo.id && !photo.pinned);
+    el.classList.toggle('selected', this.selection.has(photo.id) && !photo.pinned);
   },
 
   updatePhotoPosition(el, photo) {
     const z = this.zoom;
     const pad = this.photoPadding(photo);
     const size = this.photoOuterSize(photo);
-    el.style.left = `${photo.x * z + this.panX}px`;
-    el.style.top = `${photo.y * z + this.panY}px`;
+    const left = photo.x * z + this.panX;
+    const top = photo.y * z + this.panY;
+    if (photo.media === 'video') {                  // 화면 밖에 있는 동안은 영상을 쉼
+      const visible = left < this.viewWidth && top < this.viewHeight && left + size.width * z > 0 && top + size.height * z > 0;
+      if (el.videoVisible !== visible) {
+        el.videoVisible = visible;
+        this.applyVideoState(photo, el);
+      }
+    }
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
     el.style.width = `${size.width * z}px`;
     el.style.height = `${size.height * z}px`;
     el.style.setProperty('--zoom', z);
@@ -216,6 +282,7 @@ export const photoMethods = {
     el.style.setProperty('--pad-left', `${pad.left * z}px`);
     el.style.setProperty('--tape-len', `${Math.min(TAPE_LENGTH, size.width * 0.3) * z}px`);
     el.style.setProperty('--tilt', `${photo.tilt || 0}deg`);
+    this.requestLinks();                            // 연결선도 따라감 (links.js)
   },
 
   // 틀 바꾸기 (틀 · 테이프/압정의 색과 자리 · 기울임)
@@ -236,7 +303,18 @@ export const photoMethods = {
     if (!window.canvasAPI || !window.canvasAPI.pickImage) return;
     const src = await window.canvasAPI.pickImage(t('dialog.pickImage'));
     if (!src) return;
-    const size = await this.photoSize(src);
+    this.replacePhotoSource(photo, src, await this.photoSize(src));
+  },
+
+  // 영상 바꾸기 — 사진 바꾸기와 같음
+  async replaceVideo(photo) {
+    if (!window.canvasAPI || !window.canvasAPI.pickVideo) return;
+    const src = await window.canvasAPI.pickVideo(t('dialog.pickVideo'));
+    if (!src) return;
+    this.replacePhotoSource(photo, src, await this.videoSize(src));
+  },
+
+  replacePhotoSource(photo, src, size) {
     this.record();
     const scale = Math.max(photo.width, photo.height) / Math.max(size.width, size.height);
     photo.src = src;
@@ -246,9 +324,66 @@ export const photoMethods = {
     const el = document.getElementById(photo.id);
     if (el) {
       el.querySelector('.canvas-photo-img').src = src;
+      el.classList.remove('video-broken');
       this.updatePhotoPosition(el, photo);
+      if (photo.media === 'video') this.applyVideoState(photo, el);
     }
     this.scheduleSave();
+  },
+
+  // ---- 영상 ----
+  // 재생 · 소리 단추 (마우스를 올리거나 멈췄을 때 왼쪽 아래에 보임), 못 여는 영상은 안내 글
+  setupVideoElement(photo, el) {
+    const video = el.querySelector('video');
+    video.muted = true;                                 // 소리는 applyVideoState 가 맞춤
+    video.addEventListener('error', () => {
+      el.classList.add('video-broken');
+      el.querySelector('.video-note').textContent = t('video.broken');
+    });
+    video.addEventListener('loadeddata', () => el.classList.remove('video-broken'));
+    el.querySelector('.video-play').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleVideoPlay(photo.id);
+    });
+    el.querySelector('.video-sound').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleVideoSound(photo.id);
+    });
+    this.applyVideoState(photo, el);
+  },
+
+  // 저장된 멈춤 · 소리를 영상에 맞춤 (화면 밖이면 멈춘 것처럼)
+  applyVideoState(photo, el = document.getElementById(photo.id)) {
+    const video = el && el.querySelector('video');
+    if (!video) return;
+    video.muted = photo.muted;
+    const play = !photo.paused && el.videoVisible !== false;
+    if (play && video.paused) video.play().catch(() => {});
+    else if (!play && !video.paused) video.pause();
+    el.classList.toggle('video-paused', photo.paused);
+    const playBtn = el.querySelector('.video-play');
+    const soundBtn = el.querySelector('.video-sound');
+    playBtn.querySelector('img').src = `${ICON_DIR}${photo.paused ? 'video-play.svg' : 'video-pause.svg'}`;
+    playBtn.title = t(photo.paused ? 'video.play' : 'video.pause');
+    soundBtn.querySelector('img').src = `${ICON_DIR}${photo.muted ? 'video-mute.svg' : 'video-sound.svg'}`;
+    soundBtn.title = t(photo.muted ? 'video.soundOn' : 'video.soundOff');
+  },
+
+  // 재생 · 멈춤과 소리는 저장하지만 되돌리기에는 넣지 않음 (history.js 도 되돌릴 때 지금 값을 그대로 둠)
+  toggleVideoPlay(id) {
+    const photo = this.photos.find(p => p.id === id);
+    if (!photo) return;
+    photo.paused = !photo.paused;
+    this.applyVideoState(photo);
+    this.scheduleSave({ system: true });
+  },
+
+  toggleVideoSound(id) {
+    const photo = this.photos.find(p => p.id === id);
+    if (!photo) return;
+    photo.muted = !photo.muted;
+    this.applyVideoState(photo);
+    this.scheduleSave({ system: true });
   },
 
   // 캡션 넣기: 종이 틀 아래 여백에서 바로 씀 (Enter 끝 · Esc 취소)
@@ -327,7 +462,7 @@ export const photoMethods = {
     this.photos = this.photos.filter(p => p.id !== id);
     const el = document.getElementById(id);
     if (el) el.remove();
-    if (this.selectedId === id) this.selectedId = null;
+    this.selection.delete(id);
     this.scheduleSave();
   },
 };

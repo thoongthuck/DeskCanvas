@@ -23,6 +23,7 @@ export const menuMethods = {
         ? { icon: 'add-image.svg', label: t('menu.removePhoto'), action: () => this.removeNotePhoto(note) }
         : { icon: 'add-image.svg', label: t('menu.addPhoto'), action: () => this.pickNotePhoto(note) });
     }
+    items.push(...this.linkMenuItems(note.id));            // 연결선 잇기 · 지우기 (links.js)
     items.push({ separator: true });
     items.push({ icon: 'palette.svg', label: t('menu.style'), styleFor: note, arrow: true });
     items.push({ separator: true });
@@ -30,29 +31,37 @@ export const menuMethods = {
     this.openContextMenu(items, x, y);
   },
 
-  // 바탕에 붙인 사진 우클릭 (가이드 13-3)
+  // 바탕에 붙인 사진 우클릭 (가이드 13-3) — 영상이면 맨 위에 재생 · 소리 (가이드 17장)
   openPhotoMenu(photo, x, y) {
     const hasCaption = photo.frame === 'paper' && !!photo.caption;
+    const video = photo.media === 'video';
     this.openContextMenu([
-      { icon: 'add-image.svg', label: t('menu.replacePhoto'), action: () => this.replacePhotoImage(photo) },
+      ...(video ? [
+        { icon: photo.paused ? 'video-play.svg' : 'video-pause.svg', label: t(photo.paused ? 'video.play' : 'video.pause'), action: () => this.toggleVideoPlay(photo.id) },
+        { icon: photo.muted ? 'video-sound.svg' : 'video-mute.svg', label: t(photo.muted ? 'video.soundOn' : 'video.soundOff'), action: () => this.toggleVideoSound(photo.id) },
+        { separator: true },
+        { icon: 'add-video.svg', label: t('menu.replaceVideo'), action: () => this.replaceVideo(photo) },
+      ] : [
+        { icon: 'add-image.svg', label: t('menu.replacePhoto'), action: () => this.replacePhotoImage(photo) },
+      ]),
       hasCaption
         ? { icon: 'edit.svg', label: t('menu.removeCaption'), action: () => this.removePhotoCaption(photo) }
         : { icon: 'edit.svg', label: t('menu.addCaption'), action: () => this.editPhotoCaption(photo) },
       { icon: 'palette.svg', label: t('menu.frame'), arrow: true, panel: (menu, row) => this.openFramePanel(menu, row, photo) },
       { icon: 'pin.svg', label: photo.pinned ? t('menu.unpin') : t('menu.pin'), action: () => this.togglePhotoPin(photo) },
+      ...this.linkMenuItems(photo.id),
       { separator: true },
       { icon: 'trash.svg', label: t('menu.delete'), action: () => this.deletePhoto(photo.id), danger: true },
     ], x, y);
   },
 
-  // 파일 아이콘 우클릭: 묶음에 넣기 › · 묶음에서 빼기 (groups.js) · ─ ·
+  // 파일 아이콘 우클릭: 묶음에 넣기 › · 묶음에서 빼기 (groups.js) · 연결선 잇기 · 지우기 (links.js) · ─ ·
   //   바탕화면 폴더 파일은 휴지통으로, 끌어다 놓은 아이콘은 아이콘만 지우기
   openFileMenu(file, x, y) {
     const item = file.source === 'desktop'
       ? { icon: 'trash.svg', label: t('menu.trash'), action: () => this.trashDesktopFile(file), danger: true }
       : { icon: 'trash.svg', label: t('menu.removeIcon'), action: () => this.deleteFile(file.id), danger: true };
-    const groupItems = this.fileGroupMenuItems(file);
-    this.openContextMenu(groupItems.length ? [...groupItems, { separator: true }, item] : [item], x, y);
+    this.openContextMenu([...this.fileGroupMenuItems(file), ...this.linkMenuItems(file.id), { separator: true }, item], x, y);
   },
 
   // 쪽지·사진·파일 메뉴 틀 (디자인/팝업/팝업.png)
@@ -211,6 +220,7 @@ export const menuMethods = {
     const menu = this.buildPopup('add-menu', [
       { icon: 'add-memo.svg', label: t('menu.addMemo'), onClick: () => { this.closeMenus(); this.addNoteAt(at); } },
       { icon: 'add-image.svg', label: t('menu.addImage'), onClick: () => { this.closeMenus(); this.addImageAt(at); } },
+      { icon: 'add-video.svg', label: t('menu.addVideo'), onClick: () => { this.closeMenus(); this.addVideoAt(at); } },
       { icon: 'add-file.svg', label: t('menu.addFile'), onClick: () => { this.closeMenus(); this.addFileAt(at); } },
       { icon: 'add-group.svg', label: t('menu.addGroup'), onClick: () => { this.closeMenus(); this.addGroupAt(at); } },
       { separator: true },

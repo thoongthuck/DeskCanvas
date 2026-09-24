@@ -25,6 +25,7 @@ export const settingsMethods = {
     if (saved.grid !== undefined && saved.showGrid === undefined) s.showGrid = !!saved.grid;
     s.autoSave = !!s.autoSave;
     s.openLastWorkspace = !!s.openLastWorkspace;
+    s.wallpaperMode = s.wallpaperMode !== false;
     s.showGrid = !!s.showGrid;
     s.gridSnap = !!s.gridSnap;
     s.holidays = !!s.holidays;
@@ -69,12 +70,27 @@ export const settingsMethods = {
     document.body.classList.toggle('overflow-expand', s.overflow === 'expand');
 
     if (key === 'autoSave' && s.autoSave && this.dirty) this.persist();
+    if (!key || key === 'wallpaperMode') this.applyWallpaperMode();
     if (!key || key === 'language') this.refreshTexts();
     if (!key || key === 'overflow') this.fitAllNotes();
     if (!key || key === 'theme') this.refreshFallbackIcons();    // 파일 기본 그림도 밝은 · 어두운 것으로
     if (!key || key === 'holidays' || key === 'holidayCountry' || key === 'language') this.loadHolidays();
     this.draw();
     if (this.settingsOpen) this.refreshSettingsWindow();
+  },
+
+  // 바탕화면에 넣기 — 창 옮기기는 main.js 가 함 (같은 값이면 아무것도 안 함)
+  //   앞으로 꺼내기 단축키는 main.js 가 비어 있는 것을 골라 잡음 → 설정 창 안내에 씀
+  applyWallpaperMode() {
+    const api = window.canvasAPI;
+    if (!api || !api.setWallpaperMode) return;
+    api.setWallpaperMode(this.settings.wallpaperMode).catch(() => {});
+    if (this.popOutKey !== undefined || !api.getWallpaperState) return;
+    this.popOutKey = '';
+    api.getWallpaperState().then((state) => {
+      this.popOutKey = String((state && state.key) || '').replace('Control', 'Ctrl').split('+').join(' + ');
+      if (this.settingsOpen) this.refreshSettingsWindow();
+    }).catch(() => {});
   },
 
   // 언어를 바꾸면 쪽지 안내 문구·시각 표시도 다시

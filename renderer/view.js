@@ -7,11 +7,14 @@ export const viewMethods = {
     if (el && el !== this.canvas) return;
     // (캘린더에서 펼친 쪽지는 app.js 의 문서 전체 mousedown 이 먼저 접음)
 
-    // 빈 바탕을 누르면 선택 해제
-    if (this.selectedId) {
-      this.selectedId = null;
-      this.updateSelection();
+    // Ctrl · Shift 를 누른 채 끌면 네모로 여러 개 고르기 (selection.js) — 그냥 끌면 화면 이동
+    if (e.button === 0 && (e.ctrlKey || e.shiftKey || e.metaKey)) {
+      this.startMarquee(e);
+      return;
     }
+
+    // 빈 바탕을 누르면 선택 해제
+    this.clearSelection();
 
     this.isDragging = true;
     this.dragStartX = e.clientX;
@@ -104,6 +107,7 @@ export const viewMethods = {
     el.style.height = `${r.height * this.zoom}px`;
     el.style.setProperty('--zoom', this.zoom);      // 아이콘·글자·여백·접힘도 같은 배율로
     this.applyBoardState(el, note);
+    this.requestLinks();                            // 연결선도 따라감 (links.js)
   },
 
   // 화면에 차지하는 자리 (월드 좌표) — 찾기 · 미니맵이 씀
@@ -136,6 +140,7 @@ export const viewMethods = {
     if (symbol) symbol.style.fontSize = `${32 * this.zoom}px`;     // 최소 크기를 두지 않음 —
     const name = el.querySelector('.file-icon-name');              // 두면 많이 줄였을 때 그림이 테두리 밖으로 넘침
     if (name) name.style.fontSize = `${11 * this.zoom}px`;
+    this.requestLinks();
   },
 
   // ---- 캔버스 그리기 ----

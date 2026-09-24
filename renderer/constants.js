@@ -63,6 +63,7 @@ export const NOTE_MAX_AUTO_WIDTH = 720;   // '자동 확장'으로 넓어질 수
 export const DEFAULT_SETTINGS = {
   autoSave: true,
   openLastWorkspace: true,
+  wallpaperMode: true,       // 바탕화면에 넣기 — 캔버스를 윈도우 바탕화면 층에 (main.js, 메모장.md Phase 5)
   theme: 'light',            // 'light' | 'dark'
   showGrid: false,
   gridGap: 36,
@@ -87,6 +88,8 @@ export const PRELOAD_ICONS = [
   'edit.svg', 'copy.svg', 'pin.svg', 'palette.svg', 'trash.svg',
   'menu-axis.svg', 'menu-scale.svg', 'menu-link.svg', 'menu-today.svg', 'menu-weekstart.svg', 'menu-view.svg',
   'add-group.svg', 'menu-ungroup.svg', 'note-group.svg', 'note-more.svg', 'note-selected.svg', 'chevron-down.svg',
+  'menu-connect.svg', 'menu-disconnect.svg',
+  'add-video.svg', 'video-play.svg', 'video-pause.svg', 'video-sound.svg', 'video-mute.svg',
   'arrow-left.svg', 'arrow-right.svg', 'board-more.svg', 'plus.svg', 'rail-hook.svg',
   'photo-pin-red.svg', 'photo-pin-yellow.svg', 'photo-pin-blue.svg', 'photo-pin-green.svg',
   'photo-pin-purple.svg', 'photo-pin-gray.svg',

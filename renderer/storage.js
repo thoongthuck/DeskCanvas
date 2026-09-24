@@ -13,6 +13,7 @@ export const storageMethods = {
       files: this.files,
       photos: this.photos,
       boards: this.boards,
+      links: this.liveLinks(),          // 이은 것이 없어진 선은 버림 (links.js)
     };
   },
 
@@ -21,6 +22,7 @@ export const storageMethods = {
   //  - 자동 저장 꺼짐: '저장 안 한 변경'으로만 표시 (system: true 는 바탕화면 파일 동기화처럼 사용자가 한 일이 아닌 것)
   scheduleSave({ system = false } = {}) {
     this.requestMinimap();
+    this.requestLinks();
     // 캘린더 판과 연동한 연대표는 쪽지를 따라 그려 두므로, 쪽지가 바뀌면 다시 그림
     if (this.boards.some(b => b.kind === 'timeline' && this.linkedCalendar(b))) this.requestBoardsRefresh();
     if (!this.ready) return;
@@ -123,7 +125,9 @@ export const storageMethods = {
     this.photos = (Array.isArray(data.photos) ? data.photos : []).map(p => this.normalizePhoto(p));
     this.boards = (Array.isArray(data.boards) ? data.boards : []).map(b => this.normalizeBoard(b)).filter(Boolean);
     this.files = Array.isArray(data.files) ? data.files : [];
+    this.links = this.normalizeLinks(data.links);
     this.selectedId = null;
+    this.selectedLinkId = null;
     this.renderAll();
     this.draw();
   },

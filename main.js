@@ -1,19 +1,23 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage, screen, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage, screen, net, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 // ── 문제 찾기용 기록 ──────────────────────────────────────────────
-// 무슨 일이 있었는지 code 폴더의 debug-log.txt 에 남긴다.
-// (원인을 잡으면 지울 예정. 파일이 너무 커지면 새로 시작한다)
-const LOG_FILE = path.join(__dirname, 'debug-log.txt');
+// 무슨 일이 있었는지 앱 데이터 폴더의 debug-log.txt 에 남긴다 (%APPDATA%\wallpaper-canvas\debug-log.txt).
+// 코드 폴더에는 쓰지 않음 (git 기록에 섞이지 않게). 200KB 가 넘으면 새로 시작한다
+function logFile() {
+  return path.join(app.getPath('userData'), 'debug-log.txt');
+}
 function logLine(text) {
   try {
+    const file = logFile();
     const now = new Date();
-    const stamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > 200000) fs.unlinkSync(LOG_FILE);
-    fs.appendFileSync(LOG_FILE, `[${stamp}] ${text}\n`, 'utf-8');
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    if (fs.existsSync(file) && fs.statSync(file).size > 200000) fs.unlinkSync(file);
+    fs.appendFileSync(file, `[${stamp}] ${text}\n`, 'utf-8');
   } catch (_) {}
 }
 
@@ -62,6 +66,14 @@ function getImagesDir() {
 }
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
+const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'webm', 'mov', 'ogv', 'mkv'];
+const VIDEO_COPY_LIMIT = 500 * 1024 * 1024;     // 이보다 큰 영상은 복사하지 않고 원본 자리를 씀
+
+function getVideosDir() {
+  const dir = path.join(app.getPath('userData'), 'videos');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 function copyImageToStore(src) {
   const dest = path.join(getImagesDir(), `${Date.now()}${path.extname(src).toLowerCase()}`);
@@ -80,10 +92,231 @@ function screenArea() {
 // 해상도 · 배율 · 모니터 구성 · 작업표시줄 위치가 바뀌면 창도 다시 맞춤
 function fitWindowToScreen() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (wallpaper.embedded) {                         // 바탕화면 층: 새 크기로 다시 넣음 (모니터 수가 바뀌면 아이콘도)
+    embedWindow();
+    return;
+  }
   const area = screenArea();
   mainWindow.setBounds(area);
   logLine(`화면 크기 맞춤: ${area.width}×${area.height} (${area.x}, ${area.y})`);
 }
+
+// ================ 바탕화면 층 (메모장.md Phase 5) ================
+// 설정 '바탕화면에 넣기'(기본 켬)면 캔버스 창을 윈도우 바탕화면 층에 넣음
+//   → 다른 프로그램 창은 늘 그 위, '바탕화면 보기'(Win+D)에도 그대로, Alt+Tab 에도 안 나옴
+//   자리는 바탕화면 창 안의 맨 위 — 윈도우 아이콘 층보다 위라 윈도우 아이콘은 가려짐 (파일 아이콘은 앱이 직접 그림).
+//   탐색기 창은 숨기거나 바꾸지 않으므로 앱이 갑자기 꺼져도 바탕화면은 그대로
+//   바탕화면 층의 창에는 키보드가 저절로 오지 않아서, 캔버스를 누를 때마다 키보드를 이 창으로 가져옴.
+//   그래도 못 가져오는 컴퓨터면 글을 쓰는 동안만 캔버스를 앞으로 꺼냄
+//   Ctrl+Alt+D: 캔버스를 다른 창들 앞으로 꺼냄 → 다른 창을 누르거나 한 번 더 누르면 다시 바탕화면 층으로
+//     (Ctrl+Alt+Space 는 Claude 앱 등이 이미 씀. 다른 프로그램이 잡고 있으면 다음 후보로)
+//   Win32 호출은 native/desktop-bridge.ps1 (윈도우에 들어 있는 PowerShell 의 C# 호출 — 새로 설치할 것 없음).
+//   넣지 못하면 예전처럼 맨 위 창으로 씀
+const POP_OUT_KEYS = ['Control+Alt+D', 'Control+Alt+W', 'Control+Alt+Q'];
+let popOutKey = '';     // 실제로 잡은 단축키 (설정 창 안내에 씀)
+const wallpaper = {
+  wanted: false,        // 설정: 바탕화면에 넣기
+  embedded: false,      // 지금 바탕화면 층에 들어가 있음
+  poppedOut: false,     // 앞으로 꺼내 둔 중 (Ctrl+Alt+D, 또는 글 쓰는 동안)
+  autoPopped: false,    // 글 쓰는 동안만 꺼낸 것 — 다 쓰면 다시 넣음
+  moving: false,        // 넣고 빼는 중 (그 사이에 오는 창 활성 · 비활성은 무시)
+  dialogOpen: false,    // 파일 고르기 등 윈도우 창이 떠 있는 중 (그동안은 다시 넣지 않음)
+  keyboard: null,       // 캔버스를 눌렀을 때 키보드를 가져왔는지 — 'ok' | 'fail'
+  claim: null,          // 키보드 가져오기 (진행 중이면 기다림)
+  bridge: null,         // PowerShell 다리 — 한 번 띄워 두고 한 줄씩 명령 · 답
+  queue: [],
+  buffer: '',
+};
+let quitting = false;   // 사용자가 끄는 중 (탐색기가 다시 시작돼 창이 사라진 것과 구분)
+
+function wallpaperSetting() {
+  if (process.platform !== 'win32') return false;
+  try {
+    return JSON.parse(fs.readFileSync(getSettingsFile(), 'utf-8')).wallpaperMode !== false;
+  } catch (_) {
+    return true;
+  }
+}
+
+function startBridge() {
+  if (wallpaper.bridge || process.platform !== 'win32') return wallpaper.bridge;
+  const script = path.join(__dirname, 'native', 'desktop-bridge.ps1');
+  let child;
+  try {
+    child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+  } catch (err) {
+    logLine(`바탕화면 다리 못 띄움: ${err && err.message}`);
+    return null;
+  }
+  wallpaper.bridge = child;
+  wallpaper.buffer = '';
+  wallpaper.queue = [(line) => logLine(`바탕화면 다리 준비: ${line}`)];     // 첫 줄 'ready …'
+  child.stdout.on('data', (data) => {
+    wallpaper.buffer += data.toString();
+    let i;
+    while ((i = wallpaper.buffer.indexOf('\n')) >= 0) {
+      const line = wallpaper.buffer.slice(0, i).trim();
+      wallpaper.buffer = wallpaper.buffer.slice(i + 1);
+      const next = wallpaper.queue.shift();
+      if (next) next(line);
+    }
+  });
+  child.stderr.on('data', (data) => logLine(`바탕화면 다리 오류: ${String(data).trim().slice(0, 300)}`));
+  child.on('error', (err) => logLine(`바탕화면 다리 오류: ${err && err.message}`));
+  child.on('exit', (code) => {
+    logLine(`바탕화면 다리 끝남 (${code})`);
+    wallpaper.queue.splice(0).forEach(done => done('fail exit'));
+    if (wallpaper.bridge === child) wallpaper.bridge = null;
+  });
+  return child;
+}
+
+// 다리에 명령 한 줄 → 답 한 줄 (답이 늦으면 'fail timeout')
+function bridgeCall(command, timeout = 10000) {
+  const child = startBridge();
+  if (!child) return Promise.resolve('fail no-bridge');
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (line) => { if (!done) { done = true; resolve(line); } };
+    wallpaper.queue.push(finish);
+    setTimeout(() => finish('fail timeout'), timeout);
+    try { child.stdin.write(`${command}\n`); } catch (err) { finish(`fail ${err && err.message}`); }
+  });
+}
+
+function windowHandle() {
+  const buf = mainWindow.getNativeWindowHandle();
+  return buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
+}
+
+// 바탕화면 층에 넣기 — 주 모니터 전체 (작업표시줄 뒤까지)
+async function embedWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const b = screen.dipToScreenRect(null, screen.getPrimaryDisplay().bounds);
+  const onTop = mainWindow.isAlwaysOnTop();
+  wallpaper.moving = true;
+  try {
+    mainWindow.setAlwaysOnTop(false);
+    const reply = await bridgeCall(`attach ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height}`);
+    logLine(`바탕화면 층에 넣기: ${reply}`);
+    if (!reply.startsWith('ok')) {
+      if (onTop && mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(true);
+      return false;
+    }
+    wallpaper.embedded = true;
+    wallpaper.poppedOut = false;
+    wallpaper.autoPopped = false;
+    return true;
+  } finally {
+    wallpaper.moving = false;
+  }
+}
+
+// 바탕화면 층에서 꺼내 보통 창으로 — bounds 는 Electron 좌표 (배율 적용)
+async function unembedWindow(bounds) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const b = screen.dipToScreenRect(null, bounds);
+  wallpaper.moving = true;
+  try {
+    const reply = await bridgeCall(`detach ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height}`);
+    logLine(`바탕화면 층에서 꺼냄: ${reply}`);
+    wallpaper.embedded = false;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBounds(bounds);
+  } finally {
+    wallpaper.moving = false;
+  }
+}
+
+// 보통 창으로 앞에 (예전 방식 — 앞에 있는 동안 맨 위)
+function showOnTop() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+// 앞으로 꺼내기 — auto: 글 쓰는 동안만 (다 쓰면 다시 넣음)
+async function popOut(auto = false) {
+  if (!wallpaper.embedded || wallpaper.moving) return;
+  await unembedWindow(screenArea());
+  wallpaper.poppedOut = true;
+  wallpaper.autoPopped = auto;
+  showOnTop();
+}
+
+// Ctrl+Alt+D — 꺼내기 · 다시 넣기
+async function togglePopOut() {
+  if (!mainWindow || mainWindow.isDestroyed() || !wallpaper.wanted || wallpaper.moving) return;
+  if (wallpaper.embedded) await popOut();
+  else if (wallpaper.poppedOut) await embedWindow();
+}
+
+// 넣지 못했으면 (탐색기가 막 다시 시작된 때 등) 잠시 뒤 다시 해 봄
+function retryEmbed(tries = 5) {
+  setTimeout(async () => {
+    if (!mainWindow || mainWindow.isDestroyed() || !wallpaper.wanted) return;
+    if (wallpaper.embedded || wallpaper.poppedOut || wallpaper.moving) return;
+    if (!(await embedWindow()) && tries > 1) retryEmbed(tries - 1);
+  }, 3000);
+}
+
+// 바탕화면 층에 붙어 있는지 가끔 확인 — 탐색기가 다시 시작되면 떨어지고, 바탕화면을 새로 고치면 윈도우 아이콘 층이 위로 올라오기도 함
+async function keepOnDesktop() {
+  if (!wallpaper.embedded || wallpaper.moving || !mainWindow || mainWindow.isDestroyed()) return;
+  const reply = await bridgeCall(`check ${windowHandle()}`, 3000);
+  if (reply === 'ok raised') logLine('윈도우 아이콘 층이 위로 올라와 캔버스를 다시 맨 위로');
+  if (reply !== 'detached' || !wallpaper.embedded || wallpaper.moving) return;
+  logLine('바탕화면 층에서 떨어짐 → 다시 넣음');
+  wallpaper.embedded = false;
+  if (!(await embedWindow())) {
+    showOnTop();
+    retryEmbed();
+  }
+}
+
+// 바탕화면 층의 캔버스를 누르면 키보드를 이 창으로 (preload.js 가 누를 때마다 알림)
+function claimKeyboard() {
+  if (!wallpaper.embedded || wallpaper.moving || !mainWindow || mainWindow.isDestroyed()) return;
+  wallpaper.claim = bridgeCall(`focus ${windowHandle()}`, 3000).then((reply) => {
+    const state = reply.startsWith('ok') ? 'ok' : 'fail';
+    if (state !== wallpaper.keyboard) logLine(`바탕화면 층 키보드: ${reply}`);
+    wallpaper.keyboard = state;
+  });
+}
+ipcMain.on('canvas-pressed', claimKeyboard);
+
+// 글 쓰기 시작 · 끝 (preload.js) — 키보드를 못 가져오는 컴퓨터면 쓰는 동안만 앞으로 꺼냄
+ipcMain.on('editing', async (event, on) => {
+  if (on) {
+    if (!wallpaper.embedded || wallpaper.moving) return;
+    await wallpaper.claim;
+    if (wallpaper.keyboard === 'fail') await popOut(true);
+  } else if (wallpaper.autoPopped && wallpaper.poppedOut && !wallpaper.moving) {
+    await embedWindow();
+  }
+});
+
+// 설정 창에서 켜고 끔 — 끄면 예전처럼 맨 위 창
+ipcMain.handle('set-wallpaper-mode', async (event, on) => {
+  on = !!on && process.platform === 'win32';
+  if (on === wallpaper.wanted) return wallpaper.embedded;
+  wallpaper.wanted = on;
+  while (wallpaper.moving) await new Promise(r => setTimeout(r, 50));    // 넣고 빼는 중이면 끝난 뒤에
+  if (wallpaper.wanted !== on) return wallpaper.embedded;                  // 그사이 또 바뀜
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (on) {
+    if (await embedWindow()) return true;
+    retryEmbed();
+    return false;
+  }
+  if (wallpaper.embedded) await unembedWindow(screenArea());
+  wallpaper.poppedOut = false;
+  wallpaper.autoPopped = false;
+  showOnTop();
+  return false;
+});
+
+ipcMain.handle('get-wallpaper-state', () => ({ wanted: wallpaper.wanted, embedded: wallpaper.embedded, key: popOutKey }));
 
 function createWindow() {
   let stamp = '?';
@@ -96,21 +329,31 @@ function createWindow() {
     frame: false,
     hasShadow: false,
     skipTaskbar: true,           // 작업표시줄에 표시 안 함
-    alwaysOnTop: true,           // 항상 맨 위
+    alwaysOnTop: !wallpaper.wanted,   // 앞에 있는 동안 맨 위 (바탕화면 층에 넣을 거면 처음부터 풀어 둠)
     focusable: true,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      autoplayPolicy: 'no-user-gesture-required',   // 소리를 켜 둔 영상도 켤 때 바로 재생 (renderer/photos.js)
     }
   });
 
   mainWindow.loadFile('index.html');
 
-  // 윈도우 준비 완료 후 표시
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+  // 윈도우 준비 완료 후 표시 — 바탕화면에 넣기가 켜져 있으면 바탕화면 층에 넣은 채로 (앞으로 나오지 않게)
+  mainWindow.once('ready-to-show', async () => {
+    if (wallpaper.wanted) {
+      const ok = await embedWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (ok) {
+        mainWindow.showInactive();
+        return;
+      }
+      retryEmbed();
+    }
+    showOnTop();
   });
 
   // 개발 모드에서 DevTools 열기
@@ -118,26 +361,40 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
-  // 다른 창이 활성화되면 이 창을 뒤로 보내기 (종료 X)
+  // 다른 창이 활성화되면 이 창을 뒤로 보내기 (종료 X) — 앞에 꺼내 둔 캔버스는 다시 바탕화면 층으로
   mainWindow.on('blur', () => {
+    if (wallpaper.embedded || wallpaper.moving) return;
+    if (wallpaper.poppedOut) {
+      if (!wallpaper.dialogOpen) embedWindow();
+      return;
+    }
     mainWindow.setAlwaysOnTop(false);
   });
 
-  // 이 창이 다시 포커스를 받으면 앞으로 가기
+  // 이 창이 다시 포커스를 받으면 앞으로 가기 (바탕화면 층에 있을 때는 그대로)
   mainWindow.on('focus', () => {
+    if (wallpaper.embedded || wallpaper.moving) return;
     mainWindow.setAlwaysOnTop(true);
   });
 
-  // "바탕화면 표시"(Win+D) 등으로 최소화되면 숨지 않고 뒤로만 보냄
+  // "바탕화면 표시"(Win+D) 등으로 최소화되면 숨지 않고 뒤로만 보냄 (바탕화면 층은 최소화되지 않음)
   mainWindow.on('minimize', () => {
-    // 최소화 이벤트 무시 - 대신 뒤로 보냄
+    if (wallpaper.embedded || wallpaper.moving) return;
+    // 최소화 이벤트 무시 - 대신 뒤로 보냄 (앞에 꺼내 둔 캔버스는 바탕화면 층으로)
     mainWindow.restore();
+    if (wallpaper.poppedOut) {
+      embedWindow();
+      return;
+    }
     mainWindow.setAlwaysOnTop(false);
   });
 
   // 자동 저장이 꺼져 있고 저장 안 한 변경이 있으면 닫기 전에 물어봄
   mainWindow.on('close', (event) => {
-    if (allowClose || !unsaved.dirty) return;
+    if (allowClose || !unsaved.dirty) {
+      quitting = true;                             // 사용자가 닫음 (탐색기가 다시 시작돼 사라진 것과 구분)
+      return;
+    }
     event.preventDefault();
     const labels = unsaved.labels || { message: '저장하지 않은 변경 사항이 있어요. 저장할까요?', save: '저장', discard: '저장 안 함', cancel: '취소' };
     const restore = dropAlwaysOnTop();
@@ -176,6 +433,13 @@ function createWindow() {
     desktopWatchers.forEach(w => { try { w.close(); } catch (_) {} });
     desktopWatchers = [];
     mainWindow = null;
+    wallpaper.embedded = false;
+    wallpaper.poppedOut = false;
+    // 바탕화면(탐색기)이 다시 시작되면 바탕화면 층과 함께 창도 사라짐 → 잠시 뒤 다시 만들어 넣음
+    if (wallpaper.wanted && !quitting) {
+      logLine('바탕화면이 다시 시작돼 창이 사라짐 → 다시 만듦');
+      setTimeout(() => { if (!mainWindow && !quitting) createWindow(); }, 2000);
+    }
   });
 }
 
@@ -203,6 +467,7 @@ ipcMain.handle('save-canvas-state', async (event, state) => {
 // 파일 고르기·저장 확인 같은 윈도우 기본 창은 '항상 맨 위'인 캔버스 창 뒤로 숨어 버린다.
 // 그 창이 떠 있는 동안만 맨 위를 풀었다가 되돌린다. (풀지 않으면 눌러도 아무 일 없는 것처럼 보임)
 function dropAlwaysOnTop() {
+  wallpaper.dialogOpen = true;
   const alive = mainWindow && !mainWindow.isDestroyed();
   const onTop = alive && mainWindow.isAlwaysOnTop();
   if (onTop) {
@@ -211,6 +476,7 @@ function dropAlwaysOnTop() {
   }
   logLine(`창 맨 위 고정 ${onTop ? '품' : '원래 꺼져 있었음'}`);
   return () => {
+    wallpaper.dialogOpen = false;
     if (onTop && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(true);
       mainWindow.setSkipTaskbar(true);
@@ -249,6 +515,32 @@ ipcMain.handle('pick-image', async (event, title) => {
     return url;
   } catch (err) {
     logLine(`사진 복사 실패: ${err && err.message}`);
+    throw err;
+  }
+});
+
+// 영상 추가: 영상을 골라 앱 데이터 폴더(videos)에 복사 → 영상 주소 반환 (사진과 같이 원본을 옮기거나 지워도 남음)
+//   500MB 가 넘는 영상은 복사하지 않고 원본 자리를 가리킴 (복사가 오래 걸리고 자리를 많이 차지해서)
+ipcMain.handle('pick-video', async (event, title) => {
+  const result = await openFileDialog({
+    title: title || '영상 추가',
+    properties: ['openFile'],
+    filters: [{ name: 'Videos', extensions: VIDEO_EXTENSIONS }],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  const src = result.filePaths[0];
+  try {
+    const size = fs.statSync(src).size;
+    if (size > VIDEO_COPY_LIMIT) {
+      logLine(`영상이 커서 원본 자리를 씀 (${Math.round(size / 1048576)}MB): ${src}`);
+      return pathToFileURL(src).href;
+    }
+    const dest = path.join(getVideosDir(), `${Date.now()}${path.extname(src).toLowerCase()}`);
+    await fs.promises.copyFile(src, dest);
+    logLine(`영상 복사 완료: ${dest}`);
+    return pathToFileURL(dest).href;
+  } catch (err) {
+    logLine(`영상 복사 실패: ${err && err.message}`);
     throw err;
   }
 });
@@ -877,10 +1169,28 @@ ipcMain.on('save-canvas-state-sync', (event, state) => {
 
 app.on('ready', () => {
   genericIcons();          // 윈도우 기본 그림을 창이 뜨는 동안 미리 알아 둠 (저장된 내용을 불러올 때 씀)
+  wallpaper.wanted = wallpaperSetting();
+  if (wallpaper.wanted) startBridge();             // 바탕화면 다리를 창이 뜨는 동안 미리 띄워 둠 (준비에 1초쯤)
+  if (process.platform === 'win32') {
+    popOutKey = POP_OUT_KEYS.find(key => globalShortcut.register(key, togglePopOut)) || '';
+    logLine(popOutKey ? `앞으로 꺼내기 단축키: ${popOutKey}` : `앞으로 꺼내기 단축키를 못 잡음 (${POP_OUT_KEYS.join(' · ')} 모두 다른 프로그램이 씀)`);
+    setInterval(keepOnDesktop, 5000);
+  }
   createWindow();
 });
 
+app.on('before-quit', () => { quitting = true; });
+
+// 끌 때: 단축키를 풀고 다리를 닫음 (다리는 입력이 끊기면 스스로 끝남)
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (wallpaper.bridge) {
+    try { wallpaper.bridge.stdin.end(); } catch (_) {}
+  }
+});
+
 app.on('window-all-closed', () => {
+  if (wallpaper.wanted && !quitting) return;      // 탐색기가 다시 시작된 경우 — 창을 다시 만드는 중
   if (process.platform !== 'darwin') {
     app.quit();
   }

@@ -1,4 +1,4 @@
-// 단축키와 붙여넣기 — Ctrl+Z · Ctrl+Shift+Z · Ctrl+S · Ctrl+F · Ctrl+M · Delete · Shift+Enter(글자칸에서) · Ctrl+V · Esc
+// 단축키와 붙여넣기 — Ctrl+Z · Ctrl+Shift+Z · Ctrl+S · Ctrl+F · Ctrl+M · Ctrl+A · Ctrl+G · Ctrl+L · Delete · Shift+Enter(글자칸에서) · Ctrl+V · Esc
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
 
@@ -20,11 +20,14 @@ export const keyboardMethods = {
     const key = (e.key || '').toLowerCase();
 
     if (key === 'escape') {
+      if (this.cancelLinking()) { e.preventDefault(); return; }     // 연결선 잇는 중 (links.js)
       if (this.closeSearch()) { e.preventDefault(); return; }
       if (this.calendarFan) { e.preventDefault(); this.collapseCalendarFan(); return; }
       if (this.settingsOpen) { e.preventDefault(); this.closeSettings(); return; }
       if (document.getElementById('context-menu') || document.getElementById('desktop-menu')) { this.closeMenus(); return; }
-      if (this.editingId) { e.preventDefault(); this.stopEditing(); }
+      if (this.editingId) { e.preventDefault(); this.stopEditing(); return; }
+      if (this.selectedLinkId) { e.preventDefault(); this.selectLink(null); return; }
+      if (this.clearSelection()) e.preventDefault();                // 고른 것 풀기
       return;
     }
     if (this.settingsOpen) return;
@@ -53,6 +56,21 @@ export const keyboardMethods = {
       this.openSearch();
       return;
     }
+    if (ctrl && key === 'a' && !typing) {                 // 모두 고르기 (글자칸에서는 글자 전체 고르기)
+      e.preventDefault();
+      this.selectAll();
+      return;
+    }
+    if (ctrl && key === 'g' && !typing) {                 // 고른 파일을 새 묶음으로
+      e.preventDefault();
+      this.groupSelectedFiles();
+      return;
+    }
+    if (ctrl && key === 'l' && !typing) {                 // 처음 고른 것에 나머지를 연결선으로 (links.js)
+      e.preventDefault();
+      this.connectSelection();
+      return;
+    }
     if (ctrl && key === 'm') {                            // 미니맵 켜기 · 끄기
       e.preventDefault();
       this.toggleMinimap();
@@ -68,29 +86,11 @@ export const keyboardMethods = {
     }
   },
 
-  // Delete: 선택한 쪽지·사진 지우기 · 파일 묶음은 풀기 (파일은 그대로). 고정된 것과 파일 아이콘은 그대로
+  // Delete: 고른 연결선 지우기, 아니면 고른 쪽지·사진 지우기 · 파일 묶음은 풀기 (파일은 그대로).
+  //   고정된 것과 파일 아이콘은 그대로 (selection.js)
   deleteSelectedItem() {
-    if (!this.selectedId) return false;
-    const note = this.notes.find(n => n.id === this.selectedId);
-    if (note) {
-      if (note.pinned) return false;
-      this.deleteNote(note.id);
-      return true;
-    }
-    const photo = this.photos.find(p => p.id === this.selectedId);
-    if (photo) {
-      if (photo.pinned) return false;
-      this.deletePhoto(photo.id);
-      return true;
-    }
-    const group = this.boards.find(b => b.id === this.selectedId && b.kind === 'group');
-    if (group) {
-      if (group.pinned) return false;
-      this.ungroup(group);
-      this.selectedId = null;
-      return true;
-    }
-    return false;
+    if (this.selectedLinkId) return this.deleteLink(this.selectedLinkId);
+    return this.deleteSelection({ includeGroups: true });
   },
 
   // 붙여넣을 자리 = 마우스가 있는 곳

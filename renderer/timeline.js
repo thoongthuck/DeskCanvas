@@ -1,5 +1,5 @@
 // 연대표 판 — 걸이 막대에 쪽지를 걸어 늘어뜨림 (code/icons/아이콘_가이드.md 12-4, 시안_연대표판.png 4안)
-//   시간 축 두 가지 (판 머리 [직접 | 캘린더]) — 두 모드는 자료를 따로 가짐
+//   시간 축 두 가지 (판 메뉴 '시간 축 ›') — 두 모드는 자료를 따로 가짐
 //     캘린더:   진짜 날짜 · 눈금(연 112 · 월 210 · 일 64) · 오늘 · 주말/빨간 날 띠. 쪽지는 note.date
 //     직접 작성: 내가 만든 칸(이름 · 폭). 쪽지는 note.segmentId + note.ratio(칸 안 0~1)
 //   옆 쪽지와 가로로 겹치면 줄이 길어져 아래층에 걸리고 판 높이도 따라 늘어남 (쪽지 크기는 그대로)
@@ -448,7 +448,7 @@ export const timelineMethods = {
     const m = div(['sticky-note', 'note-mirror', 'on-board', 'stack-top',
       custom ? 'note-custom' : `note-${note.color}`,
       `type-${note.type}`, `size-${note.size}`, `font-${note.font}`, `ink-${note.ink}`,
-      this.selectedId === note.id ? 'selected' : '',
+      this.selection.has(note.id) ? 'selected' : '',
       custom && isDarkColor(note.customColor) ? 'note-dark' : '',
     ].filter(Boolean).join(' '));
     if (custom) {

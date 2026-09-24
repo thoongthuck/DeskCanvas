@@ -104,7 +104,7 @@ export const searchMethods = {
       });
       this.photos.forEach(photo => {
         if (!photo.caption || !photo.caption.toLowerCase().includes(query)) return;
-        results.push({ kind: 'photo', item: photo, label: photo.caption, detail: t('search.photo') });
+        results.push({ kind: 'photo', item: photo, label: photo.caption, detail: t(photo.media === 'video' ? 'search.video' : 'search.photo') });
       });
       this.files.forEach(file => {
         if (!(file.name || '').toLowerCase().includes(query)) return;

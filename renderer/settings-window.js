@@ -20,6 +20,14 @@ const SHORTCUTS = [
   ['sc.save', 'Ctrl + S'],
   ['sc.paste', 'Ctrl + V'],
   ['sc.delete', 'Delete'],
+  ['sc.multiSelect', 'key.ctrlClick'],
+  ['sc.marquee', 'key.ctrlDrag'],
+  ['sc.selectAll', 'Ctrl + A'],
+  ['sc.groupFiles', 'Ctrl + G'],
+  ['sc.connect', 'key.altDrag'],
+  ['sc.connectSelected', 'Ctrl + L'],
+  ['sc.deselect', 'Esc'],
+  ['sc.popOut', 'popOutKey'],               // main.js 가 잡은 단축키 (못 잡았으면 줄을 뺌)
   ['sc.finishEdit', 'Shift + Enter'],
   ['sc.editNote', 'key.dblclick'],
   ['sc.newTodo', 'key.enterTodo'],
@@ -175,6 +183,11 @@ export const settingsWindowMethods = {
       this.buildToggle(s.autoSave, (on) => this.updateSetting('autoSave', on), 'autosave'));
     row(general, 'row-openlast', 'row.openLast', 'row.openLast.desc',
       this.buildToggle(s.openLastWorkspace, (on) => this.updateSetting('openLastWorkspace', on), 'openlast'));
+    const wallpaperRow = row(general, 'row-wallpaper', 'row.wallpaper', 'row.wallpaper.desc',
+      this.buildToggle(s.wallpaperMode, (on) => this.updateSetting('wallpaperMode', on), 'wallpaper'));
+    if (this.popOutKey) {
+      wallpaperRow.querySelector('.settings-row-desc').textContent += ' ' + t('row.wallpaper.key', { key: this.popOutKey });
+    }
 
     // 캔버스
     const canvas = section('section-canvas', 'add-image.svg', 'sec.canvas');
@@ -270,6 +283,10 @@ export const settingsWindowMethods = {
     content.appendChild(back);
 
     SHORTCUTS.forEach(([labelKey, keys]) => {
+      if (keys === 'popOutKey') {
+        if (!this.popOutKey) return;
+        keys = this.popOutKey;
+      }
       const line = document.createElement('div');
       line.className = 'settings-row';
       const text = document.createElement('div');

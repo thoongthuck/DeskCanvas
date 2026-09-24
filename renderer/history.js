@@ -12,12 +12,14 @@ export const historyMethods = {
       photos: this.photos,
       boards: this.boards,
       files: this.files.map(({ icon, ...rest }) => rest),
+      links: this.links,
     });
   },
 
   // 바뀌기 직전에 부름
+  //   batching: 여러 개를 한꺼번에 지울 때처럼 한 단계로 묶는 동안은 건너뜀 (selection.js)
   record() {
-    if (!this.ready) return;
+    if (!this.ready || this.batching) return;
     const snap = this.snapshot();
     if (this.undoStack[this.undoStack.length - 1] === snap) return;
     this.undoStack.push(snap);
@@ -70,7 +72,9 @@ export const historyMethods = {
     const desktopNow = new Map(before.filter(f => f.source === 'desktop').map(f => [String(f.path).toLowerCase(), f]));
 
     this.notes = (snap.notes || []).map(n => this.normalizeNote(n));
-    this.photos = (snap.photos || []).map(p => this.normalizePhoto(p));
+    // 영상의 재생 · 소리는 되돌리기와 상관없이 지금 값 그대로 (photos.js)
+    const playing = new Map(this.photos.filter(p => p.media === 'video').map(p => [p.id, { paused: p.paused, muted: p.muted }]));
+    this.photos = (snap.photos || []).map(p => this.normalizePhoto({ ...p, ...playing.get(p.id) }));
     this.boards = (snap.boards || []).map(b => this.normalizeBoard(b)).filter(Boolean);
 
     // 파일 아이콘: 바탕화면에서 이미 사라진 파일은 되살리지 않고, 새로 생긴 파일은 그대로 둠
@@ -80,8 +84,10 @@ export const historyMethods = {
     const known = new Set(restored.map(f => String(f.path).toLowerCase()));
     desktopNow.forEach((file, key) => { if (!known.has(key)) restored.push(file); });
     this.files = restored;
+    this.links = this.normalizeLinks(snap.links);
+    if (!this.links.some(l => l.id === this.selectedLinkId)) this.selectedLinkId = null;
 
-    if (this.selectedId && !this.findItem(this.selectedId)) this.selectedId = null;
+    [...this.selection].forEach(id => { if (!this.findItem(id)) this.selection.delete(id); });
     this.renderAll();
     this.scheduleSave();
   },
