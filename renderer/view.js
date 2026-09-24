@@ -131,6 +131,7 @@ export const viewMethods = {
       this.refreshFallbackIcon(el, file);             // 묶음 안은 밝은 종이 위라 밝은 배경용 기본 그림
     }
     el.classList.toggle('locked', !!(slot && slot.group.pinned));
+    el.classList.toggle('group-lifted', !!(slot && this.groupSelected(slot.group)));   // 묶음이 골라져 떠오름 (groups.css)
     el.style.left = `${file.x * this.zoom + this.panX}px`;
     el.style.top = `${file.y * this.zoom + this.panY}px`;
     el.style.width = `${file.width * this.zoom}px`;

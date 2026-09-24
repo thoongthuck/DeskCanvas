@@ -201,18 +201,23 @@ export const selectionMethods = {
   },
 
   // 고른 쪽지 · 사진 지우기 — 되돌리기 한 번에 모두 돌아옴
-  //   Delete 키 (keyboard.js): 고른 묶음도 풀고(includeGroups), 파일도 (includeFiles — 윈도우 바탕화면처럼)
+  //   Delete 키 (keyboard.js): 고른 판도 (includeBoards — 파일 묶음은 풀고, 캘린더 · 연대표는 지움. 붙은 쪽지는 그 자리에 남음)
+  //     파일도 (includeFiles — 윈도우 바탕화면처럼)
   //     바탕화면 파일은 휴지통으로 (Ctrl+Z 면 휴지통에서 되살림 — history.js), 끌어온 파일은 아이콘만 빼기
   //     잠근 묶음 속 파일은 그대로. 파일이 둘 이상이면 먼저 물어봄 (Ctrl+A 뒤 잘못 눌러 바탕화면이 통째로 비지 않게)
-  deleteSelection({ includeGroups = false, includeFiles = false } = {}) {
+  deleteSelection({ includeBoards = false, includeFiles = false } = {}) {
     const entries = this.selectedEntries();
     const notes = entries.filter(en => en.kind === 'note' && !en.item.pinned);
     const photos = entries.filter(en => en.kind === 'photo' && !en.item.pinned);
-    const groups = includeGroups ? entries.filter(en => en.kind === 'board' && !en.item.pinned) : [];
+    const boards = includeBoards                                // 판은 고른 id 로 바로 (itemById 는 파일 묶음만 — 캘린더 · 연대표는 잇기 · 정렬 대상이 아님)
+      ? [...this.selection].map(id => this.boards.find(b => b.id === id)).filter(b => b && !b.pinned)
+      : [];
+    const groups = boards.filter(b => b.kind === 'group');
+    const others = boards.filter(b => b.kind !== 'group');
     const files = includeFiles ? entries.filter(en => en.kind === 'file' && !this.fileLocked(en.item)) : [];
     const trash = files.filter(en => en.item.source === 'desktop');
     const icons = files.filter(en => en.item.source !== 'desktop');
-    if (!notes.length && !photos.length && !groups.length && !files.length) return false;
+    if (!notes.length && !photos.length && !boards.length && !files.length) return false;
     const run = () => {
       this.record();                                           // 한 단계 — 휴지통으로 보낸 파일도 Ctrl+Z 로 되살림
       const undoEntry = this.undoStack[this.undoStack.length - 1];
@@ -220,7 +225,8 @@ export const selectionMethods = {
       try {
         notes.forEach(en => this.deleteNote(en.item.id));
         photos.forEach(en => this.deletePhoto(en.item.id));
-        groups.forEach(en => this.ungroup(en.item));
+        groups.forEach(g => this.ungroup(g));
+        others.forEach(b => this.deleteBoard(b));
         icons.forEach(en => this.deleteFile(en.item.id));
       } finally {
         this.batching = false;

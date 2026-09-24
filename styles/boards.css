@@ -20,6 +20,15 @@
   user-select: none;
 }
 
+/* 고른 판 (누르면 고름 → Delete 로 지우기) — 쪽지처럼 그림자가 진해짐. 파란 테두리 없음,
+   떠오르지는 않음 (칸에 붙은 쪽지는 따로 그려져서 어긋나므로). 파일 묶음은 styles/groups.css */
+.board { transition: box-shadow 0.2s ease-out, border-color 0.2s ease-out; }
+.board.selected:not(.board-group) {
+  border-color: #D6D1C9;
+  box-shadow: 0 calc(16px * var(--z)) calc(36px * var(--z)) rgba(31, 47, 69, 0.22),
+              0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(31, 47, 69, 0.12);
+}
+
 /* 판 머리 — 높이 60, 잡고 끌면 판이 옮겨짐 */
 .board-head {
   flex: 0 0 auto;
@@ -593,6 +602,11 @@ body.theme-dark .board {
   background: #2A3038;
   border-color: #3A424C;
   color: #E7EAEE;
+}
+body.theme-dark .board.selected:not(.board-group) {
+  border-color: #56606D;
+  box-shadow: 0 calc(16px * var(--z)) calc(36px * var(--z)) rgba(0, 0, 0, 0.45),
+              0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(0, 0, 0, 0.3);
 }
 body.theme-dark .board-head { border-bottom-color: #3A424C; }
 body.theme-dark .board-btn:hover,

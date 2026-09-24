@@ -70,8 +70,8 @@ export const boardMethods = {
 
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('input, textarea, button')) return;       // 버튼 · 글자칸은 각자 처리
-      const group = board.kind === 'group';                         // 파일 묶음: 누르면 선택 (쪽지처럼, Ctrl · Shift 는 여러 개)
-      const canDrag = group ? this.pressSelect(e, board.id, !board.pinned) : true;
+      const group = board.kind === 'group';
+      const canDrag = this.pressSelect(e, board.id, !board.pinned);  // 누르면 판을 고름 (쪽지처럼, Ctrl · Shift 는 여러 개) → Delete 로 지우기
       if (e.button !== 0) return;
       if (e.target.closest('.board-resize')) {
         if (board.pinned) return;
@@ -87,10 +87,11 @@ export const boardMethods = {
       }
       if (e.target.closest('.board-head') && !board.pinned) {
         e.preventDefault();
-        this.startItemDrag(e, 'board', board);
+        if (canDrag) this.startItemDrag(e, 'board', board);
         return;
       }
-      this.startBoardPan(e);                                         // 칸 · 빈 곳 · 잠긴 판: 화면 이동
+      this.narrowTo = null;
+      this.startBoardPan(e);                                         // 칸 · 빈 곳 · 잠긴 판: 화면 이동 (판은 고른 채)
     });
 
     // 연대표: 막대 아래 빈 곳을 두 번 누르면 그 자리에 새 쪽지
@@ -114,6 +115,7 @@ export const boardMethods = {
     const boardEls = this.uiLayer.querySelectorAll(':scope > .board');
     if (boardEls.length) boardEls[boardEls.length - 1].after(el);
     else this.uiLayer.prepend(el);
+    el.classList.toggle('selected', this.boardSelected(board));
     this.renderBoard(board, el);
     this.ensureBoardClock();
   },
@@ -122,6 +124,7 @@ export const boardMethods = {
     if (!el) return;
     el.innerHTML = '';
     el.classList.toggle('pinned', !!board.pinned);
+    if (board.kind !== 'group') el.classList.toggle('selected', this.boardSelected(board));   // 잠그면 선택 표시도 없앰
     el.classList.toggle('tl-direct', board.kind === 'timeline' && board.mode === 'direct');
     if (board.kind === 'timeline') this.renderTimeline(board, el);
     else if (board.kind === 'group') this.renderGroup(board, el);
@@ -218,7 +221,6 @@ export const boardMethods = {
   // 판의 칸 · 빈 곳을 끌면 빈 바탕을 끈 것처럼 화면이 움직임
   startBoardPan(e) {
     e.preventDefault();
-    this.clearSelection();
     let lastX = e.clientX;
     let lastY = e.clientY;
     let moved = false;
@@ -242,6 +244,20 @@ export const boardMethods = {
     };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
+  },
+
+  // ---- 고르기 — 캘린더 · 연대표 (파일 묶음은 groups.js updateGroupSelection) ----
+  //   잠근 판은 쪽지처럼 선택 표시를 하지 않고 Delete 로도 지우지 않음
+  boardSelected(board) {
+    return this.selection.has(board.id) && !board.pinned;
+  },
+
+  updateBoardSelection() {
+    this.boards.forEach(board => {
+      if (board.kind === 'group') return;
+      const el = document.getElementById(board.id);
+      if (el) el.classList.toggle('selected', this.boardSelected(board));
+    });
   },
 
   // ---- 판 메뉴 (판 우클릭 · 판 머리 …) ----

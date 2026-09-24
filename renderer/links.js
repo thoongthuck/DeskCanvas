@@ -5,9 +5,12 @@
 //   그리기: 판 바로 뒤에 둔 SVG 한 장 (#link-layer) — 판 위 · 쪽지 · 사진 · 파일 아래.
 //     두 물건의 마주 보는 변 가운데를 잇는 곡선 + 양 끝 점. 접힌 파일 묶음 속 파일은 묶음에, 다른 달에 붙어 숨은 쪽지는 선도 숨김
 //   모양: 곡선 · 직선 — 설정 '연결선 모양'이 기본, 선마다 우클릭으로 바꿀 수 있음 (link.style)
-//   this.links = [{ id, a, b, style? }] — a · b 는 물건 id (방향 없음)
+//   색: 선 우클릭 › '선 색 ›' — 기본(회색) + 5색 + 직접 고르기 (쪽지 스타일 창과 같은 점 · 고르개)
+//   this.links = [{ id, a, b, style?, color?, customColor? }] — a · b 는 물건 id (방향 없음)
+//     color: LINK_COLORS 의 이름 · 'custom'(customColor 에 #RRGGBB). 없으면 기본 색
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
+import { LINK_COLORS, LINK_COLOR_ORDER, LINK_CUSTOM_DEFAULT } from './constants.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ITEM_SELECTOR = '.sticky-note:not(.note-mirror), .canvas-photo, .file-icon, .board-group';
@@ -90,7 +93,7 @@ export const linkMethods = {
     // 선 밖을 누르면 선 고른 것 풀기
     document.addEventListener('mousedown', (e) => {
       if (this.linking || !this.selectedLinkId) return;
-      if (e.target.closest && e.target.closest('.link-hit, #context-menu')) return;
+      if (e.target.closest && e.target.closest('.link-hit, #context-menu, #style-panel')) return;   // 메뉴 · 선 색 창을 누르는 동안은 그대로
       this.selectLink(null);
     }, true);
     // Alt + 끌기: 잡은 것에서 선을 끌어 다른 것 위에 놓으면 이음
@@ -184,6 +187,12 @@ export const linkMethods = {
     }).map(l => {
       const link = { id: typeof l.id === 'string' ? l.id : this.newId('link'), a: l.a, b: l.b };
       if (l.style === 'curve' || l.style === 'straight') link.style = l.style;
+      if (l.color === 'custom' && /^#[0-9a-f]{6}$/i.test(String(l.customColor))) {
+        link.color = 'custom';
+        link.customColor = l.customColor.toUpperCase();
+      } else if (LINK_COLORS[l.color]) {
+        link.color = l.color;                               // 기본(gray)은 적지 않음
+      }
       return link;
     });
   },
@@ -199,6 +208,85 @@ export const linkMethods = {
     this.record();
     link.style = style;
     this.scheduleSave();
+  },
+
+  // 선 색 — 이름('gray' 는 기본) · 실제 색 (#RRGGBB, 기본이면 null — CSS 가 배경에 맞춰 정함)
+  linkColorKey(link) {
+    return (link && link.color) || 'gray';
+  },
+
+  linkColorValue(link) {
+    if (!link || !link.color) return null;
+    return link.color === 'custom' ? link.customColor : LINK_COLORS[link.color] || null;
+  },
+
+  // key: LINK_COLORS 이름 · 'custom' (hex 와 함께). record: false 면 되돌리기 기록 없이 (직접 고르는 동안 — recordHistory 로 한 번)
+  setLinkColor(id, key, hex = '', { record = true } = {}) {
+    const link = this.links.find(l => l.id === id);
+    if (!link) return;
+    const custom = key === 'custom' ? String(hex).toUpperCase() : '';
+    if (this.linkColorKey(link) === key && (link.customColor || '') === custom) return;
+    if (record) this.record();
+    if (key === 'gray' || (key !== 'custom' && !LINK_COLORS[key])) delete link.color;
+    else link.color = key;
+    if (custom) link.customColor = custom;
+    else delete link.customColor;
+    this.requestLinks();
+    this.scheduleSave();
+  },
+
+  // 선 우클릭 › '선 색 ›' 옆에 열리는 작은 창 — 쪽지 스타일 창과 같은 틀 (#style-panel) · 같은 점
+  openLinkColorPanel(menu, anchor, id) {
+    if (this.stylePanel && this.stylePanel.dataset.link === id) return;
+    this.closeStylePanel();
+    this.closeContextSubmenu();
+    const panel = document.createElement('div');
+    panel.id = 'style-panel';                 // 바깥 누르면 닫히기는 스타일 창과 같게
+    panel.className = 'link-color-panel';
+    panel.dataset.link = id;
+    document.body.appendChild(panel);
+    this.stylePanel = panel;
+    this.framePanelAt = { menu, anchor };     // 자리 잡기는 사진 틀 창과 같이 (photo-frame.js placeFramePanel)
+    this.renderLinkColorPanel(id);
+    anchor.classList.add('open');
+  },
+
+  renderLinkColorPanel(id) {
+    const panel = this.stylePanel;
+    const link = this.links.find(l => l.id === id);
+    if (!panel || !link) return;
+    panel.innerHTML = '';
+    const section = document.createElement('div');
+    section.className = 'style-section';
+    const title = document.createElement('div');
+    title.className = 'style-title';
+    title.textContent = t('link.color');
+    const dots = document.createElement('div');
+    dots.className = 'style-colors';
+    const current = this.linkColorKey(link);
+    LINK_COLOR_ORDER.forEach(key => {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = `style-dot link-dot-${key}` + (current === key ? ' current' : '');
+      if (LINK_COLORS[key]) dot.style.background = LINK_COLORS[key];
+      dot.title = key === 'gray' ? t('link.colorDefault') : t(`color_${key}`);
+      dot.addEventListener('click', () => {
+        this.setLinkColor(id, key);
+        this.renderLinkColorPanel(id);
+      });
+      dots.appendChild(dot);
+    });
+    dots.appendChild(this.createCustomColorDot({
+      className: 'style-dot',
+      current: current === 'custom',
+      value: link.customColor || LINK_CUSTOM_DEFAULT,
+      onStart: () => this.recordHistory(),
+      onInput: (hex) => this.setLinkColor(id, 'custom', hex, { record: false }),
+      onDone: () => { this.dropHistoryIfUnchanged(); this.renderLinkColorPanel(id); },
+    }));
+    section.append(title, dots);
+    panel.appendChild(section);
+    this.placeFramePanel();
   },
 
   linkShape(a, b, style) {
@@ -359,6 +447,7 @@ export const linkMethods = {
         straight
           ? { icon: 'menu-connect.svg', label: t('menu.linkCurve'), action: () => this.setLinkStyle(link.id, 'curve') }
           : { icon: 'menu-straight.svg', label: t('menu.linkStraight'), action: () => this.setLinkStyle(link.id, 'straight') },
+        { icon: 'palette.svg', label: t('menu.linkColor'), arrow: true, panel: (menu, row) => this.openLinkColorPanel(menu, row, link.id) },
         { separator: true },
         { icon: 'trash.svg', label: t('menu.deleteLink'), danger: true, action: () => this.deleteLink(link.id) },
       ], e.clientX, e.clientY);
@@ -398,6 +487,13 @@ export const linkMethods = {
       if (parts.el.parentNode !== layer) layer.appendChild(parts.el);
       seen.add(link.id);
       place(parts, this.linkShape(ra, rb, this.linkStyleOf(link)));
+      const color = this.linkColorValue(link);
+      if (color !== parts.color) {                         // 색을 정한 선: --link-color (styles/links.css .link.colored)
+        parts.color = color;
+        parts.el.classList.toggle('colored', !!color);
+        if (color) parts.el.style.setProperty('--link-color', color);
+        else parts.el.style.removeProperty('--link-color');
+      }
       parts.el.classList.toggle('selected', this.selectedLinkId === link.id);
       parts.el.classList.toggle('related', this.selection.has(link.a) || this.selection.has(link.b));
     });

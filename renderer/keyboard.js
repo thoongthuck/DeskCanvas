@@ -92,6 +92,11 @@ export const keyboardMethods = {
 
   // F2: 마지막으로 고른 것 이름 바꾸기 — 파일은 이름 칸, 파일 묶음은 이름, 쪽지는 제목 고치기, 사진 · 영상은 캡션
   renameSelected() {
+    const board = this.selectedId && this.boards.find(b => b.id === this.selectedId);
+    if (board) {                                           // 캘린더 · 연대표 · 파일 묶음 — 판 이름
+      this.renameBoard(board);
+      return true;
+    }
     const entry = this.selectedId && this.itemById(this.selectedId);
     if (!entry) return false;
     const { kind, item } = entry;
@@ -103,11 +108,11 @@ export const keyboardMethods = {
     return true;
   },
 
-  // Delete: 고른 연결선 지우기, 아니면 고른 쪽지·사진 지우기 · 파일 묶음은 풀기 · 바탕화면 파일은 휴지통으로
+  // Delete: 고른 연결선 지우기, 아니면 고른 쪽지·사진 지우기 · 파일 묶음은 풀기 · 캘린더 · 연대표 판 지우기 · 바탕화면 파일은 휴지통으로
   //   (끌어온 파일은 아이콘만 빼기, 고정된 것은 그대로 — selection.js)
   deleteSelectedItem() {
     if (this.selectedLinkId) return this.deleteLink(this.selectedLinkId);
-    return this.deleteSelection({ includeGroups: true, includeFiles: true });
+    return this.deleteSelection({ includeBoards: true, includeFiles: true });
   },
 
   // 붙여넣을 자리 = 마우스가 있는 곳

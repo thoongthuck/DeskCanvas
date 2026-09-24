@@ -27,6 +27,19 @@ export const LEGACY_NOTE_COLORS = {
 // 스타일 창의 쪽지 색 순서
 export const STYLE_COLOR_ORDER = ['yellow', 'pink', 'blue', 'green', 'purple', 'gray'];
 
+// 연결선 색 (가이드 16-2) — 쪽지 색과 같은 이름, 선이라 진하게 (사진 압정 색과 같은 무리).
+//   gray 는 기본 선 색 (밝은 · 어두운 배경에 맞춰 styles/links.css 가 정함). 그 밖에 직접 고르기(custom)
+export const LINK_COLORS = {
+  gray:   null,
+  yellow: '#E9B64A',
+  pink:   '#EC8595',
+  blue:   '#5E9FEC',
+  green:  '#5DB585',
+  purple: '#9384E8',
+};
+export const LINK_COLOR_ORDER = ['gray', 'yellow', 'pink', 'blue', 'green', 'purple'];
+export const LINK_CUSTOM_DEFAULT = '#E0736C';     // 직접 고르기 창을 처음 열 때
+
 // 쪽지 글자 색 (가이드 8-1)
 export const INK_COLORS = {
   default: '#1F2F45',

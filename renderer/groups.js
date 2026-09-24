@@ -5,7 +5,7 @@
 //   담긴 파일의 x · y 는 늘 보이는 칸 자리로 맞춰 둠 → 찾기 · 미니맵 · 저장 · 묶음 풀기가 그대로 씀
 //   진짜 폴더가 아니라 화면에서만 묶음 (파일은 옮기지 않음)
 //   접으면 머리 한 줄만 남고 담긴 파일 그림이 작게 늘어섬 (그 자리에서 다시 펼침 — 창을 여는 폴더와 다름)
-//   누르면 선택 (가이드 4장: 머리 아이콘 note-selected.svg + 파란 테두리). 어디를 잡아도 옮겨짐
+//   누르면 선택 (쪽지처럼 떠오름 — 머리 아이콘은 그대로 묶음 아이콘). 어디를 잡아도 옮겨짐
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { ICON_DIR, ICON_GRID, NOTE_COLORS } from './constants.js';
 import { t } from './i18n.js';
@@ -122,7 +122,7 @@ export const groupMethods = {
     const head = div('board-head group-head');
     const icon = document.createElement('img');
     icon.className = 'group-icon';
-    icon.src = `${ICON_DIR}${this.groupSelected(board) ? 'note-selected.svg' : 'note-group.svg'}`;
+    icon.src = `${ICON_DIR}note-group.svg`;             // 골라도 체크 표시로 바꾸지 않음
     icon.alt = '';
     icon.draggable = false;
     const name = this.boardNameElement(board, t('group.untitled'), 'group-title');
@@ -192,16 +192,22 @@ export const groupMethods = {
     return this.selection.has(group.id) && !group.pinned;
   },
 
-  // 선택이 바뀌면 (notes.js updateSelection): 파란 테두리 + 머리 아이콘을 선택 아이콘으로
+  // 선택이 바뀌면 (notes.js updateSelection): 묶음이 떠오르고 담긴 파일도 같이 떠오름
   updateGroupSelection() {
     this.fileGroups().forEach(g => {
       const el = document.getElementById(g.id);
-      if (!el) return;
-      const selected = this.groupSelected(g);
-      el.classList.toggle('selected', selected);
-      const icon = el.querySelector('.group-icon');
-      if (icon) icon.src = `${ICON_DIR}${selected ? 'note-selected.svg' : 'note-group.svg'}`;
+      if (el) el.classList.toggle('selected', this.groupSelected(g));
     });
+    this.files.forEach(file => {
+      const el = document.getElementById(file.id);
+      if (el) el.classList.toggle('group-lifted', this.fileLifted(file));
+    });
+  },
+
+  // 담긴 묶음이 골라져 떠오른 파일
+  fileLifted(file) {
+    const slot = this.fileSlot(file);
+    return !!(slot && this.groupSelected(slot.group));
   },
 
   toggleGroupCollapse(group) {
@@ -473,7 +479,7 @@ export const groupMethods = {
     });
     this.boards = this.boards.filter(b => b.id !== group.id);
     const el = document.getElementById(group.id);
-    if (el) el.remove();
+    if (el) el.remove();                          // 포스트잇이 떼어지는 움직임은 animation/note-animations.js 가 붙임
     members.forEach(file => {
       const fileEl = document.getElementById(file.id);
       if (fileEl) this.updateFilePosition(fileEl, file);

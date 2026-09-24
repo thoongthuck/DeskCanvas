@@ -57,6 +57,24 @@ body.theme-dark #link-layer {
 }
 .link.selected .link-dot { fill: var(--link-selected); }
 
+/* 색을 정한 선 (선 우클릭 › 선 색) — 그 색으로, 올리거나 이은 것을 고르면 조금 진하게.
+   고르면 파랗게 바꾸지 않고 그 색 그대로 굵게 + 끝 점에 파란 테두리 (고른 색이 보이게) */
+.link.colored {
+  --link: var(--link-color);
+  --link-strong: color-mix(in srgb, var(--link-color) 78%, #1F2F45);
+}
+body.theme-dark .link.colored { --link-strong: color-mix(in srgb, var(--link-color) 78%, #FFFFFF); }
+.link.colored.selected .link-line { stroke: var(--link-color); }
+.link.colored.selected .link-dot {
+  fill: var(--link-color);
+  stroke: var(--link-selected);
+  stroke-width: calc(var(--link-ring-w, 1.5px) * 1.6);
+}
+
+/* 선 색 고르는 창 — 쪽지 스타일 창(styles/style-panel.css)과 같은 틀 · 점. 점 7개(기본 + 5색 + 직접 고르기) 만큼 좁게 */
+#style-panel.link-color-panel { width: auto; }
+#style-panel.link-color-panel .link-dot-gray { background: #A3AEBF; }   /* 기본 색 (창의 button 초기화보다 앞서게 #style-panel 로) */
+
 /* 잇는 중인 선 — 파란 점선 */
 .link-temp .link-line {
   stroke: var(--link-selected);

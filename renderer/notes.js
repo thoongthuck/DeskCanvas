@@ -465,6 +465,7 @@ export const noteMethods = {
       el.classList.toggle('selected', this.selection.has(el.id));
     });
     this.updateGroupSelection();                    // 파일 묶음 (groups.js)
+    this.updateBoardSelection();                    // 캘린더 · 연대표 (boards.js)
     this.requestLinks();                            // 고른 것에 이은 선은 진하게 (links.js)
   },
 
