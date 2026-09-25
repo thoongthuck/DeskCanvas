@@ -6,6 +6,7 @@
 #                 menuprep <base64 경로들> (탐색기 줄만 든 메뉴를 미리 — 비었으면 바탕화면 빈 곳. 같은 대상의 menuopen 이 바로 답함)
 #                 → menuinvoke <id> (고른 줄 실행) · menushow (예전 모양 메뉴로 띄움 — '추가 옵션 표시') · menuclose (그만둠)
 #   휴지통:       restore <base64 경로> (휴지통에서 그 자리로 되살림 — 탐색기 '복원'과 같음, 앱의 되돌리기)
+#   바탕화면 층 사진: mirroropen (사진 창을 만들고 hwnd — attach 로 넣음) · mirrorshot <base64 jpg> <#색> · mirrorclose
 #   살펴보기:    info <hwnd> · layout · hit <x> <y>
 #   답은 명령마다 한 줄 (ok … / fail …). 명령과 상관없이 오는 알림은 'evt …' 로 시작 (evt desktop-restarted: 탐색기가 다시 시작됨)
 #   x y w h 는 화면 픽셀 (Electron 의 screen.dipToScreenRect 값)

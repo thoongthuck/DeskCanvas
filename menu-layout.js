@@ -41,14 +41,15 @@ function hasVerb(items, verb) {
   return (items || []).some(it => it.verb === verb || hasVerb(it.sub, verb));
 }
 
-// 하위 목록 줄은 그대로 (아이콘 · 체크만 옮김)
-function subEntries(items) {
+// 하위 목록 줄은 그대로 (아이콘 · 체크만 옮김) — 앱 줄은 오른쪽 단축키 글자도 (appInfo)
+function subEntries(items, appInfo = new Map()) {
   return (items || []).map(it => {
     if (it.sep) return { sep: true };
     const { text, access } = cleanText(it.text);
+    const info = appInfo.get(it.id);
     return {
-      id: it.id, text, access, key: it.key || '', img: it.icon || '', dis: !!it.dis, chk: !!it.chk, radio: !!it.radio,
-      sub: it.sub ? subEntries(it.sub) : undefined,
+      id: it.id, text, access, key: it.key || (info && info.key) || '', img: it.icon || '', dis: !!it.dis, chk: !!it.chk, radio: !!it.radio,
+      sub: it.sub ? subEntries(it.sub, appInfo) : undefined,
     };
   });
 }
@@ -63,7 +64,7 @@ function entry(it, glyph, appInfo) {
   if (glyph) e.glyph = GLYPH[glyph];
   else if (info && info.icon) e.appIcon = info.icon;
   else if (it.icon) e.img = it.icon;
-  if (it.sub) e.sub = subEntries(it.sub);
+  if (it.sub) e.sub = subEntries(it.sub, appInfo);
   return e;
 }
 
@@ -86,7 +87,7 @@ function buildLayout(tree, appInfo = new Map(), moreLabel = '추가 옵션 표�
     if ((it.id > 0 && it.id < 1000) || appSub) {
       const info = appInfo.get(it.id) || appInfo.get(`sub:${cleanText(it.text).text}`) || {};
       const role = APP_ROLES.includes(info.role) ? info.role : null;
-      const e = entry(it, role, new Map([[it.id, info]]));
+      const e = entry(it, role, new Map([...appInfo, [it.id, info]]));    // 하위 줄의 단축키 글자도 찾게 전체를 넘김
       if (role) app[role] = e;
       else app.other.push(e);
       return;

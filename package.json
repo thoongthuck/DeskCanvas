@@ -29,7 +29,12 @@
     "files": [
       "**/*",
       "!native/desktop-pin/build/**",
-      "!dist/**"
+      "!dist/**",
+      "!icons/*_미리보기.png",
+      "!icons/시안_*.png",
+      "!icons/*.md",
+      "!.gitignore",
+      "!.gitattributes"
     ],
     "win": {
       "target": "nsis"

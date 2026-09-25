@@ -24,7 +24,7 @@ function youtubeStart(params) {
   return m ? (Number(m[1] || 0) * 3600 + Number(m[2] || 0) * 60 + Number(m[3] || 0)) : 0;
 }
 
-// 주소 하나 → { url, kind: 'youtube' | 'vimeo' | 'video' | 'image' | 'link', embed?, host }
+// 주소 하나 → { url, kind: 'youtube' | 'vimeo' | 'video' | 'image' | 'link', embed?, thumb?, host }
 export function classifyLink(url) {
   let u;
   try {
@@ -46,7 +46,12 @@ export function classifyLink(url) {
   }
   if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) {
     const start = youtubeStart(u.searchParams);
-    return { ...out, kind: 'youtube', embed: `https://www.youtube-nocookie.com/embed/${id}?rel=0${start ? `&start=${start}` : ''}` };
+    return {
+      ...out,
+      kind: 'youtube',
+      embed: `https://www.youtube-nocookie.com/embed/${id}?rel=0${start ? `&start=${start}` : ''}`,
+      thumb: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+    };
   }
   if (host === 'vimeo.com') {
     const m = /^\/(\d+)/.exec(u.pathname);
@@ -162,17 +167,38 @@ export const noteLinkMethods = {
   },
 
   // 영상 · 사진 — 쪽지 너비에 맞춤 (영상 재생기는 16:9, 사진 · 영상 파일은 불러온 뒤 제 비율)
+  //   유튜브 · 비메오 재생기(iframe)는 하나마다 화면 프로세스를 따로 하나 더 써서 (메모리 수십~백 MB) 누를 때 불러옴
+  //   그 전에는 미리보기 그림(유튜브) · 재생 단추만. 누르면 재생기를 불러와 바로 재생 (쪽지를 고치면 다시 미리보기로)
   createLinkEmbed(link, refit) {
     const wrap = document.createElement('div');
     wrap.className = `note-embed note-embed-${link.kind}`;
     if (link.kind === 'youtube' || link.kind === 'vimeo') {
-      const frame = document.createElement('iframe');
-      frame.src = link.embed;
-      frame.loading = 'lazy';
-      frame.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen';
-      frame.referrerPolicy = 'strict-origin-when-cross-origin';
-      frame.title = link.host;
-      wrap.appendChild(frame);
+      const poster = document.createElement('button');
+      poster.type = 'button';
+      poster.className = 'note-embed-poster';
+      poster.title = `${t('link.play')} — ${link.host}`;
+      if (link.thumb) {
+        const thumb = document.createElement('img');
+        thumb.src = link.thumb;
+        thumb.alt = '';
+        thumb.draggable = false;
+        thumb.addEventListener('error', () => thumb.remove());
+        poster.appendChild(thumb);
+      }
+      const play = document.createElement('span');
+      play.className = 'note-embed-play';
+      poster.appendChild(play);
+      poster.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const frame = document.createElement('iframe');
+        frame.src = `${link.embed}${link.embed.includes('?') ? '&' : '?'}autoplay=1`;
+        frame.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen';
+        frame.referrerPolicy = 'strict-origin-when-cross-origin';
+        frame.title = link.host;
+        poster.replaceWith(frame);
+      });
+      wrap.appendChild(poster);
     } else if (link.kind === 'video') {
       const video = document.createElement('video');
       video.src = link.url;

@@ -77,7 +77,7 @@ export const keyboardMethods = {
       this.toggleMinimap();
       return;
     }
-    if (ctrl && (key === '0' || key === 'home')) {        // 원점으로 (화면 처음 자리 · 100%)
+    if (ctrl && (key === '0' || key === 'home')) {        // 원점으로 (정해 둔 화면 · 없으면 처음 자리 100%, view.js)
       e.preventDefault();
       this.goHome();
       return;

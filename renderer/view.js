@@ -1,6 +1,7 @@
 // 화면 — 빈 곳을 끌어 이동, 휠로 확대·축소, 격자 그리기, 쪽지·사진·파일을 화면 좌표에 맞추기
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { IS_MAC } from './constants.js';
+import { t } from './i18n.js';
 
 export const viewMethods = {
   handleCanvasMouseDown(e) {
@@ -51,9 +52,41 @@ export const viewMethods = {
     this.scheduleSave({ system: true });
   },
 
-  // 화면을 처음 자리(원점 · 100%)로 — 멀리 갔다가 돌아올 때
+  // 원점 — 정해 둔 화면 (this.home: 화면 왼쪽 위에 오는 캔버스 자리 x · y 와 배율), 없으면 처음 자리 (0, 0 · 100%)
+  //   원하는 곳으로 가서 '지금 화면을 원점으로' → 원점으로(Ctrl+0 · 메뉴)가 그 화면으로 감. 저장 파일에 함께 저장 (storage.js)
+  //   바탕화면 파일 아이콘의 칸(격자)은 그대로 처음 자리 기준
+  homeView() {
+    const h = this.home;
+    if (!h) return { zoom: 1, panX: 0, panY: 0 };
+    return { zoom: h.zoom, panX: -h.x * h.zoom, panY: -h.y * h.zoom };
+  },
+
+  // 멀리 갔다가 돌아올 때
   goHome() {
-    this.animateView({ zoom: 1, panX: 0, panY: 0 });
+    this.animateView(this.homeView());
+  },
+
+  // 지금 보이는 화면을 원점으로
+  setHomeHere() {
+    const round = (v, d) => Math.round(v * d) / d;
+    this.home = { x: round(-this.panX / this.zoom, 10), y: round(-this.panY / this.zoom, 10), zoom: round(this.zoom, 100) };
+    this.scheduleSave();
+    this.showToast(t('toast.homeSet'));
+  },
+
+  // 원점을 처음 자리(0, 0 · 100%)로 되돌림
+  resetHome() {
+    if (!this.home) return;
+    this.home = null;
+    this.scheduleSave();
+    this.showToast(t('toast.homeReset'));
+  },
+
+  // 저장 파일의 원점 — 숫자가 아니거나 배율이 범위(0.1~3) 밖이면 없음으로
+  normalizeHome(h) {
+    if (!h || typeof h !== 'object') return null;
+    const ok = [h.x, h.y, h.zoom].every(v => typeof v === 'number' && Number.isFinite(v));
+    return ok && h.zoom >= 0.1 && h.zoom <= 3 ? { x: h.x, y: h.y, zoom: h.zoom } : null;
   },
 
   animateView(target, ms = 280) {

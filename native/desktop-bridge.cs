@@ -277,6 +277,9 @@ public class DesktopBridge : Form {
       case "folderverb": return FolderVerb(p[1], Encoding.UTF8.GetString(Convert.FromBase64String(p.Length > 2 ? p[2] : "")));
       case "langapply": { string r = ApplyUiLanguage(); return LangInfo() + " apply[" + r + "] tid=" + GetCurrentThreadId(); }
       case "restore": return Restore(Encoding.UTF8.GetString(Convert.FromBase64String(p.Length > 1 ? p[1] : "")));
+      case "mirroropen": return MirrorOpen();
+      case "mirrorshot": return MirrorShot(Encoding.UTF8.GetString(Convert.FromBase64String(p.Length > 1 ? p[1] : "")), p.Length > 2 ? p[2] : "");
+      case "mirrorclose": MirrorClose(); return "ok";
       default: return "fail unknown";
     }
   }
@@ -452,6 +455,83 @@ public class DesktopBridge : Form {
       return "ok raised";
     }
     return "ok";
+  }
+
+  // ================ 바탕화면 층 사진 창 (main.js mirror) ================
+  // 붙잡은 캔버스(방법 1) 밑 바탕화면 층에 캔버스를 찍은 사진 한 장 — 윈도우가 창들을 잠깐 치울 때
+  //   (Alt+Tab 미리 보기 · 창 맞춰 붙이기 도우미 · 작업 보기) 진짜 배경 화면 대신 보임
+  //   예전에는 Electron 창(mirror.html)이었는데, 화면 하나 크기의 창이라 GPU · 화면 프로세스가 90MB 가까이 써서
+  //   이 다리 안의 가벼운 창으로 — 사진 한 장을 창 크기로 늘려 그림 (앱이 화면 배율만큼 줄여 찍어 보냄)
+  //   mirroropen → "ok <hwnd>" (앱이 attach 로 바탕화면 층에 넣음) · mirrorshot <base64 jpg 경로> <#배경색> · mirrorclose
+  //   다리가 끝나거나 탐색기가 다시 시작되면 창도 사라짐 → 앱이 check 로 알아채고 다시 만듦
+  class MirrorForm : Form {
+    public System.Drawing.Bitmap Shot;
+    public MirrorForm() {
+      FormBorderStyle = FormBorderStyle.None;
+      ShowInTaskbar = false;
+      StartPosition = FormStartPosition.Manual;
+      SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.Opaque, true);
+    }
+    protected override CreateParams CreateParams {
+      get {
+        var cp = base.CreateParams;
+        cp.ExStyle |= 0x80 | 0x08000000;                       // WS_EX_TOOLWINDOW · WS_EX_NOACTIVATE
+        return cp;
+      }
+    }
+    protected override bool ShowWithoutActivation { get { return true; } }
+    protected override void OnPaint(PaintEventArgs e) {
+      if (Shot == null) {
+        e.Graphics.Clear(BackColor);
+        return;
+      }
+      e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+      e.Graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+      e.Graphics.DrawImage(Shot, ClientRectangle);
+    }
+    protected override void WndProc(ref Message m) {
+      if (m.Msg == 0x21) {                                      // WM_MOUSEACTIVATE → 누르지 않음 (평소에는 캔버스 밑)
+        m.Result = new IntPtr(3);                               // MA_NOACTIVATE
+        return;
+      }
+      base.WndProc(ref m);
+    }
+  }
+  MirrorForm mirrorForm;
+  IntPtr mirrorHwnd;
+
+  string MirrorOpen() {
+    if (mirrorForm != null && IsWindow(mirrorHwnd)) return "ok " + mirrorHwnd.ToInt64();
+    MirrorClose();
+    mirrorForm = new MirrorForm();
+    mirrorHwnd = mirrorForm.Handle;                            // 창만 만듦 — 보이기는 attach (SWP_SHOWWINDOW)
+    return "ok " + mirrorHwnd.ToInt64();
+  }
+
+  // 새 사진 — 파일은 읽어서 복사해 둠 (앱이 다음 사진을 같은 파일에 쓸 수 있게)
+  string MirrorShot(string file, string color) {
+    if (mirrorForm == null || !IsWindow(mirrorHwnd)) return "fail no-mirror";
+    System.Drawing.Bitmap next;
+    using (var fs = new System.IO.FileStream(file, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete))
+    using (var img = System.Drawing.Image.FromStream(fs)) {
+      next = new System.Drawing.Bitmap(img.Width, img.Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+      using (var g = System.Drawing.Graphics.FromImage(next)) g.DrawImage(img, 0, 0, img.Width, img.Height);
+    }
+    try { if (color.Length > 0) mirrorForm.BackColor = System.Drawing.ColorTranslator.FromHtml(color); } catch { }
+    var old = mirrorForm.Shot;
+    mirrorForm.Shot = next;
+    if (old != null) old.Dispose();
+    mirrorForm.Invalidate();
+    return "ok " + next.Width + "x" + next.Height;
+  }
+
+  void MirrorClose() {
+    var form = mirrorForm;
+    mirrorForm = null;
+    mirrorHwnd = IntPtr.Zero;
+    if (form == null) return;
+    try { form.Dispose(); } catch { }
+    if (form.Shot != null) form.Shot.Dispose();
   }
 
   // ================ 휴지통에서 되살리기 ================

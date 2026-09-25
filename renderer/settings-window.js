@@ -74,6 +74,7 @@ export const settingsWindowMethods = {
     this.settingsOpen = true;
     this.shortcutsOpen = false;
     this.refreshSettingsWindow();
+    this.loadStartup();
   },
 
   closeSettings() {
@@ -191,6 +192,9 @@ export const settingsWindowMethods = {
       this.buildToggle(s.autoSave, (on) => this.updateSetting('autoSave', on), 'autosave'));
     row(general, 'row-openlast', 'row.openLast', 'row.openLast.desc',
       this.buildToggle(s.openLastWorkspace, (on) => this.updateSetting('openLastWorkspace', on), 'openlast'));
+    const startupRow = row(general, 'row-startup', 'row.startup', 'row.startup.desc',
+      this.buildToggle(!!(this.startup && this.startup.on), (on) => this.setStartup(on), 'startup'));
+    if (this.startup && !this.startup.available) startupRow.hidden = true;
     const wallpaperRow = row(general, 'row-wallpaper', 'row.wallpaper', 'row.wallpaper.desc',
       this.buildToggle(s.wallpaperMode, (on) => this.updateSetting('wallpaperMode', on), 'wallpaper'));
     if (this.popOutKey) {
@@ -350,6 +354,32 @@ export const settingsWindowMethods = {
       line.append(text, box);
       content.appendChild(line);
     });
+  },
+
+  // ---- 시작 앱 (윈도우에 로그인하면 켜기, main.js) — settings.json 이 아니라 윈도우에 등록된 것을 그대로 보여 줌 ----
+  //   윈도우 설정 · 작업 관리자에서 바꿨을 수도 있어 설정 창을 열 때마다 물어봄
+  loadStartup() {
+    const api = window.canvasAPI;
+    if (!api || !api.getStartup) return;
+    api.getStartup().then((state) => this.showStartup(state)).catch(() => {});
+  },
+
+  setStartup(on) {
+    const api = window.canvasAPI;
+    if (!api || !api.setStartup) return;
+    api.setStartup(on).then((state) => this.showStartup(state)).catch(() => this.loadStartup());
+  },
+
+  // 설정 창의 시작 앱 줄을 지금 상태로 (못 바꿨으면 스위치도 되돌아감)
+  showStartup(state) {
+    this.startup = state || null;
+    const rowEl = document.getElementById('row-startup');
+    if (!rowEl || !this.startup) return;
+    rowEl.hidden = !this.startup.available;
+    const btn = rowEl.querySelector('.set-toggle');
+    if (!btn) return;
+    btn.classList.toggle('on', !!this.startup.on);
+    btn.setAttribute('aria-pressed', String(!!this.startup.on));
   },
 
   // 켜기/끄기

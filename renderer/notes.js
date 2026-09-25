@@ -158,7 +158,7 @@ export const noteMethods = {
     //  - 수정 중인 쪽지의 글자칸은 제외 (글자 고르기·커서)
     //  - 고정된 쪽지 · 잠근 판의 쪽지는 못 옮김 → 끌면 화면 이동 (boards.js startGrabPan)
     el.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.check-box, .md-check, .code-copy, .code-lang, .note-link-chip, .note-embed video')) return;   // 누르는 기능 · 영상 조작
+      if (e.target.closest('.check-box, .md-check, .code-copy, .code-lang, .note-link-chip, .note-embed video, .note-embed-poster')) return;   // 누르는 기능 · 영상 조작
       const editing = this.editingId === note.id;
       const onText = e.target.matches('input, textarea');
       if (!editing && onText) e.preventDefault();                     // 보통 상태: 글자칸에 커서가 생기지 않게

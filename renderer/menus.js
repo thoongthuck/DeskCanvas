@@ -9,7 +9,7 @@ import { t } from './i18n.js';
 export const menuMethods = {
   // 빈 바탕 우클릭: 윈도우 11 바탕화면 메뉴 모양 (main.js · menu-layout.js) — 못 띄우면 캔버스 메뉴
   //   윈도우가 앱에 주는 바탕 메뉴에는 '새로 만들기 ›' · 디스플레이 설정 · 개인 설정 뿐이라, 탐색기 바탕 메뉴의 나머지는 앱이 채움:
-  //     붙여넣기 · 바로 가기 붙여넣기 (클립보드의 파일 → 바탕화면), 보기 › (캔버스 격자 · 자), 정렬 기준 › (파일 아이콘 줄 세우기),
+  //     붙여넣기 · 바로 가기 붙여넣기 (클립보드의 파일 → 바탕화면), 보기 › (캔버스 격자 · 자 · 원점), 정렬 기준 › (파일 아이콘 줄 세우기),
   //     새로 고침, 실행 취소 (앱 되돌리기 — 휴지통으로 보낸 파일도 되살림)
   //   role: 윈도우 11 메뉴에서의 자리 (menu-layout.js)
   //   캔버스 메뉴(쪽지 추가 · 판 추가 …)는 빈 바탕을 두 번 눌러서 (app.js)
@@ -30,6 +30,8 @@ export const menuMethods = {
           { label: t('view.gridSnap'), current: !!s.gridSnap, action: toggle('gridSnap') },
           { label: t('row.grid'), current: !!s.showGrid, action: toggle('showGrid') },
           { label: t('row.align'), current: s.alignGuides !== false, action: toggle('alignGuides') },
+          { separator: true },
+          ...this.homeMenuItems().map(({ icon, ...rest }) => rest),     // 하위 목록의 다른 줄처럼 그림 없이
         ],
       },
       {
@@ -41,6 +43,16 @@ export const menuMethods = {
       { role: 'undo', label: t('menu.undo'), key: 'Ctrl+Z', disabled: !this.undoStack.length, action: () => this.undo() },
     ], { at });
     if (!shown) this.openDesktopMenu(x, y);
+  },
+
+  // 원점 줄 — 원점으로 · 지금 화면을 원점으로 · (정해 두었으면) 원점 처음대로 (view.js)
+  homeMenuItems() {
+    const items = [
+      { icon: 'style-reset.svg', label: t('menu.goHome'), key: 'Ctrl+0', action: () => this.goHome() },
+      { icon: 'pin.svg', label: t('menu.setHome'), action: () => this.setHomeHere() },
+    ];
+    if (this.home) items.push({ icon: 'set-reset.svg', label: t('menu.resetHome'), action: () => this.resetHome() });
+    return items;
   },
 
   // 윈도우 메뉴로 띄우기 (main.js 'shell-menu') — 앱 메뉴 줄(글자 · 하위 목록 · 할 일)을 윈도우 메뉴 줄로 바꿔 위에 붙임
@@ -333,7 +345,9 @@ export const menuMethods = {
         onClick: (row) => this.openBoardAddMenu(menu, row, at) },
       { icon: this.gridSnapOn() ? 'checkbox-checked.svg' : 'checkbox.svg', label: t('menu.gridMode'), current: this.gridSnapOn(),
         onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); this.toggleGridSnap(); } },
-      { icon: 'style-reset.svg', label: t('menu.goHome'), onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); this.goHome(); } },
+      ...this.homeMenuItems().map(item => ({
+        icon: item.icon, label: item.label, onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); item.action(); },
+      })),
     ]);
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;

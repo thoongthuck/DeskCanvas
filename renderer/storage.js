@@ -9,6 +9,7 @@ export const storageMethods = {
       zoom: this.zoom,
       panX: this.panX,
       panY: this.panY,
+      home: this.home,                  // 정해 둔 원점 (없으면 null — view.js)
       notes: this.notes,
       files: this.files,
       photos: this.photos,
@@ -121,7 +122,8 @@ export const storageMethods = {
     this.zoom = typeof data.zoom === 'number' ? data.zoom : 1;
     this.panX = typeof data.panX === 'number' ? data.panX : 0;
     this.panY = typeof data.panY === 'number' ? data.panY : 0;
-    this.notes = (Array.isArray(data.notes) ? data.notes : []).map(n => this.normalizeNote(n));
+    this.home = this.normalizeHome(data.home);
+    this.notes =(Array.isArray(data.notes) ? data.notes : []).map(n => this.normalizeNote(n));
     this.photos = (Array.isArray(data.photos) ? data.photos : []).map(p => this.normalizePhoto(p));
     this.boards = (Array.isArray(data.boards) ? data.boards : []).map(b => this.normalizeBoard(b)).filter(Boolean);
     this.files = Array.isArray(data.files) ? data.files : [];

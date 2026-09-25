@@ -249,111 +249,106 @@ function keepPinned() {
 // ---------------- 바탕화면 층 사진 (방법 1 과 함께) ----------------
 // 붙잡은 캔버스는 보통 창이라, 윈도우가 창들을 잠깐 치우고 바탕화면만 보여 줄 때
 //   (Alt+Tab 미리 보기 · 창 맞춰 붙이기 도우미 · 작업 보기 · 화면 가장자리 끌기) 진짜 배경 화면이 보임
-//   → 캔버스를 찍은 사진 한 장을 바탕화면 층(윈도우 아이콘 위)에 넣어 둠 (mirror.html, 바탕화면 다리 attach).
+//   → 캔버스를 찍은 사진 한 장을 바탕화면 층(윈도우 아이콘 위)에 넣어 둠 (바탕화면 다리의 사진 창 — mirroropen · attach).
 //   평소에는 붙잡은 캔버스가 같은 자리에서 덮어 안 보임. 캔버스가 바뀌면 (저장 · 바뀜 알림) 잠시 뒤 다시 찍음
-//   사진이라 그 순간에는 영상이 멈춘 모습. 캔버스 창이 닫히면 같이 닫음
+//   사진이라 그 순간에는 영상이 멈춘 모습. 사진은 화면 배율만큼 줄여 보냄 (200% 화면이면 절반 — 잠깐 보이는 것이라 충분)
+//   예전에는 Electron 창(mirror.html)이었는데 화면 하나 크기라 GPU · 화면 프로세스가 90MB 가까이 써서 다리 안의 가벼운 창으로
+//   hwnd: 사진 창 · child: 그 창을 가진 다리 (다리가 새로 켜지면 창도 같이 사라짐 → 다시 만듦)
 const MIRROR_DELAY = 900;             // 마지막으로 바뀐 뒤 이만큼 있다가 찍음
-const mirror = { win: null, ready: false, timer: null, busy: false, again: false };
-
-function mirrorHandle(win) {
-  const buf = win.getNativeWindowHandle();
-  return buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
-}
+const mirror = { hwnd: '', child: null, ready: false, creating: false, timer: null, busy: false, again: false, color: '' };
 
 async function createMirror() {
-  if (mirror.win || process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
-  const win = new BrowserWindow({
-    ...screenArea(),
-    frame: false,
-    thickFrame: false,
-    hasShadow: false,
-    skipTaskbar: true,
-    focusable: false,              // 누를 일 없음 (평소에는 캔버스 밑)
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    show: false,
-    backgroundColor: canvasBackground(),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
-  });
-  mirror.win = win;
-  mirror.ready = false;
-  win.on('closed', () => {
-    if (mirror.win !== win) return;
-    mirror.win = null;
-    mirror.ready = false;
-  });
+  if (mirror.ready || mirror.creating || process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
+  const child = startBridge();
+  if (!child) return;
+  mirror.creating = true;
   try {
-    await win.loadFile('mirror.html');
-    if (win.isDestroyed()) return;
-    const b = screen.dipToScreenRect(null, screenArea());
-    const reply = await bridgeCall(`attach ${mirrorHandle(win)} ${b.x} ${b.y} ${b.width} ${b.height}`);
-    logLine(`바탕화면 층 사진 넣기: ${reply.slice(0, 90)}`);
-    if (!reply.startsWith('ok')) {
-      destroyMirror();
+    const opened = await bridgeCall('mirroropen');
+    const m = /^ok (\d+)/.exec(opened);
+    if (!m) {
+      logLine(`바탕화면 층 사진 창 못 만듦: ${opened.slice(0, 80)}`);
       return;
     }
+    const b = screen.dipToScreenRect(null, screenArea());
+    const reply = await bridgeCall(`attach ${m[1]} ${b.x} ${b.y} ${b.width} ${b.height}`);
+    logLine(`바탕화면 층 사진 넣기: ${reply.slice(0, 90)}`);
+    if (!reply.startsWith('ok')) {
+      bridgeCall('mirrorclose', 3000);
+      return;
+    }
+    mirror.hwnd = m[1];
+    mirror.child = child;
     mirror.ready = true;
     scheduleMirror(1500);                                        // 켤 때는 캔버스가 파일 · 쪽지를 다 그린 뒤에
-    setTimeout(() => { if (mirror.win === win) scheduleMirror(0); }, 5000);
-  } catch (err) {
-    logLine(`바탕화면 층 사진 못 넣음: ${err && err.message}`);
-    destroyMirror();
+    setTimeout(() => { if (mirror.hwnd === m[1]) scheduleMirror(0); }, 5000);
+  } finally {
+    mirror.creating = false;
   }
 }
 
 function destroyMirror() {
   clearTimeout(mirror.timer);
-  const win = mirror.win;
-  mirror.win = null;
+  const had = mirror.ready;
+  mirror.hwnd = '';
+  mirror.child = null;
   mirror.ready = false;
-  if (win && !win.isDestroyed()) win.destroy();
+  if (had && wallpaper.bridge) bridgeCall('mirrorclose', 3000);  // 다리가 없으면 사진 창도 이미 없음
 }
 
 // 화면 크기가 바뀜 — 새 자리 · 크기로 다시 넣고 다시 찍음
 async function placeMirror() {
-  if (!mirror.ready || !mirror.win || mirror.win.isDestroyed()) return;
+  if (!mirror.ready) return;
   const b = screen.dipToScreenRect(null, screenArea());
-  await bridgeCall(`attach ${mirrorHandle(mirror.win)} ${b.x} ${b.y} ${b.width} ${b.height}`);
+  await bridgeCall(`attach ${mirror.hwnd} ${b.x} ${b.y} ${b.width} ${b.height}`);
   scheduleMirror(300);
 }
 
-// 가끔 확인 (keepPinned) — 탐색기가 다시 시작되면 사진 창도 사라짐 → 다시 만듦. 떨어졌으면 다시 넣음
+// 가끔 확인 (keepPinned) — 다리가 새로 켜졌거나 탐색기가 다시 시작돼 사진 창이 사라졌으면 다시 만듦. 떨어졌으면 다시 넣음
 async function keepMirror() {
   if (!wallpaper.pinned) return;
-  if (!mirror.win) {
+  if (mirror.ready && mirror.child !== wallpaper.bridge) {       // 예전 다리와 함께 사라짐
+    mirror.ready = false;
+    mirror.hwnd = '';
+    mirror.child = null;
+  }
+  if (!mirror.ready) {
     createMirror();
     return;
   }
-  if (!mirror.ready || mirror.win.isDestroyed()) return;
-  const reply = await bridgeCall(`check ${mirrorHandle(mirror.win)}`, 3000);
-  if (reply === 'detached') {
-    logLine('바탕화면 층 사진이 떨어짐 → 다시 넣음');
+  const reply = await bridgeCall(`check ${mirror.hwnd}`, 3000);
+  if (reply === 'detached' || reply === 'gone') {
+    logLine(`바탕화면 층 사진 창이 ${reply === 'gone' ? '사라짐' : '떨어짐'} → 다시 만듦`);
     destroyMirror();
     createMirror();
   }
 }
 
 function scheduleMirror(delay = MIRROR_DELAY) {
-  if (!mirror.win) return;
+  if (!mirror.ready) return;
   clearTimeout(mirror.timer);
   mirror.timer = setTimeout(updateMirror, delay);
 }
 
 async function updateMirror() {
-  if (!mirror.ready || !mirror.win || mirror.win.isDestroyed() || !mainWindow || mainWindow.isDestroyed()) return;
+  if (!mirror.ready || !mainWindow || mainWindow.isDestroyed()) return;
   if (mirror.busy) {                                 // 찍는 중이면 끝난 뒤 한 번 더
     mirror.again = true;
     return;
   }
   mirror.busy = true;
   try {
-    const shot = await mainWindow.webContents.capturePage();   // 다른 창 뒤에 가려져 있어도 찍힘
-    if (shot.isEmpty() || !mirror.win || mirror.win.isDestroyed()) return;
+    let shot = await mainWindow.webContents.capturePage();     // 다른 창 뒤에 가려져 있어도 찍힘
+    if (shot.isEmpty() || !mirror.ready) return;
+    const scale = screen.getPrimaryDisplay().scaleFactor || 1;
+    if (scale > 1) {
+      const size = shot.getSize();
+      shot = shot.resize({ width: Math.round(size.width / scale), height: Math.round(size.height / scale), quality: 'good' });
+    }
     const file = path.join(app.getPath('userData'), 'desktop-mirror.jpg');
-    await fs.promises.writeFile(file, shot.toJPEG(88));
-    await mirror.win.webContents.executeJavaScript(
-      `window.showShot(${JSON.stringify(`${pathToFileURL(file).href}?t=${Date.now()}`)})`);
+    await fs.promises.writeFile(file, shot.toJPEG(85));
+    const color = mirror.color || canvasBackground();
+    const reply = await bridgeCall(`mirrorshot ${Buffer.from(file, 'utf8').toString('base64')} ${color}`, 5000);
+    if (!reply.startsWith('ok')) logLine(`바탕화면 층 사진 못 바꿈: ${reply.slice(0, 80)}`);
   } catch (err) {
     logLine(`바탕화면 층 사진 못 찍음: ${err && err.message}`);
   } finally {
@@ -866,7 +861,7 @@ function menuOverlayWindow() {
     skipTaskbar: true,
     alwaysOnTop: true,
     backgroundColor: '#00000000',
-    webPreferences: { preload: path.join(__dirname, 'menu-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { preload: path.join(__dirname, 'menu-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
   });
   win.setAlwaysOnTop(true, 'pop-up-menu');
   win.loadFile('menu.html');
@@ -1096,14 +1091,42 @@ ipcMain.handle('set-wallpaper-mode', async (event, on) => {
 // 테마가 바뀌면 창 바탕색도 (settings.js)
 ipcMain.on('set-background', (event, color) => {
   if (mainWindow && !mainWindow.isDestroyed() && /^#[0-9a-f]{6}$/i.test(String(color))) mainWindow.setBackgroundColor(color);
-  if (mirror.win && !mirror.win.isDestroyed() && /^#[0-9a-f]{6}$/i.test(String(color))) {
-    mirror.win.setBackgroundColor(color);
-    mirror.win.webContents.executeJavaScript(`window.setBackdrop && window.setBackdrop(${JSON.stringify(color)})`).catch(() => {});
+  if (/^#[0-9a-f]{6}$/i.test(String(color))) {                  // 바탕화면 층 사진 창의 바탕색도 (다음 사진과 함께)
+    mirror.color = color;
     scheduleMirror();
   }
 });
 
 ipcMain.handle('get-wallpaper-state', () => ({ wanted: wallpaper.wanted, embedded: wallpaper.pinned || wallpaper.embedded, key: popOutKey }));
+
+// ---------------- 시작 앱 (윈도우에 로그인하면 켜기) ----------------
+// 설정 › 일반 › 시작 앱. 윈도우의 시작 앱 목록(작업 관리자 › 시작 앱 · 윈도우 설정 › 앱 › 시작 프로그램)에 올림
+//   켜져 있는지는 윈도우에 등록된 것을 그대로 읽음 (settings.json 에 두지 않음) — 윈도우 쪽에서 끄면 여기도 꺼져 보임
+//   설치판은 DeskCanvas.exe, 개발판(npm start)은 electron.exe <코드 폴더> — 등록 이름을 달리 해 서로 덮지 않음
+function loginItemOptions() {
+  return app.isPackaged
+    ? { path: process.execPath, args: [], name: 'DeskCanvas' }
+    : { path: process.execPath, args: [app.getAppPath()], name: 'DeskCanvas (dev)' };
+}
+
+function startupState() {
+  if (process.platform !== 'win32' && process.platform !== 'darwin') return { available: false, on: false };
+  const o = loginItemOptions();
+  const s = app.getLoginItemSettings({ path: o.path, args: o.args });
+  return { available: true, on: !!s.openAtLogin && s.executableWillLaunchAtLogin !== false };
+}
+
+ipcMain.handle('get-startup', () => startupState());
+ipcMain.handle('set-startup', (event, on) => {
+  const o = loginItemOptions();
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!on, enabled: !!on, path: o.path, args: o.args, name: o.name });
+    logLine(`시작 앱: ${on ? '켬' : '끔'} (${o.name})`);
+  } catch (err) {
+    logLine(`시작 앱 못 바꿈: ${err && err.message}`);
+  }
+  return startupState();
+});
 
 function createWindow() {
   let stamp = '?';
@@ -1128,6 +1151,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       autoplayPolicy: 'no-user-gesture-required',   // 소리를 켜 둔 영상도 켤 때 바로 재생 (renderer/photos.js)
+      spellcheck: false,           // 맞춤법 검사 안 함 (글 칸마다 이미 끔 — 검사 사전도 불러오지 않게)
     }
   });
 

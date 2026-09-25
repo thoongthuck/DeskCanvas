@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   // 바탕화면 층에 넣기 (Phase 5) · 트레이에서 온 부탁 (설정 창 열기 · 설정 바꾸기)
   setWallpaperMode: (on) => ipcRenderer.invoke('set-wallpaper-mode', !!on),
   getWallpaperState: () => ipcRenderer.invoke('get-wallpaper-state'),
+  // 시작 앱 (윈도우에 로그인하면 켜기) — { available, on }
+  getStartup: () => ipcRenderer.invoke('get-startup'),
+  setStartup: (on) => ipcRenderer.invoke('set-startup', !!on),
   holdFront: (reason, on) => ipcRenderer.send('front-hold', reason, !!on),
   setBackground: (color) => ipcRenderer.send('set-background', color),
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),

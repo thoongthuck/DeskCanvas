@@ -65,6 +65,7 @@ export class InfiniteCanvas {
     this.zoom = 1;
     this.panX = 0;
     this.panY = 0;
+    this.home = null;             // 정해 둔 원점 { x, y, zoom } — 없으면 처음 자리 (view.js)
     this.isDragging = false;      // 빈 곳을 끌어 화면 이동 중
     this.dragStartX = 0;
     this.dragStartY = 0;
