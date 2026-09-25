@@ -5,6 +5,14 @@ const { pathToFileURL } = require('url');
 const { execFile, spawn } = require('child_process');
 const { buildLayout, cleanText } = require('./menu-layout');
 
+// 앱 본체에서만 쓰는 메모리 치우기 (gc) — 바탕화면 층 사진을 찍고 나면 찍은 그림(화면 크기, 20MB 안팎 두 장)을
+//   바로 돌려주려고. 가만두면 한참 뒤에야 치워서 그동안 30MB 가까이 붙잡고 있음 (updateMirror)
+let collectGarbage = null;
+try {
+  require('v8').setFlagsFromString('--expose-gc');
+  collectGarbage = require('vm').runInNewContext('gc');
+} catch (_) {}
+
 // ── 문제 찾기용 기록 ──────────────────────────────────────────────
 // 무슨 일이 있었는지 앱 데이터 폴더의 debug-log.txt 에 남긴다 (%APPDATA%\wallpaper-canvas\debug-log.txt).
 // 코드 폴더에는 쓰지 않음 (git 기록에 섞이지 않게). 200KB 가 넘으면 새로 시작한다
@@ -352,6 +360,7 @@ async function updateMirror() {
   } catch (err) {
     logLine(`바탕화면 층 사진 못 찍음: ${err && err.message}`);
   } finally {
+    if (collectGarbage) setImmediate(() => { try { collectGarbage(); } catch (_) {} });   // 찍은 그림을 바로 돌려줌
     mirror.busy = false;
     if (mirror.again) {
       mirror.again = false;

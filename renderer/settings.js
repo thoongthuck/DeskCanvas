@@ -90,7 +90,8 @@ export const settingsMethods = {
     if (key === 'noteLinkView') this.refreshAllNoteLinks();       // 쪽지 속 주소 보기 방식 (note-links.js)
     if (!key || key === 'theme') this.refreshFallbackIcons();    // 파일 기본 그림도 밝은 · 어두운 것으로
     if (!key || key === 'holidays' || key === 'holidayCountry' || key === 'language') this.loadHolidays();
-    this.draw();
+    if (!key || key === 'showGrid') this.resizeCanvas();         // 격자를 끄면 그림판을 1px 로 (app.js) — resizeCanvas 가 다시 그림
+    else this.draw();
     if (this.settingsOpen) this.refreshSettingsWindow();
   },
 

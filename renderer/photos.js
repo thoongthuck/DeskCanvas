@@ -1,7 +1,8 @@
 // 바탕에 붙인 사진 — 쪽지 없이 사진 한 장 ('쪽지 추가 › 이미지 추가')
 //   사진 뒤에 틀을 둠 — 종이 틀(기본) · 테이프 · 압정 · 틀 없음 (code/icons/아이콘_가이드.md 13장)
 //   영상도 같은 틀에 붙임 ('쪽지 추가 › 영상 추가', photo.media = 'video') — 소리 끈 채 되풀이 재생이 기본,
-//     멈춤 · 소리는 저장됨 (되돌리기에는 넣지 않음). 화면 밖에 있는 동안은 쉼 (아이콘_가이드.md 17장)
+//     멈춤 · 소리는 저장됨 (되돌리기에는 넣지 않음). 화면 밖에 있거나 캔버스가 다른 창에 가려진 동안은 쉼 (아이콘_가이드.md 17장)
+//     쉬는 영상은 잠시 뒤 내려놓음 (재생기 하나가 메모리를 100MB 넘게 씀) — 지금 장면을 작은 그림으로 남기고, 다시 보이면 그 자리부터
 //   photo.width · height 는 '사진' 크기이고, 틀 여백은 그 둘레에 더해짐 (photo.x · y 는 틀의 왼쪽 위)
 //   틀 고르는 창은 photo-frame.js
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
@@ -12,6 +13,8 @@ const MAX_SIDE = 360;          // 처음 놓일 때 사진의 가장 긴 변 (zo
 const MIN_SIDE = 60;
 const TAPE_LENGTH = 86;        // 테이프 길이 (사진이 작으면 틀 폭의 30%까지 줄임)
 const VIDEO_FALLBACK = { width: 320, height: 180 };   // 영상 크기를 못 읽었을 때 (16:9)
+const VIDEO_UNLOAD_AFTER = 5000;   // 쉬기 시작하고 이만큼 지나면 영상을 내려놓음 (잠깐 가렸다 보이는 것은 그대로)
+const VIDEO_POSTER_WIDTH = 480;    // 내려놓을 때 남기는 장면 그림의 폭
 // 테이프 — 칠은 쪽지 바탕색 .86, 테두리는 같은 색을 진하게 .45 (시안_사진틀 ④에서 잰 값)
 export const TAPE_LINES = { yellow: '#CDC074', pink: '#CD9FAB', blue: '#95B5D6', green: '#99C5A9', purple: '#A29FD6', gray: '#B4BCC2' };
 const TAPE_SHARE = 0.42;       // 사진이 작으면 테이프를 틀 폭의 이만큼까지 줄임 (시안 썸네일)
@@ -338,6 +341,8 @@ export const photoMethods = {
     const el = document.getElementById(photo.id);
     if (el) {
       el.querySelector('.canvas-photo-img').src = src;
+      el.videoUnloaded = false;                       // 새 영상은 새로 불러옴 (내려놓았던 장면 · 자리는 버림)
+      el.videoResume = 0;
       el.classList.remove('video-broken');
       this.updatePhotoPosition(el, photo);
       if (photo.media === 'video') this.applyVideoState(photo, el);
@@ -351,6 +356,7 @@ export const photoMethods = {
     const video = el.querySelector('video');
     video.muted = true;                                 // 소리는 applyVideoState 가 맞춤
     video.addEventListener('error', () => {
+      if (el.videoUnloaded) return;                     // 내려놓느라 주소를 뗀 것 — 못 여는 영상이 아님
       el.classList.add('video-broken');
       el.querySelector('.video-note').textContent = t('video.broken');
     });
@@ -366,12 +372,16 @@ export const photoMethods = {
     this.applyVideoState(photo, el);
   },
 
-  // 저장된 멈춤 · 소리를 영상에 맞춤 (화면 밖이면 멈춘 것처럼)
+  // 저장된 멈춤 · 소리를 영상에 맞춤 (화면 밖이거나 캔버스가 가려졌으면 쉼 — 쉬는 게 길어지면 내려놓음)
   applyVideoState(photo, el = document.getElementById(photo.id)) {
     const video = el && el.querySelector('video');
     if (!video) return;
+    const resting = el.videoVisible === false || document.hidden;
+    clearTimeout(el.videoRestTimer);
+    if (resting) el.videoRestTimer = setTimeout(() => this.unloadVideo(photo, el), VIDEO_UNLOAD_AFTER);
+    else this.reloadVideo(photo, el);
     video.muted = photo.muted;
-    const play = !photo.paused && el.videoVisible !== false;
+    const play = !photo.paused && !resting;
     if (play && video.paused) video.play().catch(() => {});
     else if (!play && !video.paused) video.pause();
     el.classList.toggle('video-paused', photo.paused);
@@ -381,6 +391,46 @@ export const photoMethods = {
     playBtn.title = t(photo.paused ? 'video.play' : 'video.pause');
     soundBtn.querySelector('img').src = `${ICON_DIR}${photo.muted ? 'video-mute.svg' : 'video-sound.svg'}`;
     soundBtn.title = t(photo.muted ? 'video.soundOn' : 'video.soundOff');
+  },
+
+  // 쉬는 영상 내려놓기 — 지금 장면을 작은 그림(poster)으로 남기고 영상 주소를 뗌 (재생기가 쓰던 메모리를 돌려줌)
+  unloadVideo(photo, el) {
+    const video = el.querySelector('video');
+    if (!video || el.videoUnloaded || !video.getAttribute('src')) return;
+    try {
+      if (video.readyState >= 2 && video.videoWidth) {
+        const scale = Math.min(1, VIDEO_POSTER_WIDTH / video.videoWidth);
+        const shot = document.createElement('canvas');
+        shot.width = Math.max(1, Math.round(video.videoWidth * scale));
+        shot.height = Math.max(1, Math.round(video.videoHeight * scale));
+        shot.getContext('2d').drawImage(video, 0, 0, shot.width, shot.height);
+        video.poster = shot.toDataURL('image/jpeg', 0.82);
+      }
+    } catch (_) {}
+    el.videoResume = video.currentTime || 0;
+    el.videoUnloaded = true;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  },
+
+  // 다시 보이면 불러와 쉬기 전 자리부터
+  reloadVideo(photo, el) {
+    const video = el.querySelector('video');
+    if (!video || !el.videoUnloaded) return;
+    el.videoUnloaded = false;
+    const at = el.videoResume || 0;
+    if (at) {
+      video.addEventListener('loadedmetadata', () => {
+        try { video.currentTime = video.duration ? at % video.duration : at; } catch (_) {}
+      }, { once: true });
+    }
+    video.src = photo.src;
+  },
+
+  // 캔버스가 다른 창에 가려지거나 다시 보일 때 (app.js visibilitychange)
+  refreshVideoRest() {
+    this.photos.forEach(photo => { if (photo.media === 'video') this.applyVideoState(photo); });
   },
 
   // 재생 · 멈춤과 소리는 저장하지만 되돌리기에는 넣지 않음 (history.js 도 되돌릴 때 지금 값을 그대로 둠)

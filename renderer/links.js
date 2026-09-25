@@ -628,6 +628,7 @@ export const linkMethods = {
   },
 
   drawLinks() {
+    if (this.previewing) return;                   // 확대 · 축소 미리 보기 중 — 선 층도 함께 늘어나 있음, 멈추면 다시 그림 (view.js)
     const layer = this.linkLayer();
     const z = this.zoom;
     layer.style.setProperty('--link-w', `${Math.max(1, 2 * z)}px`);

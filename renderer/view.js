@@ -38,7 +38,7 @@ export const viewMethods = {
     this.isDragging = false;
   },
 
-  // 마우스 자리를 중심으로 확대·축소
+  // 마우스 자리를 중심으로 확대·축소 — 휠을 돌리는 동안은 미리 보기, 멈추면 다시 배치 (previewView)
   handleZoom(e) {
     e.preventDefault();
     const oldZoom = this.zoom;
@@ -47,9 +47,38 @@ export const viewMethods = {
     this.zoom = e.deltaY > 0 ? Math.max(0.1, this.zoom - 0.1) : Math.min(3, this.zoom + 0.1);
     this.panX = e.clientX - worldX * this.zoom;
     this.panY = e.clientY - worldY * this.zoom;
-    this.updateUIPositions();
-    this.draw();
+    this.previewView();
     this.scheduleSave({ system: true });
+  },
+
+  // ---- 확대 · 축소 미리 보기 ----
+  // 배율이 바뀔 때마다 쪽지 · 판 · 파일을 다시 배치하면 글자 크기 · 여백이 모두 바뀌어 화면 전체를 다시 짜느라 초당 20장 안팎으로 끊김
+  //   → 도는 동안에는 #ui-layer 를 마지막으로 배치한 화면(laidView)에서 지금 화면으로 옮기고 늘리기만 (그래픽 카드가 함 — 글자는 잠깐 흐림)
+  //   멈추면 (0.15초) 지금 배율로 한 번 다시 배치 · 쪽지 크기도 다시 맞춤 (commitView). 무언가를 누르면 바로 (app.js — 자리 계산이 맞게)
+  //   격자 · 미니맵은 가벼워서 바로 그림. 연결선은 층과 함께 늘어나 있다가 다시 배치할 때 그림 (links.js)
+  previewView() {
+    const laid = this.laidView;
+    if (!laid) {
+      this.updateUIPositions();
+      this.draw();
+      return;
+    }
+    const k = this.zoom / laid.zoom;
+    const layer = this.uiLayer;
+    layer.style.willChange = 'transform';
+    layer.style.transformOrigin = '0 0';
+    layer.style.transform = `translate(${this.panX - laid.panX * k}px, ${this.panY - laid.panY * k}px) scale(${k})`;
+    this.previewing = true;
+    this.draw();
+    clearTimeout(this.commitTimer);
+    this.commitTimer = setTimeout(() => this.commitView(), 150);
+  },
+
+  commitView() {
+    clearTimeout(this.commitTimer);
+    if (!this.previewing) return;
+    this.updateUIPositions();                        // 미리 보기를 걷어 내고 지금 배율로 배치
+    if (this.zoom !== this.fitZoom) this.fitAllNotes();
   },
 
   // 원점 — 정해 둔 화면 (this.home: 화면 왼쪽 위에 오는 캔버스 자리 x · y 와 배율), 없으면 처음 자리 (0, 0 · 100%)
@@ -89,16 +118,15 @@ export const viewMethods = {
     return ok && h.zoom >= 0.1 && h.zoom <= 3 ? { x: h.x, y: h.y, zoom: h.zoom } : null;
   },
 
+  // 움직이는 동안은 미리 보기, 끝나면 바로 다시 배치
   animateView(target, ms = 280) {
     cancelAnimationFrame(this.viewAnim);
-    const apply = (zoom, panX, panY) => {
-      this.zoom = zoom; this.panX = panX; this.panY = panY;
-      this.updateUIPositions();
-      this.draw();
-    };
+    const set = (zoom, panX, panY) => { this.zoom = zoom; this.panX = panX; this.panY = panY; };
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) {
-      apply(target.zoom, target.panX, target.panY);
+      set(target.zoom, target.panX, target.panY);
+      this.updateUIPositions();
+      this.draw();
       this.scheduleSave({ system: true });
       return;
     }
@@ -107,21 +135,41 @@ export const viewMethods = {
     const step = (now) => {
       const p = Math.min(1, (now - t0) / ms);
       const e = 1 - Math.pow(1 - p, 3);                 // 끝에서 부드럽게 멈춤
-      apply(from.zoom + (target.zoom - from.zoom) * e,
-            from.panX + (target.panX - from.panX) * e,
-            from.panY + (target.panY - from.panY) * e);
-      if (p < 1) this.viewAnim = requestAnimationFrame(step);
-      else this.scheduleSave({ system: true });
+      set(from.zoom + (target.zoom - from.zoom) * e,
+          from.panX + (target.panX - from.panX) * e,
+          from.panY + (target.panY - from.panY) * e);
+      this.previewView();
+      if (p < 1) {
+        this.viewAnim = requestAnimationFrame(step);
+        return;
+      }
+      this.commitView();
+      this.scheduleSave({ system: true });
     };
     this.viewAnim = requestAnimationFrame(step);
   },
 
+  // 화면을 옮기거나 확대 · 축소할 때마다 — 모두 새 자리 · 크기로
+  //   쪽지는 맞춰 둔 크기(fit.js)로 자리만 옮김. 글도 같은 배율로 커지고 작아져서 크기를 다시 잴 필요가 없음
+  //   (쪽지마다 글이 넘치는지 재면 화면 전체 배치를 쪽지 수만큼 다시 해서 확대가 초당 20장 안팎으로 끊겼음)
+  //   배율이 바뀌었으면 멈춘 뒤 한 번 다시 맞춤 — 글자 크기가 배율에 따라 반올림돼 줄바꿈이 조금 달라질 수 있어서
   updateUIPositions() {
+    if (this.previewing) {                            // 확대 · 축소 미리 보기를 걷어 냄 (previewView)
+      clearTimeout(this.commitTimer);
+      this.previewing = false;
+      this.uiLayer.style.transform = '';
+      this.uiLayer.style.willChange = '';
+    }
+    this.laidView = { zoom: this.zoom, panX: this.panX, panY: this.panY };
     this.boards.forEach(board => {
       const el = document.getElementById(board.id);
       if (el) this.updateBoardPosition(el, board);
     });
-    this.notes.forEach(note => this.fitNote(note));      // 크기를 다시 맞추고 위치도 함께 갱신
+    this.notes.forEach(note => {
+      const el = document.getElementById(note.id);
+      if (el) this.updateNotePosition(el, note);
+    });
+    if (this.zoom !== this.fitZoom) this.scheduleRefit();
     this.photos.forEach(photo => {
       const el = document.getElementById(photo.id);
       if (el) this.updatePhotoPosition(el, photo);
@@ -131,6 +179,12 @@ export const viewMethods = {
       if (el) this.updateFilePosition(el, file);
     });
     this.updateFanOverlay();
+  },
+
+  // 확대 · 축소가 멈추면 (0.15초) 쪽지 크기를 다시 맞춤 (fit.js fitAllNotes 가 fitZoom 을 적어 둠)
+  scheduleRefit() {
+    clearTimeout(this.refitTimer);
+    this.refitTimer = setTimeout(() => this.fitAllNotes(), 150);
   },
 
   updateNotePosition(el, note) {

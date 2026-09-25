@@ -61,7 +61,10 @@ export const fitMethods = {
     }
   },
 
+  // fitZoom: 이 배율에서 맞춤 — 화면을 옮기기만 할 때는 다시 재지 않음 (view.js updateUIPositions)
   fitAllNotes() {
+    clearTimeout(this.refitTimer);
+    this.fitZoom = this.zoom;
     this.notes.forEach(note => this.fitNote(note));
   },
 };

@@ -170,8 +170,10 @@ export class InfiniteCanvas {
     const dpr = window.devicePixelRatio || 1;
     this.viewWidth = window.innerWidth;
     this.viewHeight = window.innerHeight;
-    this.canvas.width = Math.round(this.viewWidth * dpr);
-    this.canvas.height = Math.round(this.viewHeight * dpr);
+    // 그림판(격자만 그림)은 격자를 켰을 때만 화면 크기로 — 화면 크기 그림판이 20MB 가까이 씀. 크기(CSS)는 늘 화면 전체 (빈 곳 누르기 · 우클릭)
+    const grid = !!(this.settings && this.settings.showGrid);
+    this.canvas.width = grid ? Math.round(this.viewWidth * dpr) : 1;
+    this.canvas.height = grid ? Math.round(this.viewHeight * dpr) : 1;
     this.canvas.style.width = `${this.viewWidth}px`;
     this.canvas.style.height = `${this.viewHeight}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -206,6 +208,10 @@ export class InfiniteCanvas {
 
     // 창 크기나 화면 배율이 바뀌면 캔버스도 맞춤
     window.addEventListener('resize', () => this.resizeCanvas());
+    // 확대 · 축소 미리 보기 중에 무언가를 누르면 먼저 제대로 배치 (끌기 · 고르기가 진짜 자리로 계산되게, view.js)
+    document.addEventListener('mousedown', () => this.commitView(), true);
+    // 캔버스가 다른 창에 다 가려지면 (윈도우가 알려 줌) 영상을 쉬고, 오래 가려져 있으면 내려놓음 (photos.js)
+    document.addEventListener('visibilitychange', () => this.refreshVideoRest());
     this.watchPixelRatio();
 
     // 창이 닫힐 때 마지막 저장 (자동 저장이 꺼져 있으면 main 이 '저장할까요?'를 먼저 물어봄)

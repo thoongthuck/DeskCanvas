@@ -131,6 +131,7 @@ export const storageMethods = {
     this.selectedId = null;
     this.selectedLinkId = null;
     this.renderAll();
+    this.laidView = { zoom: this.zoom, panX: this.panX, panY: this.panY };   // 이 화면으로 배치함 (확대 미리 보기의 기준, view.js)
     this.draw();
   },
 
