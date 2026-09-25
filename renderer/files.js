@@ -68,6 +68,17 @@ export const fileMethods = {
       if (result !== true) alert(t('alert.openFail', { path: file.path }));
     });
 
+    // 파일 위에 잠깐 머물면 윈도우 메뉴를 미리 받아 둠 (main.js prepMenu) — 파일 메뉴는 만드는 데 0.15~0.25초라
+    //   누르고 떼는 사이(0.1초쯤)만으로는 모자람. 끄는 중 · 이름 바꾸는 중에는 안 함
+    let hoverTimer = null;
+    el.addEventListener('mouseenter', () => {
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => {
+        if (file.path && !this.drag && !this.isDragging && !el.classList.contains('renaming')) this.prefetchNativeMenu(this.fileMenuPaths(file));
+      }, 50);
+    });
+    el.addEventListener('mouseleave', () => clearTimeout(hoverTimer));
+
     // 우클릭: 윈도우 탐색기 메뉴 + 앱 줄 (여럿 고른 것 가운데 하나면 고른 파일 모두, menus.js)
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -77,12 +88,17 @@ export const fileMethods = {
       this.openFileContextMenu(file, e.clientX, e.clientY);
     });
 
-    // 누르면 선택 + 끌어서 옮기기 (잠근 묶음에 든 파일은 선택 · 열기만). Ctrl · Shift: 여러 개 고르기 (selection.js)
+    // 누르면 선택 + 끌어서 옮기기 (잠근 묶음에 든 파일은 선택 · 열기만, 끌면 화면 이동). Ctrl · Shift: 여러 개 고르기 (selection.js)
     el.addEventListener('mousedown', (e) => {
       const canDrag = this.pressSelect(e, file.id, !this.fileLocked(file));
+      if (e.button === 2 && file.path && !el.classList.contains('renaming')) this.prefetchNativeMenu(this.fileMenuPaths(file));   // 메뉴는 뗄 때 뜸 — 그 전에 만들기 시작
       if (e.button !== 0) return;
       e.preventDefault();
-      if (!canDrag || this.fileLocked(file)) return;
+      if (this.fileLocked(file)) {
+        this.startGrabPan(e);
+        return;
+      }
+      if (!canDrag) return;
       this.startItemDrag(e, 'file', file);
     });
 
@@ -291,6 +307,56 @@ export const fileMethods = {
       this.refreshGroups();
       this.scheduleSave({ system: true });             // 바탕화면이 바뀐 것은 사용자가 고친 것이 아님
     }
+  },
+
+  // 바탕 우클릭 '붙여넣기' · '바로 가기 붙여넣기' — 클립보드의 파일을 바탕화면 폴더로 (main.js paste-files)
+  //   새로 생긴 아이콘은 우클릭한 자리에 (expectNewDesktopItems)
+  async pasteDesktopFiles(link, at) {
+    const api = window.canvasAPI;
+    if (!api || !api.pasteFiles) return;
+    if (at) this.expectNewDesktopItems(at);
+    await api.pasteFiles(link);
+  },
+
+  // 바탕 우클릭 '정렬 기준 ›' — 묶음에 들지 않은 파일 아이콘을 왼쪽 위부터 위→아래로 줄 세움 (윈도우 바탕화면처럼)
+  //   key: name(이름) · size(크기) · type(항목 유형) · date(수정한 날짜 — 새것 먼저). 폴더가 먼저. 파일 묶음이 차지한 칸은 비움
+  async arrangeDesktopFiles(key) {
+    const files = this.files.filter(f => !this.fileGroup(f));
+    if (!files.length) return;
+    const api = window.canvasAPI;
+    const stats = key !== 'name' && api && api.fileStats ? await api.fileStats(files.map(f => f.path)) : [];
+    const statOf = new Map((stats || []).map(st => [st.path, st]));
+    const collator = new Intl.Collator(this.settings && this.settings.language === 'en' ? 'en' : 'ko', { numeric: true, sensitivity: 'base' });
+    const dir = (f) => (f.isDir || (statOf.get(f.path) || {}).isDir ? 1 : 0);
+    const ext = (f) => (dir(f) ? '' : (/\.([^.\\/]+)$/.exec(f.name || '') || [])[1] || '').toLowerCase();
+    const num = (f, k) => (statOf.get(f.path) || {})[k] || 0;
+    const byName = (a, b) => collator.compare(a.name || '', b.name || '');
+    const compare = {
+      name: byName,
+      size: (a, b) => (num(b, 'size') - num(a, 'size')) || byName(a, b),
+      type: (a, b) => collator.compare(ext(a), ext(b)) || byName(a, b),
+      date: (a, b) => (num(b, 'mtime') - num(a, 'mtime')) || byName(a, b),
+    }[key] || byName;
+    files.sort((a, b) => (dir(b) - dir(a)) || compare(a, b));
+
+    this.record();
+    const taken = this.groupGridCells();
+    const rows = Math.max(1, Math.floor((window.innerHeight - ICON_GRID.top) / ICON_GRID.height));
+    let col = 0, row = 0;
+    files.forEach(file => {
+      while (taken.has(`${col},${row}`)) {
+        row++;
+        if (row >= rows) { row = 0; col++; }
+      }
+      const pos = this.cellPos(col, row);
+      file.x = pos.x;
+      file.y = pos.y;
+      taken.add(`${col},${row}`);
+      this.updateItemPosition('file', file);
+      row++;
+      if (row >= rows) { row = 0; col++; }
+    });
+    this.scheduleSave();
   },
 
   // 윈도우 바탕화면처럼 왼쪽 위부터 위→아래, 다음 줄로 빈 칸 찾기

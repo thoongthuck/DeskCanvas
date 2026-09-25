@@ -9,7 +9,7 @@
   height: 100%;
   overflow: visible;
   pointer-events: none;
-  z-index: 0;
+  z-index: 3;                            /* 판 · 파일 묶음 위, 파일 · 쪽지 · 사진 아래 (styles/boards.css 머리 설명) */
   --link: #A3AEBF;
   --link-strong: #6E7C93;
   --link-selected: #4A99EB;
@@ -74,6 +74,31 @@ body.theme-dark .link.colored { --link-strong: color-mix(in srgb, var(--link-col
 /* 선 색 고르는 창 — 쪽지 스타일 창(styles/style-panel.css)과 같은 틀 · 점. 점 7개(기본 + 5색 + 직접 고르기) 만큼 좁게 */
 #style-panel.link-color-panel { width: auto; }
 #style-panel.link-color-panel .link-dot-gray { background: #A3AEBF; }   /* 기본 색 (창의 button 초기화보다 앞서게 #style-panel 로) */
+
+/* 고른 선의 끝 손잡이 (renderer/links.js drawLinkHandles) — 쪽지 · 사진 · 파일 위 층에 따로.
+   끌면 테두리 위 원하는 자리에 고정, 고정한 끝은 파랗게 채움. 두 번 누르면 자동 자리로 */
+#link-handle-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 35;
+}
+.link-handle {
+  fill: #FFFFFF;
+  stroke: #4A99EB;
+  stroke-width: 2px;
+  pointer-events: all;
+  cursor: grab;
+  filter: drop-shadow(0 1px 2px rgba(31, 47, 69, 0.25));
+}
+.link-handle:hover { fill: #EAF3FD; }
+.link-handle.fixed { fill: #4A99EB; stroke: #FFFFFF; }
+body.link-anchoring,
+body.link-anchoring * { cursor: grabbing !important; }
 
 /* 잇는 중인 선 — 파란 점선 */
 .link-temp .link-line {

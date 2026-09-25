@@ -1,10 +1,10 @@
 /* ===== 포스트잇 붙이기 · 떼기 애니메이션 =====
-   노트가 새로 생기면 '붙이기', 지워지면 '떼기'를 재생합니다. 파일 묶음을 풀거나 지울 때도 '떼기'.
+   노트가 새로 생기면 '붙이기', 지워지면 '떼기'를 재생합니다.
    재생 시점은 note-animations.js가 정하고, 이 파일은 움직임 모양만 정합니다.
    빼려면 index.html에서 이 파일과 note-animations.js를 불러오는 두 줄을 지우면 됩니다.
 
    이 파일이 기대는 이름 — styles.css에 있음. 바뀌면 오류 없이 애니메이션이 멈추거나 일부만 보입니다
-   - --fold : 접힌 모서리 크기 (styles.css의 .sticky-note · styles/groups.css의 .board-group)
+   - --fold : 접힌 모서리 크기 (styles.css의 .sticky-note)
    - --z    : 캔버스 확대 배율 (styles.css의 .sticky-note, renderer.js가 넣는 --zoom에서 옴).
               움직임 거리·그림자도 배율에 맞춰 커짐 */
 

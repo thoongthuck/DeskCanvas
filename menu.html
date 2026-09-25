@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<!-- 윈도우 11 모양 우클릭 메뉴 (main.js showFluentMenu · 줄 배치는 menu-layout.js)
+     화면 하나를 덮는 투명한 창 — 메뉴 판만 그리고, 판 밖을 누르면 닫힘 (윈도우 메뉴처럼)
+     모양은 윈도우 11 탐색기 메뉴에 맞춤: 둥근 판 8 · 줄 높이 32 · 아이콘 16 (Segoe Fluent Icons) · 위 단추 줄 · 하위 목록
+     밝은 · 어두운 모양은 윈도우 앱 모드(어둡게 · 밝게)를 따라감 -->
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Wallpaper Canvas menu</title>
+  <style>
+    :root {
+      --panel: rgba(249, 249, 249, 0.97);
+      --stroke: rgba(0, 0, 0, 0.09);
+      --text: rgba(0, 0, 0, 0.9);
+      --text-2: rgba(0, 0, 0, 0.6);
+      --text-off: rgba(0, 0, 0, 0.36);
+      --hover: rgba(0, 0, 0, 0.045);
+      --press: rgba(0, 0, 0, 0.03);
+      --sep: rgba(0, 0, 0, 0.08);
+      --shadow: 0 8px 16px rgba(0, 0, 0, 0.14), 0 0 2px rgba(0, 0, 0, 0.1);
+      --icon-filter: invert(1) brightness(0.35);   /* 앱 아이콘 (어두운 메뉴용 밝은 선) → 밝은 메뉴에서는 어둡게 */
+    }
+    body.dark {
+      --panel: rgba(44, 44, 44, 0.97);
+      --stroke: rgba(255, 255, 255, 0.08);
+      --text: #FFFFFF;
+      --text-2: rgba(255, 255, 255, 0.62);
+      --text-off: rgba(255, 255, 255, 0.36);
+      --hover: rgba(255, 255, 255, 0.06);
+      --press: rgba(255, 255, 255, 0.04);
+      --sep: rgba(255, 255, 255, 0.084);
+      --shadow: 0 8px 16px rgba(0, 0, 0, 0.36), 0 0 2px rgba(0, 0, 0, 0.3);
+      --icon-filter: none;
+    }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      user-select: none;
+      cursor: default;
+      font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Malgun Gothic', sans-serif;
+      font-size: 14px;
+      color: var(--text);
+    }
+    .panel {
+      position: absolute;
+      min-width: 244px;
+      max-width: 420px;
+      padding: 4px 0;
+      box-sizing: border-box;
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateY(-6px);
+      transition: opacity 0.12s ease-out, transform 0.16s cubic-bezier(0.1, 0.9, 0.2, 1);
+    }
+    .panel.up { transform: translateY(6px); }
+    .panel.shown { opacity: 1; transform: none; }
+    .panel.sub { min-width: 200px; }
+
+    /* 위 단추 줄 — 잘라내기 · 복사 · 붙여넣기 · 이름 바꾸기 · 공유 · 삭제 */
+    .bar {
+      display: flex;
+      gap: 2px;
+      padding: 2px 6px 6px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid var(--sep);
+    }
+    .bar button {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 40px;
+      height: 40px;
+      padding: 0 8px;
+      border: none;
+      border-radius: 4px;
+      background: none;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+    }
+    .bar.labels button { height: 56px; min-width: 64px; }
+    .bar button:not(:disabled):hover,
+    .bar button.focus { background: var(--hover); }
+    .bar button:disabled { color: var(--text-off); }
+    .bar .glyph { font-size: 16px; }
+
+    .item {
+      position: relative;
+      display: flex;
+      align-items: center;
+      height: 32px;
+      margin: 0 4px;
+      padding: 0 12px 0 12px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .item:not(.off):hover,
+    .item.focus,
+    .item.open { background: var(--hover); }
+    .item:not(.off):active { background: var(--press); }
+    .item.off { color: var(--text-off); }
+    .item .icon {
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+      margin-right: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .item .icon img { width: 16px; height: 16px; object-fit: contain; }
+    .item .icon img.app { filter: var(--icon-filter); }
+    .glyph {
+      font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
+      font-size: 16px;
+      line-height: 1;
+      font-weight: normal;
+    }
+    .item .label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+    .item .label u { text-decoration: none; }
+    body.keys .item .label u { text-decoration: underline; }    /* 키보드로 쓰면 바로 누르기 글자에 밑줄 */
+    .item .key { flex: 0 0 auto; margin-left: 24px; color: var(--text-2); font-size: 12px; }
+    .item .arrow { flex: 0 0 auto; margin-left: 16px; font-size: 12px; color: var(--text-2); }
+    .sep { height: 1px; margin: 4px 0; background: var(--sep); }
+  </style>
+</head>
+<body>
+  <script src="menu.js"></script>
+</body>
+</html>

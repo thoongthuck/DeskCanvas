@@ -55,7 +55,7 @@ export const minimapMethods = {
   minimapItems() {
     const items = [];
     this.boards.forEach(b => items.push(b.kind === 'group'              // 파일 묶음은 포스트잇 색으로
-      ? { kind: 'note', rect: this.itemRect('board', b), color: (NOTE_COLORS[b.color] || NOTE_COLORS.yellow).swatch }
+      ? { kind: 'note', rect: this.itemRect('board', b), color: this.groupCustomColor(b) || (NOTE_COLORS[b.color] || NOTE_COLORS.yellow).swatch }
       : { kind: 'board', rect: this.itemRect('board', b) }));
     this.files.forEach(f => {
       const slot = this.fileSlot(f);

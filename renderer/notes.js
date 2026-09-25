@@ -96,6 +96,7 @@ export const noteMethods = {
     delete note.lang;
     if (!CODE_LANGUAGES[note.codeLang]) note.codeLang = 'python';
     if (note.codeTheme !== 'light') note.codeTheme = 'dark';
+    if (note.linkView !== 'embed' && note.linkView !== 'link') delete note.linkView;   // 글 속 주소 보기 — 없으면 설정 따라
     if (typeof note.updatedAt !== 'number') {
       const made = Number(String(note.id).split('-')[1]);             // id 안의 만든 시각
       note.updatedAt = Number.isFinite(made) && made > 0 ? made : Date.now();
@@ -155,18 +156,22 @@ export const noteMethods = {
     //  - 체크박스·마크다운 할 일은 체크만 (쪽지 선택·옮기기 없음)
     //  - 아이콘·접힌 모서리·코드 칸 버튼은 제외 (누르는 기능)
     //  - 수정 중인 쪽지의 글자칸은 제외 (글자 고르기·커서)
-    //  - 고정된 쪽지는 못 옮김
+    //  - 고정된 쪽지 · 잠근 판의 쪽지는 못 옮김 → 끌면 화면 이동 (boards.js startGrabPan)
     el.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.check-box, .md-check, .code-copy, .code-lang')) return;
+      if (e.target.closest('.check-box, .md-check, .code-copy, .code-lang, .note-link-chip, .note-embed video')) return;   // 누르는 기능 · 영상 조작
       const editing = this.editingId === note.id;
       const onText = e.target.matches('input, textarea');
       if (!editing && onText) e.preventDefault();                     // 보통 상태: 글자칸에 커서가 생기지 않게
       const canDrag = this.pressSelect(e, note.id, !note.pinned);   // Ctrl · Shift: 여러 개 고르기 (selection.js)
 
-      if (e.button !== 0 || this.noteLocked(note)) return;           // 고정한 쪽지 · 잠근 판의 쪽지
+      if (e.button !== 0) return;
       if (e.target.closest('.note-state-icon, .note-more, .note-resize')) return;
       if (editing && onText) return;
       e.preventDefault();
+      if (this.noteLocked(note)) {                                     // 고정한 쪽지 · 잠근 판의 쪽지: 끌면 화면 이동
+        this.startGrabPan(e);
+        return;
+      }
       if (!canDrag) return;
       this.syncNoteSlotPosition(note);                                // 캘린더 칸에 붙은 쪽지: 보이는 자리에서 끌기 시작
       this.startItemDrag(e, 'note', note);
@@ -358,6 +363,7 @@ export const noteMethods = {
     if (note) {
       const el = document.getElementById(note.id);
       if (note.type === 'code' || note.type === 'markdown') this.renderNoteBody(note, el);
+      else this.refreshNoteLinks(note, el);                         // 고친 글 속 주소로 링크 · 영상 다시 (note-links.js)
       this.refreshNote(note, el);
       this.fitNote(note, el);
     }

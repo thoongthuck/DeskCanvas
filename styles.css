@@ -8,6 +8,7 @@
 @import url("styles/boards.css");
 @import url("styles/groups.css");
 @import url("styles/links.css");
+@import url("styles/note-links.css");
 @import url("styles/search.css");
 @import url("styles/minimap.css");
 
@@ -273,7 +274,7 @@ body.theme-dark #infinite-canvas {
   color: var(--ink);
   pointer-events: auto;
   user-select: none;
-  z-index: 1;
+  z-index: 5;                            /* 쌓임 순서 — styles/boards.css 머리 설명 */
   cursor: grab;
   /* 선택할 때 떠오르고 내려앉는 변화만 부드럽게 (위치 left/top 은 바로 따라감) */
   transition: transform 0.2s ease-out, filter 0.2s ease-out;
@@ -310,11 +311,11 @@ body.theme-dark #infinite-canvas {
 .sticky-note.font-serif { --note-font: var(--font-serif); --title-weight: 700; }
 .sticky-note.font-mono  { --note-font: var(--font-mono); --title-weight: 700; }
 
-/* 상태: 고정됨 = 항상 위
+/* 상태: 고정됨 = 다른 것들 뒤 (캘린더 · 연대표 판보다는 위 — 판에 붙은 고정 쪽지가 보이게)
    선택됨 = 그림자가 진해지고 살짝 떠올라 벽에서 떼어낸 듯한 모습 (다른 쪽지 위로). 고정된 쪽지는 선택 표시 없음 */
-.sticky-note.pinned { z-index: 10; }
+.sticky-note.pinned { z-index: 1; }
 .sticky-note.selected {
-  z-index: 5;
+  z-index: 7;
   transform: translateY(calc(-3px * var(--z)));
   filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.24))
           drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.14));
@@ -520,9 +521,11 @@ body.overflow-expand .check-text {
 }
 
 /* ===== 파일 아이콘 ===== */
+/* 쪽지 · 사진보다 뒤 · 고정한 것보다 앞. 파일 묶음에 든 파일은 묶음과 같은 층 (styles/groups.css) */
 .file-icon {
   --zoom: 1;
   position: absolute;
+  z-index: 4;
   display: flex;
   flex-direction: column;
   align-items: center;

@@ -7,14 +7,38 @@ import { ICON_DIR } from './constants.js';
 import { t } from './i18n.js';
 
 export const menuMethods = {
-  // 빈 바탕 우클릭: 윈도우 바탕화면 메뉴 (새로 만들기 › · 붙여넣기 · 디스플레이 설정 …) — 못 띄우면 캔버스 메뉴
+  // 빈 바탕 우클릭: 윈도우 11 바탕화면 메뉴 모양 (main.js · menu-layout.js) — 못 띄우면 캔버스 메뉴
+  //   윈도우가 앱에 주는 바탕 메뉴에는 '새로 만들기 ›' · 디스플레이 설정 · 개인 설정 뿐이라, 탐색기 바탕 메뉴의 나머지는 앱이 채움:
+  //     붙여넣기 · 바로 가기 붙여넣기 (클립보드의 파일 → 바탕화면), 보기 › (캔버스 격자 · 자), 정렬 기준 › (파일 아이콘 줄 세우기),
+  //     새로 고침, 실행 취소 (앱 되돌리기 — 휴지통으로 보낸 파일도 되살림)
+  //   role: 윈도우 11 메뉴에서의 자리 (menu-layout.js)
   //   캔버스 메뉴(쪽지 추가 · 판 추가 …)는 빈 바탕을 두 번 눌러서 (app.js)
   async handleContextMenu(e) {
     e.preventDefault();
     const x = e.clientX, y = e.clientY;
     const at = { x: (x - this.panX) / this.zoom, y: (y - this.panY) / this.zoom };
+    const api = window.canvasAPI;
+    let clip = { files: [] };
+    try { if (api && api.clipboardFiles) clip = await api.clipboardFiles(); } catch (_) {}
+    const hasFiles = !!(clip && clip.files && clip.files.length);
+    const s = this.settings;
+    const toggle = (key) => () => this.updateSetting(key, !this.settings[key]);
     const shown = await this.showNativeMenu([], [
-      { label: t('menu.refresh'), action: () => this.refreshDesktop() },
+      { role: 'paste', label: t('menu.paste'), disabled: !hasFiles, action: () => this.pasteDesktopFiles(false, at) },
+      {
+        role: 'view', label: t('menu.view'), submenu: [
+          { label: t('view.gridSnap'), current: !!s.gridSnap, action: toggle('gridSnap') },
+          { label: t('row.grid'), current: !!s.showGrid, action: toggle('showGrid') },
+          { label: t('row.align'), current: s.alignGuides !== false, action: toggle('alignGuides') },
+        ],
+      },
+      {
+        role: 'sort', label: t('menu.sortBy'),
+        submenu: ['name', 'size', 'type', 'date'].map(key => ({ label: t(`sort.${key}`), action: () => this.arrangeDesktopFiles(key) })),
+      },
+      { role: 'refresh', label: t('menu.refresh'), action: () => this.refreshDesktop() },
+      { role: 'pastelink', label: t('menu.pasteShortcut'), disabled: !hasFiles, action: () => this.pasteDesktopFiles(true, at) },
+      { role: 'undo', label: t('menu.undo'), key: 'Ctrl+Z', disabled: !this.undoStack.length, action: () => this.undo() },
     ], { at });
     if (!shown) this.openDesktopMenu(x, y);
   },
@@ -25,6 +49,18 @@ export const menuMethods = {
   async showNativeMenu(paths, items, { file = null, at = null } = {}) {
     const api = window.canvasAPI;
     if (!api || !api.shellMenu) return false;
+    // 윈도우에서 우클릭 한 번에 contextmenu 가 두 번 오기도 함 → 메뉴를 부르는 중(닫힐 때까지)에 온 것은 버림 (메뉴가 두 번 뜨지 않게)
+    if (this.nativeMenuBusy) return true;
+    this.nativeMenuBusy = true;
+    try {
+      return await this.showNativeMenuNow(paths, items, { file, at });
+    } finally {
+      this.nativeMenuBusy = false;
+    }
+  },
+
+  async showNativeMenuNow(paths, items, { file, at }) {
+    const api = window.canvasAPI;
     this.closeMenus();
     const lines = [];
     const actions = new Map();
@@ -36,7 +72,10 @@ export const menuMethods = {
       }
       if (!item.label || item.styleFor || item.panel) return;        // 옆 창이 열리는 줄은 윈도우 메뉴에 못 넣음
       const id = next++;
-      lines.push({ id, parent, label: item.label, flags: (item.disabled ? 'd' : '') + (item.current ? 'c' : '') });
+      lines.push({
+        id, parent, label: item.label, flags: (item.disabled ? 'd' : '') + (item.current ? 'c' : ''),
+        role: item.role || '', icon: item.icon || '', key: item.key || '',      // 윈도우 11 모양 메뉴의 자리 · 아이콘 · 단축키 글자
+      });
       if (item.submenu) walk(item.submenu, id);
       else if (item.action) actions.set(id, item.action);
     });
@@ -73,6 +112,8 @@ export const menuMethods = {
         ? { icon: 'add-image.svg', label: t('menu.removePhoto'), action: () => this.removeNotePhoto(note) }
         : { icon: 'add-image.svg', label: t('menu.addPhoto'), action: () => this.pickNotePhoto(note) });
     }
+    const linkView = this.noteLinkMenuItem(note);          // 글에 인터넷 주소가 있으면: 링크 보기 › 영상 · 사진 바로 보기 · 링크만
+    if (linkView) items.push(linkView);
     items.push(...this.linkMenuItems(note.id));            // 연결선 잇기 · 지우기 (links.js)
     items.push({ separator: true });
     items.push({ icon: 'palette.svg', label: t('menu.style'), styleFor: note, arrow: true });
@@ -83,7 +124,7 @@ export const menuMethods = {
 
   // 바탕에 붙인 사진 우클릭 (가이드 13-3) — 영상이면 맨 위에 재생 · 소리 (가이드 17장)
   openPhotoMenu(photo, x, y) {
-    const hasCaption = photo.frame === 'paper' && !!photo.caption;
+    const hasCaption = this.photoHasCaptionRoom(photo) && !!photo.caption;    // 종이 · 테이프 · 압정 틀의 캡션
     const video = photo.media === 'video';
     this.openContextMenu([
       ...(video ? [
@@ -109,17 +150,28 @@ export const menuMethods = {
   //   여럿 골랐으면 같은 폴더에 있는 고른 파일 모두. 윈도우 메뉴를 못 띄우면 앱 메뉴
   async openFileContextMenu(file, x, y) {
     const multi = this.multiSelected(file.id);
+    const shown = file.path && await this.showNativeMenu(this.fileMenuPaths(file), multi ? this.selectionMenuItems() : this.fileMenuItems(file), { file });
+    if (shown) return;
+    if (multi) this.openSelectionMenu(x, y);
+    else this.openFileMenu(file, x, y);
+  },
+
+  // 파일 메뉴가 다룰 파일들 — 그 파일, 여럿 골랐으면 같은 폴더에 있는 고른 파일 모두
+  fileMenuPaths(file) {
     const folder = (p) => String(p || '').replace(/[\\/][^\\/]*$/, '').toLowerCase();
     const paths = [file.path];
-    if (multi) {
+    if (this.multiSelected(file.id)) {
       this.selectedEntries().forEach(en => {
         if (en.kind === 'file' && en.item !== file && en.item.path && folder(en.item.path) === folder(file.path)) paths.push(en.item.path);
       });
     }
-    const shown = file.path && await this.showNativeMenu(paths, multi ? this.selectionMenuItems() : this.fileMenuItems(file), { file });
-    if (shown) return;
-    if (multi) this.openSelectionMenu(x, y);
-    else this.openFileMenu(file, x, y);
+    return paths;
+  },
+
+  // 오른쪽 단추를 누르는 순간 — 뗄 때 뜰 윈도우 메뉴를 다리가 미리 만들게 (main.js prepMenu). paths: 비었으면 바탕 빈 곳
+  prefetchNativeMenu(paths) {
+    const api = window.canvasAPI;
+    if (api && api.menuPrefetch) api.menuPrefetch(paths);
   },
 
   // 앱 파일 메뉴 — 윈도우 메뉴를 못 띄울 때 (바탕화면 파일은 휴지통으로 보내기도)

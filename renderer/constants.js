@@ -2,6 +2,10 @@
 
 export const ICON_DIR = './icons/';
 
+// 맥이면 ⌘ 도 Ctrl 처럼 — 윈도우에서는 윈도우 키(metaKey)를 쓰지 않음
+//   (Win+D 뒤 윈도우 키가 눌린 채로 남은 것처럼 보일 때 그냥 끌기 · 글자 키가 다르게 동작하지 않게)
+export const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || '');
+
 // 쪽지 색상표: 쪽지 배경 / 색 선택 점(스와치). 접힘 파일은 icons/fold-<이름>.svg (가이드 2장)
 export const NOTE_COLORS = {
   yellow: { bg: '#FDF2C2', swatch: '#FEEEAB', dot: '#FDE7AE' },
@@ -83,8 +87,11 @@ export const DEFAULT_SETTINGS = {
   gridSnap: false,           // 격자 모드 — 파일 아이콘이 칸에 맞춰 움직임
   alignGuides: true,         // 자 — 끌 때 다른 것의 가장자리 · 가운데에 맞춰 붙음 (align.js)
   calendarView: 'month',     // 새 캘린더 판 보기 — 'month' | 'week' (calendar.js)
+  noteLinkView: 'embed',     // 쪽지 속 인터넷 주소 — 'embed'(영상 · 사진 바로 보기) | 'link'(링크만) (note-links.js)
+  boardTone: 'theme',        // 새 캘린더 · 연대표 판 색 — 'theme'(배경 테마 따라) | 'light'(흰색) | 'dark'(검은색) (boards.js)
   weekStart: 0,              // 새 캘린더 판 주 시작 요일 — 0 일요일 | 1 월요일
-  groupColor: 'yellow',      // 새 파일 묶음 색 (groups.js)
+  groupColor: 'yellow',      // 새 파일 묶음 색 (groups.js) — 색 이름 | 'custom'
+  groupCustomColor: '#F5D6A8',
   photoFrame: 'paper',       // 새 사진 · 영상 틀 — 'paper' | 'tape' | 'pin' | 'none' (photos.js)
   videoSound: false,         // 새 영상 소리 켜고 시작
   videoAutoplay: true,       // 새 영상 바로 재생 (끄면 멈춘 채로)
@@ -109,7 +116,7 @@ export const PRELOAD_ICONS = [
   'edit.svg', 'copy.svg', 'pin.svg', 'palette.svg', 'trash.svg',
   'menu-axis.svg', 'menu-scale.svg', 'menu-link.svg', 'menu-today.svg', 'menu-weekstart.svg', 'menu-view.svg',
   'add-group.svg', 'menu-ungroup.svg', 'note-group.svg', 'note-more.svg', 'note-selected.svg', 'chevron-down.svg',
-  'menu-connect.svg', 'menu-disconnect.svg', 'menu-align.svg', 'menu-straight.svg',
+  'menu-connect.svg', 'menu-disconnect.svg', 'menu-align.svg', 'menu-straight.svg', 'note-link.svg',
   'add-video.svg', 'video-play.svg', 'video-pause.svg', 'video-sound.svg', 'video-mute.svg',
   'arrow-left.svg', 'arrow-right.svg', 'board-more.svg', 'plus.svg', 'rail-hook.svg',
   'photo-pin-red.svg', 'photo-pin-yellow.svg', 'photo-pin-blue.svg', 'photo-pin-green.svg',

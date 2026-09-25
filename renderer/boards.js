@@ -24,6 +24,8 @@ export const boardMethods = {
     };
     Object.assign(board, kind === 'timeline' ? this.newTimelineData()
       : kind === 'group' ? this.newGroupData() : this.newCalendarData());
+    const tone = this.settings && this.settings.boardTone;          // 설정 › 판 › 기본 판 색상 (배경 테마 따라면 적지 않음)
+    if (kind !== 'group' && (tone === 'light' || tone === 'dark')) board.tone = tone;
     return Object.assign(board, extra);
   },
 
@@ -37,6 +39,7 @@ export const boardMethods = {
     if (typeof board.title !== 'string') board.title = '';
     board.pinned = !!board.pinned;
     if (typeof board.updatedAt !== 'number') board.updatedAt = Date.now();
+    if (board.tone !== 'light' && board.tone !== 'dark') delete board.tone;     // 판 색 — 없으면 배경 테마 따라
     if (board.kind === 'group') return this.normalizeGroup(board);
     return board.kind === 'timeline' ? this.normalizeTimeline(board) : this.normalizeCalendar(board);
   },
@@ -82,7 +85,8 @@ export const boardMethods = {
       }
       if (group) {                                                   // 파일 묶음은 어디를 잡아도 옮겨짐
         e.preventDefault();
-        if (canDrag && !board.pinned) this.startItemDrag(e, 'board', board);
+        if (board.pinned) this.startGrabPan(e);                      // 잠근 묶음: 끌면 화면 이동
+        else if (canDrag) this.startItemDrag(e, 'board', board);
         return;
       }
       if (e.target.closest('.board-head') && !board.pinned) {
@@ -91,7 +95,7 @@ export const boardMethods = {
         return;
       }
       this.narrowTo = null;
-      this.startBoardPan(e);                                         // 칸 · 빈 곳 · 잠긴 판: 화면 이동 (판은 고른 채)
+      this.startGrabPan(e);                                          // 칸 · 빈 곳 · 잠긴 판: 화면 이동 (판은 고른 채)
     });
 
     // 연대표: 막대 아래 빈 곳을 두 번 누르면 그 자리에 새 쪽지
@@ -125,6 +129,7 @@ export const boardMethods = {
     el.innerHTML = '';
     el.classList.toggle('pinned', !!board.pinned);
     if (board.kind !== 'group') el.classList.toggle('selected', this.boardSelected(board));   // 잠그면 선택 표시도 없앰
+    if (board.kind !== 'group') el.classList.toggle('tone-dark', this.boardTone(board) === 'dark');   // 검은 판 (styles/boards.css)
     el.classList.toggle('tl-direct', board.kind === 'timeline' && board.mode === 'direct');
     if (board.kind === 'timeline') this.renderTimeline(board, el);
     else if (board.kind === 'group') this.renderGroup(board, el);
@@ -219,8 +224,11 @@ export const boardMethods = {
   },
 
   // 판의 칸 · 빈 곳을 끌면 빈 바탕을 끈 것처럼 화면이 움직임
-  startBoardPan(e) {
+  // 잡고 끌어 화면 이동 — 판의 칸 · 빈 곳, 고정한 쪽지 · 사진, 잠근 판 · 묶음 (옮길 수 없는 것 위에서 끌 때)
+  //   고른 것은 그대로 둠. 끌고 난 뒤의 클릭은 판 칸 누르기로 치지 않음 (justPannedBoard)
+  startGrabPan(e) {
     e.preventDefault();
+    document.body.classList.add('pointer-busy');            // 쪽지 속 영상 재생기가 마우스를 가로채지 않게
     let lastX = e.clientX;
     let lastY = e.clientY;
     let moved = false;
@@ -237,6 +245,7 @@ export const boardMethods = {
     const up = () => {
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
+      document.body.classList.remove('pointer-busy');
       if (!moved) return;
       this.scheduleSave({ system: true });                  // 화면 위치는 '저장 안 한 변경'으로 치지 않음
       this.justPannedBoard = true;                          // 끌고 난 뒤의 클릭은 칸 누르기로 치지 않음
@@ -260,6 +269,44 @@ export const boardMethods = {
     });
   },
 
+  // ---- 판 색 — 흰색 · 검은색 (캘린더 · 연대표. 파일 묶음은 포스트잇 색 — groups.js) ----
+  //   판마다 정한 색, 없으면 배경 테마 따라 (예전에 만든 판 · 설정 '기본 판 색상'이 배경 테마 따라)
+  boardTone(board) {
+    if (board.tone === 'light' || board.tone === 'dark') return board.tone;
+    return this.settings && this.settings.theme === 'dark' ? 'dark' : 'light';
+  },
+
+  setBoardTone(board, tone) {
+    if (this.boardTone(board) === tone && board.tone === tone) return;
+    this.record();
+    board.tone = tone;
+    board.updatedAt = Date.now();
+    this.renderBoard(board);
+    this.updateFanOverlay();
+    this.scheduleSave();
+  },
+
+  // 배경 테마가 바뀌면 색을 정하지 않은 판도 따라 바꿈 (settings.js applySettings)
+  updateBoardTones() {
+    if (!this.boards) return;
+    this.boards.forEach(board => {
+      if (board.kind === 'group') return;
+      const el = document.getElementById(board.id);
+      if (el) el.classList.toggle('tone-dark', this.boardTone(board) === 'dark');
+    });
+    if (this.uiLayer) this.updateFanOverlay();
+  },
+
+  boardToneMenuItem(board) {
+    const current = this.boardTone(board);
+    return {
+      icon: 'palette.svg', label: t('menu.boardTone'), arrow: true,
+      submenu: [['light', '#FCFBF9'], ['dark', '#2A3038']].map(([tone, swatch]) => ({
+        label: t(`boardTone.${tone}`), swatch, current: current === tone, action: () => this.setBoardTone(board, tone),
+      })),
+    };
+  },
+
   // ---- 판 메뉴 (판 우클릭 · 판 머리 …) ----
   openBoardMenu(board, x, y) {
     if (board.kind === 'group') {                                   // 파일 묶음 메뉴 (groups.js)
@@ -268,6 +315,7 @@ export const boardMethods = {
     }
     const items = [
       { icon: 'edit.svg', label: t('menu.rename'), action: () => this.renameBoard(board) },
+      this.boardToneMenuItem(board),                                // 판 색상 › 흰색 · 검은색
     ];
     if (board.kind === 'calendar') {
       // 가이드 12-3: 이름 바꾸기 · 보기 › (한 달 · 한 주) · 오늘로 이동 · 주 시작 요일 › · 판 잠금 · ─ · 판 지우기

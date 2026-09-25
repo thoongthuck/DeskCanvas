@@ -45,6 +45,11 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   pickVideo: (title) => ipcRenderer.invoke('pick-video', title),
   pickFile: (title) => ipcRenderer.invoke('pick-file', title),
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),   // 쪽지 속 링크 (http · https 만)
+  // 바탕 우클릭 — 클립보드의 파일 · 바탕화면에 붙여넣기(link: 바로 가기로) · 정렬 기준에 쓸 파일 정보
+  clipboardFiles: () => ipcRenderer.invoke('clipboard-files'),
+  pasteFiles: (link) => ipcRenderer.invoke('paste-files', !!link),
+  fileStats: (paths) => ipcRenderer.invoke('file-stats', paths),
   // 문제 찾기용 기록
   log: (text) => ipcRenderer.send('debug-log', String(text)),
   // 클립보드
@@ -65,6 +70,7 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   onApplySetting: (callback) => ipcRenderer.on('apply-setting', (event, key, value) => callback(key, value)),
   // 윈도우 우클릭 메뉴 · 파일 이름 바꾸기
   shellMenu: (paths, items) => ipcRenderer.invoke('shell-menu', paths, items),
+  menuPrefetch: (paths) => ipcRenderer.send('menu-prefetch', paths),     // 오른쪽 단추를 누르는 순간 — 뗄 때 뜰 메뉴를 미리
   renamePath: (filePath, newName) => ipcRenderer.invoke('rename-path', filePath, newName),
   // 탐색기에서 끌어다 놓기
   getPathForFile: (file) => webUtils.getPathForFile(file),

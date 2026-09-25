@@ -1,0 +1,87 @@
+/* ===== 쪽지 속 링크 · 영상 · 사진 (renderer/note-links.js, 아이콘_가이드.md 20장) =====
+   쪽지 글 밑에 붙음. 모든 값은 zoom 1 기준 × --z (쪽지 배율) */
+.note-links {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--z));
+  margin-top: calc(8px * var(--z));
+  min-width: 0;
+}
+
+/* 링크 한 줄 — 누르면 브라우저에서 엶 */
+.note-link-chip {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--z));
+  min-width: 0;
+  padding: calc(5px * var(--z)) calc(8px * var(--z));
+  border-radius: calc(8px * var(--z));
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--ink);
+  font-size: calc(12px * var(--z));
+  line-height: 1.3;
+  text-decoration: none;
+  cursor: pointer;
+}
+.note-link-chip:hover { background: rgba(255, 255, 255, 0.85); }
+.note-link-chip img {
+  flex: 0 0 auto;
+  width: calc(14px * var(--z));
+  height: calc(14px * var(--z));
+  opacity: 0.7;
+  pointer-events: none;
+}
+.note-link-chip span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+.note-link-chip b { font-weight: 600; }
+/* 영상 · 사진 밑에 붙는 작은 링크 */
+.note-link-chip.small {
+  margin-top: calc(-3px * var(--z));
+  padding: 0 calc(2px * var(--z));
+  background: none;
+  font-size: calc(11px * var(--z));
+}
+.note-link-chip.small:hover { background: none; text-decoration: underline; }
+.note-link-chip.small img { width: calc(12px * var(--z)); height: calc(12px * var(--z)); }
+
+/* 영상 · 사진 — 쪽지 너비에 맞춤 (재생기 · 영상은 16:9, 영상 파일 · 사진은 불러온 뒤 제 비율) */
+.note-embed {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: calc(8px * var(--z));
+  background: rgba(31, 47, 69, 0.08);
+}
+.note-embed-youtube,
+.note-embed-vimeo,
+.note-embed-video { aspect-ratio: 16 / 9; }
+.note-embed-image:not(.loaded) { aspect-ratio: 16 / 9; }
+.note-embed iframe,
+.note-embed video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+}
+.note-embed-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+.note-embed.broken { display: none; }        /* 못 불러온 영상 · 사진은 링크만 남김 */
+
+/* 어두운 색 쪽지 */
+.note-dark .note-link-chip { background: rgba(255, 255, 255, 0.12); }
+.note-dark .note-link-chip:hover { background: rgba(255, 255, 255, 0.2); }
+.note-dark .note-link-chip img { filter: invert(1) hue-rotate(180deg) brightness(1.1); }
+
+/* 쪽지 · 판을 끌거나 화면을 옮기는 동안 재생기가 마우스를 가로채지 않게 (drag.js · boards.js startGrabPan) */
+body.pointer-busy .note-embed iframe { pointer-events: none; }

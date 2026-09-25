@@ -6,7 +6,7 @@
   --z: var(--zoom, 1);
   position: absolute;
   pointer-events: auto;
-  z-index: 1;
+  z-index: 5;                            /* 쪽지와 같은 층 (쌓임 순서 — styles/boards.css 머리 설명) */
   cursor: grab;
   transform: rotate(var(--tilt, 0deg));
   filter: drop-shadow(0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(31, 47, 69, 0.08))
@@ -36,7 +36,7 @@
   -webkit-user-drag: none;
 }
 
-/* 손글씨 한 줄 — 종이 틀 아래 여백(46) 가운데 */
+/* 손글씨 한 줄 — 틀 아래 여백 가운데 (종이 46 · 테이프 · 압정 42) */
 .photo-caption {
   position: absolute;
   left: var(--pad-left, 0px);
@@ -52,7 +52,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.canvas-photo:not(.frame-paper) .photo-caption { display: none; }
+.canvas-photo.frame-none .photo-caption { display: none; }
 
 .photo-caption-input {
   display: block;
@@ -81,7 +81,7 @@
 
 /* 선택됨 — 쪽지와 같이 그림자가 진해지며 3 떠오름 / 고정됨 — 옮기기 · 크기 조절 잠금 */
 .canvas-photo.selected {
-  z-index: 5;
+  z-index: 7;
   transform: translateY(calc(-3px * var(--z))) rotate(var(--tilt, 0deg));
   filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.24))
           drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.14));
@@ -90,7 +90,7 @@
   filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.28))
           drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.16));
 }
-.canvas-photo.pinned { z-index: 10; cursor: default; }
+.canvas-photo.pinned { z-index: 1; cursor: default; }        /* 고정됨 = 다른 것들 뒤 */
 
 /* 크기 조절 — 오른쪽 아래 ⌟ 손잡이 (비율 유지). 마우스를 올렸거나 골랐을 때만 보임 */
 .photo-resize {

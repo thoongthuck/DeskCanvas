@@ -215,6 +215,11 @@ export const settingsWindowMethods = {
     // 쪽지
     const notes = section('section-notes', 'add-file.svg', 'sec.notes');
     row(notes, 'row-notecolor', 'row.noteColor', 'row.noteColor.desc', this.buildColorDots());
+    row(notes, 'row-groupcolor', 'row.groupColor', 'row.groupColor.desc',
+      this.buildColorDots({ key: 'groupColor', customKey: 'groupCustomColor', random: false }));
+    row(notes, 'row-notelinks', 'row.noteLinks', 'row.noteLinks.desc',
+      this.buildDropdown(['embed', 'link'].map(v => ({ label: t(`linkView.${v}`), value: v })), s.noteLinkView,
+        (v) => this.updateSetting('noteLinkView', v), 'notelinks'));
     row(notes, 'row-notesize', 'row.noteSize', 'row.noteSize.desc',
       this.buildDropdown(Object.keys(NEW_NOTE_SIZES).map(key => ({
         label: `${t(`size.${key}`)} (${NEW_NOTE_SIZES[key].width} × ${NEW_NOTE_SIZES[key].height})`, value: key,
@@ -227,6 +232,9 @@ export const settingsWindowMethods = {
 
     // 판 — 캘린더 · 연대표 · 파일 묶음
     const boards = section('section-boards', 'add-board.svg', 'sec.boards');
+    row(boards, 'row-boardtone', 'row.boardTone', 'row.boardTone.desc',
+      this.buildDropdown(['theme', 'light', 'dark'].map(v => ({ label: t(`boardTone.${v}`), value: v })), s.boardTone,
+        (v) => this.updateSetting('boardTone', v), 'boardtone'));
     row(boards, 'row-calview', 'row.calendarView', 'row.calendarView.desc',
       this.buildDropdown([
         { label: t('calView.month'), value: 'month' },
@@ -242,9 +250,6 @@ export const settingsWindowMethods = {
     row(boards, 'row-holidaycountry', 'row.holidayCountry', 'row.holidayCountry.desc',
       this.buildDropdown(HOLIDAY_REGIONS.map(r => ({ label: t(`region.${r}`), value: r })), s.holidayCountry,
         (v) => this.updateSetting('holidayCountry', v), 'holidaycountry'));
-    row(boards, 'row-groupcolor', 'row.groupColor', 'row.groupColor.desc',
-      this.buildDropdown(Object.keys(NOTE_COLORS).map(c => ({ label: t(`color.${c}`), value: c })), s.groupColor,
-        (v) => this.updateSetting('groupColor', v), 'groupcolor'));
 
     // 사진 · 영상
     const media = section('section-media', 'add-video.svg', 'sec.media');
@@ -405,37 +410,40 @@ export const settingsWindowMethods = {
     return btn;
   },
 
-  // 기본 쪽지 색상 — 랜덤 + 6색 + 직접 고르기(RGB)
-  buildColorDots() {
+  // 기본 색상 점 — 쪽지: 랜덤 + 6색 + 직접 고르기(RGB), 파일 묶음: 6색 + 직접 고르기
+  //   key: 설정 이름 (noteColor · groupColor), customKey: 직접 고른 색 (noteCustomColor · groupCustomColor)
+  buildColorDots({ key = 'noteColor', customKey = 'noteCustomColor', random = true } = {}) {
     const box = document.createElement('div');
     box.className = 'set-color-dots';
     const s = this.settings;
 
-    const random = document.createElement('button');
-    random.type = 'button';
-    random.className = 'set-dot random-dot' + (s.noteColor === 'random' ? ' current' : '');
-    random.title = t('color.random');
-    random.addEventListener('click', () => this.updateSetting('noteColor', 'random'));
-    box.appendChild(random);
-
-    SETTINGS_COLOR_ORDER.forEach(key => {
+    if (random) {
       const dot = document.createElement('button');
       dot.type = 'button';
-      dot.className = 'set-dot' + (s.noteColor === key ? ' current' : '');
-      dot.dataset.color = key;
-      dot.title = t(`color.${key}`);
-      dot.style.background = NOTE_COLORS[key].dot;
-      dot.addEventListener('click', () => this.updateSetting('noteColor', key));
+      dot.className = 'set-dot random-dot' + (s[key] === 'random' ? ' current' : '');
+      dot.title = t('color.random');
+      dot.addEventListener('click', () => this.updateSetting(key, 'random'));
+      box.appendChild(dot);
+    }
+
+    SETTINGS_COLOR_ORDER.forEach(color => {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'set-dot' + (s[key] === color ? ' current' : '');
+      dot.dataset.color = color;
+      dot.title = t(`color.${color}`);
+      dot.style.background = NOTE_COLORS[color].dot;
+      dot.addEventListener('click', () => this.updateSetting(key, color));
       box.appendChild(dot);
     });
 
     box.appendChild(this.createCustomColorDot({
       className: 'set-dot',
-      current: s.noteColor === 'custom',
-      value: s.noteCustomColor,
+      current: s[key] === 'custom',
+      value: s[customKey],
       onInput: (hex) => {
-        this.settings.noteCustomColor = hex;
-        this.settings.noteColor = 'custom';
+        this.settings[customKey] = hex;
+        this.settings[key] = 'custom';
         this.persistSettings();
       },
       onDone: () => this.refreshSettingsWindow(),

@@ -1,6 +1,7 @@
 // 단축키와 붙여넣기 — Ctrl+Z · Ctrl+Shift+Z · Ctrl+S · Ctrl+F · Ctrl+M · Ctrl+A · Ctrl+G · Ctrl+L · F2 · Delete · Shift+Enter(글자칸에서) · Ctrl+V · Esc
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
+import { IS_MAC } from './constants.js';
 
 export const keyboardMethods = {
   setupKeyboard() {
@@ -16,7 +17,7 @@ export const keyboardMethods = {
 
   handleKeyDown(e) {
     if (e.isComposing || e.keyCode === 229) return;
-    const ctrl = e.ctrlKey || e.metaKey;
+    const ctrl = e.ctrlKey || (IS_MAC && e.metaKey);
     const key = (e.key || '').toLowerCase();
 
     if (key === 'escape') {

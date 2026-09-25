@@ -6,3 +6,6 @@ debug-log.txt
 
 # 바탕화면 고정 모듈을 만들 때 생기는 중간 파일 (만든 desktop_pin.node 는 같이 둠)
 native/desktop-pin/build/
+
+# 설치 파일 만들기 결과 (npm run build — electron-builder)
+dist/

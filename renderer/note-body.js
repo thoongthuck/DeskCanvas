@@ -34,6 +34,7 @@ export const noteBodyMethods = {
     } else {
       body.appendChild(content);
     }
+    this.renderNoteLinks(note, body);                // 글 속 인터넷 주소 → 링크 · 영상 · 사진 (note-links.js)
   },
 
   buildNoteContent(note) {

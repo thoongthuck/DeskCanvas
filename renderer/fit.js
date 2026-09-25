@@ -46,10 +46,16 @@ export const fitMethods = {
       }
     }
 
-    let extraY = Math.max(0, el.scrollHeight - el.clientHeight);
-    el.querySelectorAll(TALL_FIELDS).forEach(f => { extraY = Math.max(extraY, f.scrollHeight - f.clientHeight); });
-    if (extraY > 1) {
-      height = note.height + extraY / z + 2;
+    // 글 밑에 링크 · 영상이 붙은 쪽지 (note-links.js): 링크 칸이 쪽지 밖으로 넘친 만큼 + 그 때문에 글칸이 눌려 안에 숨은 만큼
+    //   — 둘은 따로라 더하고, 늘린 뒤 긴 주소의 줄바꿈이 달라질 수 있어 넘치지 않을 때까지 몇 번 더 잼
+    const withLinks = !!el.querySelector('.note-links');
+    for (let pass = 0; pass < (withLinks ? 3 : 1); pass++) {
+      const boxY = Math.max(0, el.scrollHeight - el.clientHeight);
+      let fieldY = 0;
+      el.querySelectorAll(TALL_FIELDS).forEach(f => { fieldY = Math.max(fieldY, f.scrollHeight - f.clientHeight); });
+      const extraY = withLinks ? boxY + fieldY : Math.max(boxY, fieldY);
+      if (extraY <= 1) break;
+      height += extraY / z + 2;
       this.fitSizes.set(note.id, { width, height });
       this.updateNotePosition(el, note);
     }

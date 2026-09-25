@@ -510,6 +510,7 @@ export const calendarMethods = {
         overlay.className = 'fan-overlay';
         this.uiLayer.appendChild(overlay);
       }
+      overlay.classList.toggle('tone-dark', this.boardTone(board) === 'dark');   // 검은 판이면 어두운 바탕
       const x = slot.x - SLOT.left + 3;                       // 날짜 줄은 가리지 않게 첫 쪽지 바로 위부터
       const y = slot.y - 6;
       const w = grid.cellW - 6;
@@ -531,6 +532,7 @@ export const calendarMethods = {
       overlay.className = 'fan-overlay';
       this.uiLayer.appendChild(overlay);
     }
+    overlay.classList.toggle('tone-dark', this.boardTone(board) === 'dark');
     overlay.style.left = `${(place.cx - reach) * z + this.panX}px`;
     overlay.style.top = `${(place.cy - reach) * z + this.panY}px`;
     overlay.style.width = overlay.style.height = `${c * 2}px`;

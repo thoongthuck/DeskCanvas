@@ -34,7 +34,7 @@ export const photoMethods = {
       x: 0, y: 0, width: 240, height: 180,
       src: '', pinned: false, updatedAt: Date.now(),
       frame: 'paper',              // 'none' | 'paper' | 'tape' | 'pin'
-      caption: '',                 // 종이 틀 아래 손글씨 한 줄
+      caption: '',                 // 틀 아래 손글씨 한 줄 (종이 · 테이프 · 압정 — 틀 없음이면 숨김)
       tapeColor: 'yellow', tapePos: 'center',
       pinColor: 'red', pinPos: 'center',
       tilt: 0,                     // 기울임 (도)
@@ -64,14 +64,17 @@ export const photoMethods = {
     return photo;
   },
 
-  // 틀 여백 (zoom 1) — 종이 틀: 위·좌·우 14, 아래 46 (글이 없으면 14) / 테이프·압정: 10 / 틀 없음: 0
+  // 틀 여백 (zoom 1) — 종이 틀: 위·좌·우 14, 아래 46 (글이 없으면 14) / 테이프·압정: 10, 캡션이 있으면 아래 42 / 틀 없음: 0
   photoPadding(photo) {
     if (photo.frame === 'none') return { top: 0, right: 0, bottom: 0, left: 0 };
-    if (photo.frame === 'paper') {
-      const caption = !!photo.caption || this.captionEditingId === photo.id;
-      return { top: 14, right: 14, bottom: caption ? 46 : 14, left: 14 };
-    }
-    return { top: 10, right: 10, bottom: 10, left: 10 };
+    const caption = this.photoHasCaptionRoom(photo) && (!!photo.caption || this.captionEditingId === photo.id);
+    if (photo.frame === 'paper') return { top: 14, right: 14, bottom: caption ? 46 : 14, left: 14 };
+    return { top: 10, right: 10, bottom: caption ? 42 : 10, left: 10 };
+  },
+
+  // 캡션을 쓸 수 있는 틀 — 흰 테두리가 있는 틀 (종이 · 테이프 · 압정). 틀 없음은 캡션을 넣으면 종이 틀로
+  photoHasCaptionRoom(photo) {
+    return photo.frame !== 'none';
   },
 
   // 틀까지 합친 크기 — 화면에서 차지하는 자리
@@ -194,16 +197,20 @@ export const photoMethods = {
       if (e.target.closest('.photo-caption-input')) return;           // 캡션을 쓰는 중: 글자 고르기
       if (e.target.closest('.video-btn')) return;                     // 영상 재생 · 소리 단추
       const canDrag = this.pressSelect(e, photo.id, !photo.pinned);  // Ctrl · Shift: 여러 개 고르기 (selection.js)
-      if (e.button !== 0 || photo.pinned) return;
+      if (e.button !== 0) return;
       if (e.target.closest('.photo-resize')) return;
       e.preventDefault();
+      if (photo.pinned) {                                             // 고정한 사진 · 영상: 끌면 화면 이동 (boards.js startGrabPan)
+        this.startGrabPan(e);
+        return;
+      }
       if (!canDrag) return;
       this.startItemDrag(e, 'photo', photo);
     });
 
-    // 종이 틀 사진을 두 번 누르면 캡션 쓰기
+    // 틀이 있는 사진(종이 · 테이프 · 압정)을 두 번 누르면 캡션 쓰기
     el.addEventListener('dblclick', (e) => {
-      if (photo.frame !== 'paper' || e.target.closest('.photo-resize, .photo-caption-input')) return;
+      if (!this.photoHasCaptionRoom(photo) || e.target.closest('.photo-resize, .photo-caption-input')) return;
       e.preventDefault();
       this.editPhotoCaption(photo);
     });
@@ -235,7 +242,7 @@ export const photoMethods = {
     if (!el) return;
     PHOTO_FRAMES.forEach(f => el.classList.toggle(`frame-${f}`, photo.frame === f));
     const caption = el.querySelector('.photo-caption');
-    if (!caption.querySelector('input')) caption.textContent = photo.frame === 'paper' ? photo.caption : '';
+    if (!caption.querySelector('input')) caption.textContent = this.photoHasCaptionRoom(photo) ? photo.caption : '';
 
     const extras = el.querySelector('.photo-extras');
     extras.innerHTML = '';
@@ -393,11 +400,11 @@ export const photoMethods = {
     this.scheduleSave({ system: true });
   },
 
-  // 캡션 넣기: 종이 틀 아래 여백에서 바로 씀 (Enter 끝 · Esc 취소)
+  // 캡션 넣기: 틀 아래 여백에서 바로 씀 (Enter 끝 · Esc 취소) — 테이프 · 압정은 그대로 두고, 틀 없음이면 종이 틀로
   editPhotoCaption(photo) {
     const el = document.getElementById(photo.id);
     if (!el || this.captionEditingId === photo.id) return;
-    if (photo.frame !== 'paper') this.setPhotoFrame(photo, { frame: 'paper' });
+    if (!this.photoHasCaptionRoom(photo)) this.setPhotoFrame(photo, { frame: 'paper' });
     this.captionEditingId = photo.id;
     this.renderPhotoFrame(photo, el);
     this.updatePhotoPosition(el, photo);                  // 아래 여백이 46 으로 늘어남

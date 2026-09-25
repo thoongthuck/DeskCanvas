@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage, screen, net, globalShortcut, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage, screen, net, globalShortcut, Tray, Menu, session, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { execFile, spawn } = require('child_process');
+const { buildLayout, cleanText } = require('./menu-layout');
 
 // ── 문제 찾기용 기록 ──────────────────────────────────────────────
 // 무슨 일이 있었는지 앱 데이터 폴더의 debug-log.txt 에 남긴다 (%APPDATA%\wallpaper-canvas\debug-log.txt).
@@ -113,6 +114,7 @@ function fitWindowToScreen() {
   const area = screenArea();
   mainWindow.setBounds(area);
   logLine(`화면 크기 맞춤: ${area.width}×${area.height} (${area.x}, ${area.y})`);
+  placeMirror();                                    // 바탕화면 층 사진도 새 크기로
 }
 
 // ================ 바탕화면 층 (메모장.md Phase 5) ================
@@ -153,6 +155,7 @@ const wallpaper = {
   buffer: '',
 };
 let quitting = false;   // 사용자가 끄는 중 (탐색기가 다시 시작돼 창이 사라진 것과 구분)
+let shellMenuOpen = false;   // 윈도우 11 모양 메뉴 · 윈도우 메뉴가 떠 있는 중 (다리를 바꿔 타지 않음)
 
 function wallpaperSetting() {
   if (process.platform !== 'win32') return false;
@@ -191,6 +194,7 @@ function pinWindow() {
   wallpaper.front = false;
   wallpaper.autoPopped = false;
   refreshTray();
+  createMirror();                                   // 바탕화면 층에 캔버스 사진 (아래 mirror)
   return true;
 }
 
@@ -200,6 +204,7 @@ function unpinWindow() {
   wallpaper.pinned = false;
   wallpaper.front = false;
   wallpaper.autoPopped = false;
+  destroyMirror();
 }
 
 // 붙잡은 창을 다른 창들 앞으로 꺼내거나 (front — 앞에 있는 동안 맨 위) 다시 바탕화면 바로 위로
@@ -238,17 +243,213 @@ function keepPinned() {
   } else if (!wallpaper.front && !state.raised && !state.rightAboveDesktop) {
     deskPin.setBottom(true);
   }
+  keepMirror();
+}
+
+// ---------------- 바탕화면 층 사진 (방법 1 과 함께) ----------------
+// 붙잡은 캔버스는 보통 창이라, 윈도우가 창들을 잠깐 치우고 바탕화면만 보여 줄 때
+//   (Alt+Tab 미리 보기 · 창 맞춰 붙이기 도우미 · 작업 보기 · 화면 가장자리 끌기) 진짜 배경 화면이 보임
+//   → 캔버스를 찍은 사진 한 장을 바탕화면 층(윈도우 아이콘 위)에 넣어 둠 (mirror.html, 바탕화면 다리 attach).
+//   평소에는 붙잡은 캔버스가 같은 자리에서 덮어 안 보임. 캔버스가 바뀌면 (저장 · 바뀜 알림) 잠시 뒤 다시 찍음
+//   사진이라 그 순간에는 영상이 멈춘 모습. 캔버스 창이 닫히면 같이 닫음
+const MIRROR_DELAY = 900;             // 마지막으로 바뀐 뒤 이만큼 있다가 찍음
+const mirror = { win: null, ready: false, timer: null, busy: false, again: false };
+
+function mirrorHandle(win) {
+  const buf = win.getNativeWindowHandle();
+  return buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
+}
+
+async function createMirror() {
+  if (mirror.win || process.platform !== 'win32' || !mainWindow || mainWindow.isDestroyed()) return;
+  const win = new BrowserWindow({
+    ...screenArea(),
+    frame: false,
+    thickFrame: false,
+    hasShadow: false,
+    skipTaskbar: true,
+    focusable: false,              // 누를 일 없음 (평소에는 캔버스 밑)
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    show: false,
+    backgroundColor: canvasBackground(),
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+  });
+  mirror.win = win;
+  mirror.ready = false;
+  win.on('closed', () => {
+    if (mirror.win !== win) return;
+    mirror.win = null;
+    mirror.ready = false;
+  });
+  try {
+    await win.loadFile('mirror.html');
+    if (win.isDestroyed()) return;
+    const b = screen.dipToScreenRect(null, screenArea());
+    const reply = await bridgeCall(`attach ${mirrorHandle(win)} ${b.x} ${b.y} ${b.width} ${b.height}`);
+    logLine(`바탕화면 층 사진 넣기: ${reply.slice(0, 90)}`);
+    if (!reply.startsWith('ok')) {
+      destroyMirror();
+      return;
+    }
+    mirror.ready = true;
+    scheduleMirror(1500);                                        // 켤 때는 캔버스가 파일 · 쪽지를 다 그린 뒤에
+    setTimeout(() => { if (mirror.win === win) scheduleMirror(0); }, 5000);
+  } catch (err) {
+    logLine(`바탕화면 층 사진 못 넣음: ${err && err.message}`);
+    destroyMirror();
+  }
+}
+
+function destroyMirror() {
+  clearTimeout(mirror.timer);
+  const win = mirror.win;
+  mirror.win = null;
+  mirror.ready = false;
+  if (win && !win.isDestroyed()) win.destroy();
+}
+
+// 화면 크기가 바뀜 — 새 자리 · 크기로 다시 넣고 다시 찍음
+async function placeMirror() {
+  if (!mirror.ready || !mirror.win || mirror.win.isDestroyed()) return;
+  const b = screen.dipToScreenRect(null, screenArea());
+  await bridgeCall(`attach ${mirrorHandle(mirror.win)} ${b.x} ${b.y} ${b.width} ${b.height}`);
+  scheduleMirror(300);
+}
+
+// 가끔 확인 (keepPinned) — 탐색기가 다시 시작되면 사진 창도 사라짐 → 다시 만듦. 떨어졌으면 다시 넣음
+async function keepMirror() {
+  if (!wallpaper.pinned) return;
+  if (!mirror.win) {
+    createMirror();
+    return;
+  }
+  if (!mirror.ready || mirror.win.isDestroyed()) return;
+  const reply = await bridgeCall(`check ${mirrorHandle(mirror.win)}`, 3000);
+  if (reply === 'detached') {
+    logLine('바탕화면 층 사진이 떨어짐 → 다시 넣음');
+    destroyMirror();
+    createMirror();
+  }
+}
+
+function scheduleMirror(delay = MIRROR_DELAY) {
+  if (!mirror.win) return;
+  clearTimeout(mirror.timer);
+  mirror.timer = setTimeout(updateMirror, delay);
+}
+
+async function updateMirror() {
+  if (!mirror.ready || !mirror.win || mirror.win.isDestroyed() || !mainWindow || mainWindow.isDestroyed()) return;
+  if (mirror.busy) {                                 // 찍는 중이면 끝난 뒤 한 번 더
+    mirror.again = true;
+    return;
+  }
+  mirror.busy = true;
+  try {
+    const shot = await mainWindow.webContents.capturePage();   // 다른 창 뒤에 가려져 있어도 찍힘
+    if (shot.isEmpty() || !mirror.win || mirror.win.isDestroyed()) return;
+    const file = path.join(app.getPath('userData'), 'desktop-mirror.jpg');
+    await fs.promises.writeFile(file, shot.toJPEG(88));
+    await mirror.win.webContents.executeJavaScript(
+      `window.showShot(${JSON.stringify(`${pathToFileURL(file).href}?t=${Date.now()}`)})`);
+  } catch (err) {
+    logLine(`바탕화면 층 사진 못 찍음: ${err && err.message}`);
+  } finally {
+    mirror.busy = false;
+    if (mirror.again) {
+      mirror.again = false;
+      scheduleMirror();
+    }
+  }
 }
 
 // ---------------- 방법 2: 바탕화면 층에 넣기 ----------------
+// 설치한 앱에서는 코드가 app.asar 한 파일 안에 있음 — 다른 프로그램(PowerShell)이 읽을 파일은
+//   app.asar.unpacked 에 풀어 둔 것을 씀 (package.json build.asarUnpack: native/**)
+function unpackedPath(p) {
+  return p.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+}
+const BRIDGE_SCRIPT = unpackedPath(path.join(__dirname, 'native', 'desktop-bridge.ps1'));
+
+// 다리 창 프로그램 (.exe) — desktop-bridge.cs 를 한 번 만들어 앱 데이터 폴더에 둠 (소스가 바뀌면 새로)
+//   PowerShell(콘솔 프로그램)로 돌리면 윈도우가 표시 언어를 영어로 걸러서 탐색기 메뉴가 'Ne&w' · 'Cu&t' 처럼 나옴
+//   → 창 프로그램을 먼저 쓰고, 아직 없으면 PowerShell 로 돌리면서 뒤에서 만듦 (다 되면 쉬는 틈에 바꿔 탐)
+const bridgeExe = { path: '', building: false, failed: false };   // failed: 이번에 켠 동안은 창 프로그램을 쓰지 않음 (못 띄웠음)
+
+function bridgeExePath() {
+  try {
+    const source = fs.readFileSync(path.join(__dirname, 'native', 'desktop-bridge.cs'));
+    const hash = require('crypto').createHash('sha1').update(source).digest('hex').slice(0, 10);
+    return path.join(app.getPath('userData'), 'bridge', `desktop-bridge-${hash}.exe`);
+  } catch (_) {
+    return '';
+  }
+}
+
+function buildBridgeExe(target) {
+  if (bridgeExe.building || !target) return;
+  bridgeExe.building = true;
+  const dir = path.dirname(target);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.readdirSync(dir).filter(n => /^desktop-bridge-.*\.exe$/.test(n) && path.join(dir, n) !== target)   // 예전 것은 지움
+      .forEach(n => { try { fs.unlinkSync(path.join(dir, n)); } catch (_) {} });
+  } catch (_) {}
+  const script = BRIDGE_SCRIPT;
+  const temp = target.replace(/\.exe$/, '.building.exe');   // 이름이 .exe 로 끝나야 Add-Type 이 창 프로그램으로 만듦 (아니면 DLL)
+  execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Compile', temp],
+    { windowsHide: true, timeout: 60000 }, (err) => {
+      bridgeExe.building = false;
+      try {
+        if (err || !fs.existsSync(temp)) throw err || new Error('no output');
+        fs.renameSync(temp, target);
+        bridgeExe.path = target;
+        logLine(`바탕화면 다리 창 프로그램 만듦: ${path.basename(target)}`);
+        switchBridgeWhenIdle();
+      } catch (e) {
+        logLine(`바탕화면 다리 창 프로그램 못 만듦 → PowerShell 로 계속: ${e && e.message}`);
+        try { fs.unlinkSync(temp); } catch (_) {}
+      }
+    });
+}
+
+// PowerShell 로 돌던 다리를 쉬는 틈에 끝냄 → 다음 명령부터 창 프로그램 (윈도우 메뉴가 떠 있거나 명령을 기다리는 중이면 나중에)
+function switchBridgeWhenIdle(tries = 20) {
+  const child = wallpaper.bridge;
+  if (!child || child.bridgeKind === 'exe') return;
+  if (wallpaper.queue.length || shellMenuOpen) {
+    if (tries > 0) setTimeout(() => switchBridgeWhenIdle(tries - 1), 3000);
+    return;
+  }
+  wallpaper.bridge = null;
+  try { child.stdin.end(); } catch (_) {}
+  startBridge();
+}
+
 function startBridge() {
   if (wallpaper.bridge || process.platform !== 'win32') return wallpaper.bridge;
-  const script = path.join(__dirname, 'native', 'desktop-bridge.ps1');
+  if (!bridgeExe.path && !bridgeExe.failed) {
+    const target = bridgeExePath();
+    if (target && fs.existsSync(target)) bridgeExe.path = target;
+    else buildBridgeExe(target);
+  }
+  const script = BRIDGE_SCRIPT;
   let child;
   try {
-    child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+    child = bridgeExe.path
+      ? spawn(bridgeExe.path, [], { windowsHide: true })
+      : spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { windowsHide: true });
+    child.bridgeKind = bridgeExe.path ? 'exe' : 'powershell';
   } catch (err) {
     logLine(`바탕화면 다리 못 띄움: ${err && err.message}`);
+    if (bridgeExe.path) {                            // 창 프로그램이 안 되면 이번에는 PowerShell 로만 (다시 찾지 않음)
+      try { fs.unlinkSync(bridgeExe.path); } catch (_) {}      // 망가진 파일이면 다음에 켤 때 새로 만듦
+      bridgeExe.path = '';
+      bridgeExe.failed = true;
+      return startBridge();
+    }
     return null;
   }
   wallpaper.bridge = child;
@@ -269,11 +470,19 @@ function startBridge() {
     }
   });
   child.stderr.on('data', (data) => logLine(`바탕화면 다리 오류: ${String(data).trim().slice(0, 300)}`));
-  child.on('error', (err) => logLine(`바탕화면 다리 오류: ${err && err.message}`));
+  child.on('error', (err) => {
+    logLine(`바탕화면 다리 오류: ${err && err.message}`);
+    if (child.bridgeKind === 'exe') {               // 창 프로그램이 안 되면 이번에는 PowerShell 로만
+      bridgeExe.path = '';
+      bridgeExe.failed = true;
+    }
+  });
   child.on('exit', (code) => {
-    logLine(`바탕화면 다리 끝남 (${code})`);
-    wallpaper.queue.splice(0).forEach(done => done('fail exit'));
-    if (wallpaper.bridge === child) wallpaper.bridge = null;
+    logLine(`바탕화면 다리 끝남 (${code}, ${child.bridgeKind})`);
+    if (wallpaper.bridge === child) {
+      wallpaper.queue.splice(0).forEach(done => done('fail exit'));
+      wallpaper.bridge = null;
+    }
   });
   return child;
 }
@@ -281,7 +490,10 @@ function startBridge() {
 // 다리가 먼저 알려 오는 것 — desktop-restarted: 탐색기가 다시 시작됨 (창이 사라졌으면 'closed' 가 다시 만들고, 남아 있으면 다시 넣음)
 function bridgeEvent(name) {
   logLine(`바탕화면 다리 알림: ${name}`);
-  if (name === 'desktop-restarted') setTimeout(keepOnDesktop, 1500);
+  if (name === 'desktop-restarted') {
+    setTimeout(keepOnDesktop, 1500);
+    setTimeout(() => prepMenu([], true), 2500);     // 미리 만든 바탕 메뉴도 새 탐색기로
+  }
 }
 
 // 다리에 명령 한 줄 → 답 한 줄 (답이 늦으면 'fail timeout')
@@ -302,6 +514,19 @@ function windowHandle() {
   return buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
 }
 
+// 다리가 캔버스 창의 자리 · 크기를 바꾸는 명령 (attach · detach · lift — SetWindowPos)
+//   창은 resizable: false (화면 끝을 끌어도 크기가 그대로) 인데, 그러면 Electron 이 가장 작은 · 큰 크기를 지금 크기로 묶어
+//   다른 프로그램(다리)의 SetWindowPos 로도 크기가 안 바뀜 (화면 크기가 바뀐 뒤 다시 넣을 때) → 그동안만 풀었다가 새 크기로 다시 묶음
+async function bridgeResize(command) {
+  const win = mainWindow;
+  if (win && !win.isDestroyed()) win.setResizable(true);
+  try {
+    return await bridgeCall(command);
+  } finally {
+    if (win && !win.isDestroyed()) win.setResizable(false);
+  }
+}
+
 // 바탕화면 층에 넣기 — 주 모니터의 작업 영역 (들어 올렸을 때와 같은 크기)
 async function embedWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -310,7 +535,7 @@ async function embedWindow() {
   wallpaper.moving = true;
   try {
     mainWindow.setAlwaysOnTop(false);
-    const reply = await bridgeCall(`attach ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height}`);
+    const reply = await bridgeResize(`attach ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height}`);
     logLine(`바탕화면 층에 넣기: ${reply}`);
     if (!reply.startsWith('ok')) {
       if (onTop && mainWindow && !mainWindow.isDestroyed()) mainWindow.setAlwaysOnTop(true);
@@ -333,7 +558,7 @@ async function unembedWindow(bounds) {
   const b = screen.dipToScreenRect(null, bounds);
   wallpaper.moving = true;
   try {
-    const reply = await bridgeCall(`detach ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height}`);
+    const reply = await bridgeResize(`detach ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height}`);
     logLine(`바탕화면 층에서 꺼냄: ${reply}`);
     wallpaper.embedded = false;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBounds(bounds);
@@ -358,7 +583,7 @@ async function liftWindow(mode, auto) {
   const b = screen.dipToScreenRect(null, screenArea());
   wallpaper.moving = true;
   try {
-    const reply = await bridgeCall(`lift ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height} ${mode}`);
+    const reply = await bridgeResize(`lift ${windowHandle()} ${b.x} ${b.y} ${b.width} ${b.height} ${mode}`);
     logLine(`바탕화면 층에서 들어 올림 (${mode}): ${reply.slice(0, 120)}`);
     if (!reply.startsWith('ok')) return false;
     wallpaper.embedded = false;
@@ -460,28 +685,301 @@ ipcMain.on('canvas-pressed', claimKeyboard);
 // 파일 · 바탕화면 빈 곳을 우클릭하면 윈도우 탐색기 메뉴를 그대로 띄움 (native/desktop-bridge.ps1) — 앱 줄은 위에 붙임
 //   paths: 파일들 (같은 폴더) — 비었으면 바탕화면 빈 곳 메뉴. items: [{ id, parent, label, flags }] (id 1~999)
 //   반환: { kind: 'app', id } · { kind: 'shell', verb } · { kind: 'rename' } · { kind: 'none' } · null (못 띄움 → 앱 메뉴로)
+//   윈도우 11 모양으로 그림 (menu.html · menu-layout.js): 다리가 메뉴를 만들어 두고(menuopen) 줄들을 주면 앱이 그려 고르게 하고,
+//   고른 줄을 다리가 실행(menuinvoke). '추가 옵션 표시' 는 같은 메뉴를 예전 모양으로 (menushow). 못 그리면 예전 모양 그대로 (menu)
+//   items 의 role · icon · key: 윈도우 11 메뉴의 자리 · 앱 아이콘 · 오른쪽 단축키 글자 (renderer/menus.js)
 ipcMain.handle('shell-menu', async (event, paths, items) => {
   if (process.platform !== 'win32' || !startBridge()) return null;
   const clean = (s) => String(s || '').replace(/[\t\r\n]/g, ' ').replace(/&/g, '&&');   // & 는 윈도우 메뉴에서 밑줄 글자
+  const list = Array.isArray(items) ? items : [];
+  const targets = menuPaths(paths);
+  menuPrep.keys.delete(menuKey(targets));             // 미리 만들어 둔 것은 이번 메뉴가 씀 (한 번 쓰면 다리가 버림)
+  menuPrep.next = null;                               // 기다리던 미리 만들기는 버림 (메뉴 뒤에 끼어 고른 줄 실행이 늦지 않게)
   const lines = [
-    ...(Array.isArray(paths) ? paths : []).map(p => String(p).replace(/[\r\n]/g, '')).filter(Boolean),
+    ...targets,
     '--',
-    ...(Array.isArray(items) ? items : []).map(it => [it.id | 0, it.parent | 0, clean(it.label), String(it.flags || '')].join('\t')),
+    ...list.map(it => [it.id | 0, it.parent | 0, clean(it.label), String(it.flags || '')].join('\t')),
   ];
+  const payload = Buffer.from(lines.join('\n'), 'utf8').toString('base64');
   wallpaper.dialogOpen = true;                        // 메뉴가 떠 있는 동안 앞에 꺼낸 캔버스를 다시 넣지 않음
+  shellMenuOpen = true;
   let reply;
   try {
-    reply = await bridgeCall(`menu ${Buffer.from(lines.join('\n'), 'utf8').toString('base64')}`, 10 * 60 * 1000);
+    const asked = Date.now();
+    const opened = await bridgeCall(`menuopen ${payload}`, 20000);
+    let tree = null;
+    if (opened.startsWith('ok ')) {
+      try { tree = JSON.parse(Buffer.from(opened.slice(3), 'base64').toString('utf8')); } catch (_) {}
+    }
+    if (tree) logLine(`윈도우 우클릭 메뉴 받음: ${Date.now() - asked}ms (${tree.prep ? '미리 받아 둔 것' : '새로 받음'}, ${targets.length ? `파일 ${targets.length}개` : '바탕'})`);
+    if (!tree) {
+      logLine(`윈도우 11 모양 메뉴 못 만듦 → 예전 모양: ${opened.slice(0, 80)}`);
+      reply = await bridgeCall(`menu ${payload}`, 10 * 60 * 1000);
+    } else {
+      const appInfo = new Map();
+      list.forEach(it => {
+        const info = { role: it.role || '', icon: it.icon || '', key: it.key || '' };
+        appInfo.set(it.id | 0, info);
+        if (list.some(x => (x.parent | 0) === (it.id | 0))) appInfo.set(`sub:${cleanText(clean(it.label)).text}`, info);   // 하위 목록은 글자로
+      });
+      const choice = await showFluentMenu(buildLayout(tree, appInfo, trayText().more));
+      if (choice === null) {
+        await bridgeCall('menuclose', 3000);
+        reply = 'ok none';
+      } else if (choice === -1) {
+        reply = await bridgeCall('menushow', 10 * 60 * 1000);      // 추가 옵션 표시 — 예전 모양 메뉴 전체
+      } else {
+        reply = await bridgeCall(`menuinvoke ${choice}`, 60000);
+      }
+    }
   } finally {
     wallpaper.dialogOpen = false;
+    shellMenuOpen = false;
+    setTimeout(() => prepMenu([]), 300);               // 다음 바탕 우클릭을 위해 다시 만들어 둠
   }
   logLine(`윈도우 우클릭 메뉴: ${reply}`);
   if (wallpaper.embedded) claimKeyboard();            // 메뉴가 가져간 키보드를 캔버스로 (붙잡은 창은 다리가 메뉴 전 맨 앞 창으로 되돌려 줌)
   const m = /^ok (\w+) ?(.*)$/.exec(reply);
+  // 붙잡은 캔버스: 앱 줄 · 그만둠 · 이름 바꾸기면 키보드를 캔버스로 (윈도우 명령은 열린 창이 맨 앞 창을 가져가게 둠)
+  if (wallpaper.pinned && mainWindow && !mainWindow.isDestroyed() && (!m || m[1] !== 'shell')) mainWindow.focus();
   if (!m) return reply.startsWith('fail invoke') ? { kind: 'shell', verb: '' } : null;
   if (m[1] === 'app') return { kind: 'app', id: Number(m[2]) };
   if (m[1] === 'shell') return { kind: 'shell', verb: m[2] === '-' ? '' : m[2] };
   return { kind: m[1] };
+});
+
+// ---------------- 미리 만들어 두기 (다리 menuprep) ----------------
+// 우클릭(단추를 뗄 때)에 탐색기 메뉴를 새로 만들면 0.1~0.3초 (처음에는 0.7초) 늦게 뜸
+//   → 탐색기 줄만 든 메뉴를 다리가 미리 만들어 둠. menuopen 이 같은 대상이면 앱 줄만 위에 넣어 바로 답함
+//   바탕 메뉴: 다리가 준비되면 · 메뉴를 쓴 뒤마다 · 10분마다 새로 (새로 깐 프로그램의 줄도 들어오게)
+//   파일 메뉴: 파일에서 오른쪽 단추를 누르는 순간 (renderer → menu-prefetch) — 떼기 전에 만들어 둠
+//   keys: 다리에 만들어 두라고 한 대상 (다리와 같게 바탕 하나 + 파일은 마지막 것 하나). 다리가 새로 켜지면 비움
+const MENU_PREP_REFRESH = 10 * 60 * 1000;
+//   busy · next: 한 번에 하나만 만듦 — 파일 위를 지나가며 여러 번 불러도 다리 줄이 밀려 정작 우클릭이 늦지 않게 (마지막 부탁만 남김)
+//   warm: 이 다리에서 미리 한 번 만들어 볼 파일 · 폴더 (처음 만드는 파일 메뉴는 탐색기 확장을 읽느라 0.5초쯤) — warmChild: 어느 다리 것인지
+const menuPrep = { keys: new Set(), child: null, at: 0, busy: false, next: null, warm: [], warmChild: null };
+
+function menuPaths(paths) {
+  return (Array.isArray(paths) ? paths : []).map(p => String(p).replace(/[\r\n]/g, '')).filter(Boolean);
+}
+
+function menuKey(paths) {
+  return paths.join('\n').toLowerCase();
+}
+
+function prepMenu(paths, force = false) {
+  if (process.platform !== 'win32' || !mainWindow) return;
+  if (menuPrep.busy) {
+    menuPrep.next = { paths, force };
+    return;
+  }
+  const child = startBridge();
+  if (!child) return;
+  if (menuPrep.child !== child) {                    // 새 다리 — 만들어 둔 것이 없음
+    menuPrep.child = child;
+    menuPrep.keys.clear();
+  }
+  const targets = menuPaths(paths);
+  const key = menuKey(targets);
+  if (!force && menuPrep.keys.has(key)) return;
+  if (key) [...menuPrep.keys].filter(k => k).forEach(k => menuPrep.keys.delete(k));
+  menuPrep.keys.add(key);
+  if (!key) menuPrep.at = Date.now();
+  menuPrep.busy = true;
+  const payload = Buffer.from(targets.join('\n'), 'utf8').toString('base64');
+  bridgeCall(`menuprep ${payload}`, 20000).then((reply) => {
+    menuPrep.busy = false;
+    if (!reply.startsWith('ok')) {
+      menuPrep.keys.delete(key);
+      logLine(`우클릭 메뉴 미리 만들기 못 함: ${reply.slice(0, 80)}`);
+    }
+    const next = menuPrep.next;
+    menuPrep.next = null;
+    if (next && !shellMenuOpen) prepMenu(next.paths, next.force);
+    else warmUpNext();                                // 켤 때 미리 읽기는 쉬는 틈에 이어서
+  });
+}
+
+// 5초마다 — 다리가 떠 있으면 바탕 메뉴가 만들어져 있게 (메뉴가 떠 있는 동안은 그대로)
+//   다리가 새로 켜졌으면 바탕화면의 파일 종류(확장자)마다 하나 · 폴더 하나로 메뉴를 한 번씩 만들어 봄
+//   (종류마다 처음 만드는 메뉴는 탐색기 확장을 읽느라 0.2~0.5초 — 미리 읽어 두면 첫 우클릭도 빠름)
+function keepMenuReady() {
+  if (!wallpaper.bridge || shellMenuOpen || menuPrep.busy) return;
+  if (menuPrep.warmChild !== wallpaper.bridge) {
+    menuPrep.warmChild = wallpaper.bridge;
+    menuPrep.warm = warmUpTargets();
+  }
+  if (warmUpNext()) return;
+  prepMenu([], Date.now() - menuPrep.at > MENU_PREP_REFRESH);
+}
+
+function warmUpTargets() {
+  try {
+    const desktop = app.getPath('desktop');
+    const seen = new Set();
+    const list = [];
+    fs.readdirSync(desktop, { withFileTypes: true }).forEach((d) => {
+      if (/^desktop\.ini$/i.test(d.name) || d.name.startsWith('~$')) return;
+      const kind = d.isDirectory() ? '/' : path.extname(d.name).toLowerCase();
+      if (seen.has(kind) || list.length >= 10) return;
+      seen.add(kind);
+      list.push(path.join(desktop, d.name));
+    });
+    return list;
+  } catch (_) {
+    return [];
+  }
+}
+
+// 미리 읽기 하나 — 바탕 메뉴가 준비돼 있고, 마우스를 올려 미리 받아 둔 파일 메뉴가 없을 때만 (그걸 버리지 않게)
+function warmUpNext() {
+  if (!menuPrep.warm.length || menuPrep.busy || shellMenuOpen || menuPrep.child !== wallpaper.bridge) return false;
+  if (!menuPrep.keys.has('') || [...menuPrep.keys].some(k => k)) return false;
+  prepMenu([menuPrep.warm.shift()]);
+  menuPrep.keys.clear();                              // 미리 읽기로 만든 것은 쓰려는 게 아님 (다음 파일이 버림)
+  menuPrep.keys.add('');
+  return true;
+}
+
+ipcMain.on('menu-prefetch', (event, paths) => prepMenu(paths));
+
+// ---------------- 윈도우 11 모양 우클릭 메뉴 창 (menu.html · menu-preload.js) ----------------
+// 화면 하나를 덮는 투명한 창에 메뉴 판만 그림 — 판 밖을 누르거나 다른 곳으로 가면 닫힘 (윈도우 메뉴처럼)
+//   한 번 만들어 숨겨 두고 다시 씀 (처음 우클릭이 늦지 않게). 캔버스 창이 닫히면 같이 닫음
+let menuOverlay = null;
+let menuResolve = null;
+let menuReady = null;
+
+function menuOverlayWindow() {
+  if (menuOverlay && !menuOverlay.isDestroyed()) return menuOverlay;
+  const win = new BrowserWindow({
+    show: false,
+    frame: false,
+    transparent: true,
+    thickFrame: false,
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: { preload: path.join(__dirname, 'menu-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  win.setAlwaysOnTop(true, 'pop-up-menu');
+  win.loadFile('menu.html');
+  win.on('closed', () => {
+    if (menuOverlay === win) menuOverlay = null;
+    finishMenu(null);
+  });
+  menuOverlay = win;
+  return win;
+}
+
+// 닫을 때는 먼저 투명하게 → 숨김 (숨긴 창은 마지막 장면을 들고 있다가 다음에 보일 때 잠깐 비침)
+function finishMenu(id) {
+  const resolve = menuResolve;
+  menuResolve = null;
+  if (menuOverlay && !menuOverlay.isDestroyed() && menuOverlay.isVisible()) {
+    menuOverlay.setOpacity(0);
+    menuOverlay.hide();
+  }
+  if (resolve) resolve(id);
+}
+
+ipcMain.on('menu-choice', (event, id) => {
+  if (!menuOverlay || event.sender !== menuOverlay.webContents) return;
+  finishMenu(id === null || id === undefined ? null : Number(id));
+});
+ipcMain.on('menu-ready', (event) => {
+  if (menuReady && menuOverlay && event.sender === menuOverlay.webContents) menuReady();
+});
+
+// 메뉴를 띄우고 고른 줄 id 를 돌려줌 (-1 추가 옵션 표시 · null 그만둠)
+async function showFluentMenu(layout) {
+  const win = menuOverlayWindow();
+  if (win.webContents.isLoading()) await new Promise(r => win.webContents.once('did-finish-load', r));
+  finishMenu(null);                                          // 떠 있던 것은 닫고
+  const point = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(point);
+  const b = display.bounds, w = display.workArea;
+  win.setBounds(b);
+  const chosen = new Promise(resolve => { menuResolve = resolve; });
+  const drawn = new Promise(resolve => {                     // 새 판을 다 그린 뒤에 보여 줌 (지난번 모습이 잠깐 비치지 않게)
+    menuReady = resolve;
+    setTimeout(resolve, 300);
+  });
+  win.setOpacity(0);                                         // 투명한 채로 띄워 새 판을 그리게 하고 (숨긴 창은 그리지 않음) → 다 그리면 보이게
+  win.showInactive();
+  win.webContents.send('menu-open', {
+    layout,
+    x: point.x - b.x,
+    y: point.y - b.y,
+    work: { left: w.x - b.x, top: w.y - b.y, right: w.x - b.x + w.width, bottom: w.y - b.y + w.height },
+    dark: nativeTheme.shouldUseDarkColors,
+  });
+  await drawn;
+  menuReady = null;
+  if (menuResolve && !win.isDestroyed()) {
+    win.setOpacity(1);
+    win.show();
+    win.focus();
+  }
+  return chosen;
+}
+
+// 바탕 우클릭 '붙여넣기' · '바로 가기 붙여넣기' 에 쓸 클립보드 파일 (다리 clipfiles) — { files: [...], move }
+async function clipboardFiles() {
+  if (process.platform !== 'win32' || !startBridge()) return { files: [], move: false };
+  const reply = await bridgeCall('clipfiles', 5000);
+  if (!reply.startsWith('ok ')) return { files: [], move: false };
+  try {
+    return JSON.parse(Buffer.from(reply.slice(3), 'base64').toString('utf8'));
+  } catch (_) {
+    return { files: [], move: false };
+  }
+}
+ipcMain.handle('clipboard-files', () => clipboardFiles());
+
+// 붙여넣기: 탐색기의 '붙여넣기' 그대로 (복사 · 이름 겹침 창) / 바로 가기 붙여넣기: '이름 - 바로 가기.lnk' 를 바탕화면에
+ipcMain.handle('paste-files', async (event, link) => {
+  const desktop = app.getPath('desktop');
+  if (!link) {
+    if (!startBridge()) return false;
+    const reply = await bridgeCall(`folderverb paste ${Buffer.from(desktop, 'utf8').toString('base64')}`, 5 * 60 * 1000);
+    logLine(`바탕화면에 붙여넣기: ${reply}`);
+    return reply.startsWith('ok');
+  }
+  const { files } = await clipboardFiles();
+  const word = trayText().shortcut;
+  let made = 0;
+  files.forEach(target => {
+    const base = `${path.basename(target)} - ${word}`;
+    let dest = path.join(desktop, `${base}.lnk`);
+    for (let n = 2; fs.existsSync(dest) && n < 100; n++) dest = path.join(desktop, `${base} (${n}).lnk`);
+    try {
+      if (shell.writeShortcutLink(dest, 'create', { target })) made++;
+    } catch (err) {
+      logLine(`바로 가기 못 만듦: ${err && err.message}`);
+    }
+  });
+  logLine(`바로 가기 붙여넣기: ${made}개`);
+  return made > 0;
+});
+
+// 정렬 기준 › 크기 · 수정한 날짜 · 항목 유형에 쓸 파일 정보
+ipcMain.handle('file-stats', async (event, paths) => {
+  const list = Array.isArray(paths) ? paths.slice(0, 5000) : [];
+  return Promise.all(list.map(async (p) => {
+    try {
+      const st = await fs.promises.stat(String(p));
+      return { path: p, size: st.size, mtime: st.mtimeMs, isDir: st.isDirectory() };
+    } catch (_) {
+      return { path: p, size: 0, mtime: 0, isDir: false };
+    }
+  }));
 });
 
 // 파일 이름 바꾸기 (윈도우 우클릭 메뉴 '이름 바꾸기' — 탐색기 대신 앱이 이름 칸을 띄움)
@@ -507,8 +1005,8 @@ ipcMain.handle('rename-path', async (event, filePath, newName) => {
 // 설정 · 종료는 여기서 (캔버스 메뉴에는 없음). 바탕화면에 넣기 켜고 끄기 · 앞으로 꺼내기도
 let tray = null;
 const TRAY_TEXT = {
-  ko: { tip: '배경화면 캔버스', front: '캔버스 앞으로 꺼내기', back: '바탕화면으로 되돌리기', wallpaper: '바탕화면에 넣기', settings: '설정…', quit: '종료' },
-  en: { tip: 'Wallpaper Canvas', front: 'Bring the canvas forward', back: 'Back to the desktop', wallpaper: 'Live on the desktop', settings: 'Settings…', quit: 'Quit' },
+  ko: { tip: '배경화면 캔버스', front: '캔버스 앞으로 꺼내기', back: '바탕화면으로 되돌리기', wallpaper: '바탕화면에 넣기', settings: '설정…', quit: '종료', more: '추가 옵션 표시', shortcut: '바로 가기' },
+  en: { tip: 'Wallpaper Canvas', front: 'Bring the canvas forward', back: 'Back to the desktop', wallpaper: 'Live on the desktop', settings: 'Settings…', quit: 'Quit', more: 'Show more options', shortcut: 'Shortcut' },
 };
 
 function trayText() {
@@ -598,6 +1096,11 @@ ipcMain.handle('set-wallpaper-mode', async (event, on) => {
 // 테마가 바뀌면 창 바탕색도 (settings.js)
 ipcMain.on('set-background', (event, color) => {
   if (mainWindow && !mainWindow.isDestroyed() && /^#[0-9a-f]{6}$/i.test(String(color))) mainWindow.setBackgroundColor(color);
+  if (mirror.win && !mirror.win.isDestroyed() && /^#[0-9a-f]{6}$/i.test(String(color))) {
+    mirror.win.setBackgroundColor(color);
+    mirror.win.webContents.executeJavaScript(`window.setBackdrop && window.setBackdrop(${JSON.stringify(color)})`).catch(() => {});
+    scheduleMirror();
+  }
 });
 
 ipcMain.handle('get-wallpaper-state', () => ({ wanted: wallpaper.wanted, embedded: wallpaper.pinned || wallpaper.embedded, key: popOutKey }));
@@ -616,6 +1119,7 @@ function createWindow() {
     skipTaskbar: true,           // 작업표시줄에 표시 안 함
     minimizable: false,          // '바탕화면 보기'(Win+D) 등에 최소화되지 않게 (바탕화면처럼 남음)
     maximizable: false,
+    resizable: false,            // 화면 끝을 끌어도 창 크기가 바뀌지 않게 (크기는 앱이 화면에 맞춤 — fitWindowToScreen)
     alwaysOnTop: !wallpaper.wanted,   // 앞에 있는 동안 맨 위 (바탕화면 층에 넣을 거면 처음부터 풀어 둠)
     focusable: true,
     show: false,
@@ -629,8 +1133,19 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
+  // 캔버스 화면은 다른 주소로 넘어가지 않음 — 쪽지 속 링크 · 영상 재생기의 '유튜브에서 보기' 등은 기본 브라우저로
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+  });
+
   // 윈도우 준비 완료 후 표시 — 바탕화면에 넣기가 켜져 있으면 바탕화면 층에 넣은 채로 (앞으로 나오지 않게)
   mainWindow.once('ready-to-show', async () => {
+    if (process.platform === 'win32') setTimeout(() => { if (mainWindow) menuOverlayWindow(); }, 2000);   // 우클릭 메뉴 창을 미리 (처음 우클릭이 늦지 않게)
     const plain = process.platform === 'win32' ? bridgeCall(`plain ${windowHandle()}`, 3000) : null;   // 윈도우 11 둥근 모서리 · 테두리 · 여닫는 움직임 없앰
     if (wallpaper.wanted) {
       await plain;                                    // 처음 나타날 때부터 움직임 없이
@@ -736,6 +1251,8 @@ function createWindow() {
     desktopWatchers.forEach(w => { try { w.close(); } catch (_) {} });
     desktopWatchers = [];
     mainWindow = null;
+    destroyMirror();                               // 바탕화면 층 사진도 (남아 있으면 앱이 끝나지 않음)
+    if (menuOverlay && !menuOverlay.isDestroyed()) menuOverlay.destroy();   // 우클릭 메뉴 창도
     wallpaper.pinned = false;                      // 모듈은 창이 사라질 때 스스로 풂
     wallpaper.front = false;
     wallpaper.embedded = false;
@@ -765,6 +1282,7 @@ ipcMain.handle('get-canvas-state', async () => {
 });
 
 ipcMain.handle('save-canvas-state', async (event, state) => {
+  scheduleMirror();                                 // 바탕화면 층 사진도 새로 (저장은 바뀐 뒤 · 화면을 옮긴 뒤 옴)
   return writeState(state);
 });
 
@@ -1002,6 +1520,7 @@ ipcMain.on('debug-log', (event, text) => logLine(`[화면] ${text}`));
 ipcMain.on('set-dirty', (event, dirty, labels) => {
   unsaved.dirty = !!dirty;
   if (labels) unsaved.labels = labels;
+  if (dirty) scheduleMirror();                      // 자동 저장을 꺼 두어도 바탕화면 층 사진은 새로
 });
 // 종료 메뉴: 창 닫기를 main 에서 해야 '저장할까요?'를 거침 (화면에서 window.close() 하면 바로 닫힘)
 ipcMain.on('request-quit', () => {
@@ -1376,6 +1895,27 @@ ipcMain.handle('pick-file', async (event, title) => {
 });
 
 // 바탕화면 파일 아이콘 더블클릭: 기본 프로그램으로 열기
+// 쪽지 속 링크 → 기본 브라우저 (renderer/note-links.js). 인터넷 주소(http · https)만
+ipcMain.handle('open-external', async (event, url) => {
+  let u;
+  try { u = new URL(String(url)); } catch (_) { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  await shell.openExternal(u.href);
+  return true;
+});
+
+// 쪽지 속 유튜브 재생기 — 이 앱 화면(file://)은 보낸 곳(Referer)이 없어 유튜브가 재생을 막음 (오류 153)
+//   → 유튜브 재생기 요청에만 보낸 곳을 붙임
+function allowYouTubeEmbeds() {
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['https://www.youtube-nocookie.com/*', 'https://www.youtube.com/*'] },
+    (details, callback) => {
+      const headers = details.requestHeaders;
+      if (!headers.Referer && !headers.referer) headers.Referer = 'https://wallpaper-canvas.app/';
+      callback({ requestHeaders: headers });
+    });
+}
+
 ipcMain.handle('open-path', async (event, filePath) => {
   const error = await shell.openPath(filePath);   // 성공하면 빈 문자열
   return error === '' ? true : error;
@@ -1501,12 +2041,14 @@ app.on('second-instance', () => logLine('앱을 한 번 더 켜려 함 → 이�
 app.on('ready', () => {
   if (!firstInstance) return;
   genericIcons();          // 윈도우 기본 그림을 창이 뜨는 동안 미리 알아 둠 (저장된 내용을 불러올 때 씀)
+  allowYouTubeEmbeds();
   wallpaper.wanted = wallpaperSetting();
   if (process.platform === 'win32') startBridge(); // 다리를 창이 뜨는 동안 미리 띄워 둠 (바탕화면 층 · 윈도우 우클릭 메뉴, 준비에 1초쯤)
   if (process.platform === 'win32') {
     popOutKey = POP_OUT_KEYS.find(key => globalShortcut.register(key, togglePopOut)) || '';
     logLine(popOutKey ? `앞으로 꺼내기 단축키: ${popOutKey}` : `앞으로 꺼내기 단축키를 못 잡음 (${POP_OUT_KEYS.join(' · ')} 모두 다른 프로그램이 씀)`);
     setInterval(keepOnDesktop, 5000);
+    setInterval(keepMenuReady, 5000);             // 바탕 우클릭 메뉴를 미리 만들어 둠 (다리가 준비되면 · 10분마다 새로)
   }
   createTray();
   createWindow();

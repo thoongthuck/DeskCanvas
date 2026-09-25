@@ -49,6 +49,7 @@ import { searchMethods } from './search.js';
 import { minimapMethods } from './minimap.js';
 import { selectionMethods } from './selection.js';
 import { linkMethods } from './links.js';
+import { noteLinkMethods } from './note-links.js';
 import { alignMethods } from './align.js';
 
 // 휠을 확대·축소로 가로채지 않는 곳 (여기 안에서는 목록이 그대로 스크롤됨)
@@ -194,6 +195,7 @@ export class InfiniteCanvas {
     this.canvas.addEventListener('mousemove', (e) => this.handleCanvasMouseMove(e));
     this.canvas.addEventListener('mouseup', () => this.handleCanvasMouseUp());
     this.canvas.addEventListener('contextmenu', (e) => this.handleContextMenu(e));
+    this.canvas.addEventListener('mousedown', (e) => { if (e.button === 2) this.prefetchNativeMenu([]); });   // 바탕 메뉴는 보통 미리 만들어져 있음 — 없을 때만 (main.js)
     // 빈 곳을 두 번 누르면 캔버스 메뉴 (쪽지 추가 · 판 추가 …) — 우클릭은 윈도우 바탕화면 메뉴 (menus.js)
     this.canvas.addEventListener('dblclick', (e) => this.openDesktopMenu(e.clientX, e.clientY));
 
@@ -253,6 +255,7 @@ Object.assign(
   menuMethods,
   noteMethods,
   noteBodyMethods,
+  noteLinkMethods,
   fitMethods,
   codeCellMethods,
   stylePanelMethods,

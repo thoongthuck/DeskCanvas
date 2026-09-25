@@ -1,5 +1,6 @@
 // 화면 — 빈 곳을 끌어 이동, 휠로 확대·축소, 격자 그리기, 쪽지·사진·파일을 화면 좌표에 맞추기
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
+import { IS_MAC } from './constants.js';
 
 export const viewMethods = {
   handleCanvasMouseDown(e) {
@@ -8,7 +9,7 @@ export const viewMethods = {
     // (캘린더에서 펼친 쪽지는 app.js 의 문서 전체 mousedown 이 먼저 접음)
 
     // Ctrl · Shift 를 누른 채 끌면 네모로 여러 개 고르기 (selection.js) — 그냥 끌면 화면 이동
-    if (e.button === 0 && (e.ctrlKey || e.shiftKey || e.metaKey)) {
+    if (e.button === 0 && (e.ctrlKey || e.shiftKey || (IS_MAC && e.metaKey))) {
       this.startMarquee(e);
       return;
     }
@@ -132,6 +133,7 @@ export const viewMethods = {
     }
     el.classList.toggle('locked', !!(slot && slot.group.pinned));
     el.classList.toggle('group-lifted', !!(slot && this.groupSelected(slot.group)));   // 묶음이 골라져 떠오름 (groups.css)
+    el.classList.toggle('on-dark', !!(slot && this.groupIsDark(slot.group)));           // 어두운 색 묶음 속 — 밝은 칸 위에
     el.style.left = `${file.x * this.zoom + this.panX}px`;
     el.style.top = `${file.y * this.zoom + this.panY}px`;
     el.style.width = `${file.width * this.zoom}px`;

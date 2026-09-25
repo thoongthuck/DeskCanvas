@@ -31,7 +31,10 @@ export const settingsMethods = {
     s.alignGuides = s.alignGuides !== false;
     if (s.calendarView !== 'week') s.calendarView = 'month';
     s.weekStart = s.weekStart === 1 ? 1 : 0;
-    if (!NOTE_COLORS[s.groupColor]) s.groupColor = 'yellow';
+    if (s.groupColor !== 'custom' && !NOTE_COLORS[s.groupColor]) s.groupColor = 'yellow';
+    if (!['theme', 'light', 'dark'].includes(s.boardTone)) s.boardTone = 'theme';
+    if (s.noteLinkView !== 'link') s.noteLinkView = 'embed';
+    if (!isHexColor(s.groupCustomColor)) s.groupCustomColor = DEFAULT_SETTINGS.groupCustomColor;
     if (!['paper', 'tape', 'pin', 'none'].includes(s.photoFrame)) s.photoFrame = 'paper';
     s.videoSound = !!s.videoSound;
     s.videoAutoplay = s.videoAutoplay !== false;
@@ -75,6 +78,7 @@ export const settingsMethods = {
     const s = this.settings;
     setLanguage(s.language);
     document.body.classList.toggle('theme-dark', s.theme === 'dark');
+    if (!key || key === 'theme') this.updateBoardTones?.();        // 색을 정하지 않은 판은 배경 테마를 따라감 (boards.js)
     document.body.classList.toggle('overflow-expand', s.overflow === 'expand');
 
     if (key === 'autoSave' && s.autoSave && this.dirty) this.persist();
@@ -83,6 +87,7 @@ export const settingsMethods = {
     if (!key || key === 'theme') window.canvasAPI?.setBackground?.(s.theme === 'dark' ? '#1F252C' : '#F5F5F5');   // 창 바탕색도 (main.js)
     if (!key || key === 'language') this.refreshTexts();
     if (!key || key === 'overflow') this.fitAllNotes();
+    if (key === 'noteLinkView') this.refreshAllNoteLinks();       // 쪽지 속 주소 보기 방식 (note-links.js)
     if (!key || key === 'theme') this.refreshFallbackIcons();    // 파일 기본 그림도 밝은 · 어두운 것으로
     if (!key || key === 'holidays' || key === 'holidayCountry' || key === 'language') this.loadHolidays();
     this.draw();

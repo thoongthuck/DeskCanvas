@@ -50,6 +50,7 @@ export const dragMethods = {
       if (d.kind === 'file' && d.mode === 'move') this.liftFileFromGroup(d);  // 파일 묶음에서 꺼냄
     }
     d.moved = true;
+    document.body.classList.add('pointer-busy');                              // 쪽지 속 영상 재생기가 마우스를 가로채지 않게 (styles/note-links.css)
     if (d.mode === 'move') this.markDragging(d, true);                        // 끄는 것은 다른 쪽지 · 사진 · 파일 앞으로 (판에서 떼면 다시 그려져서 매번)
 
     if (d.mode === 'move') {
@@ -99,6 +100,7 @@ export const dragMethods = {
     if (!drag) return;
     const { kind, item, moved } = drag;
     this.drag = null;
+    document.body.classList.remove('pointer-busy');
     if (moved && drag.mode === 'move') this.markDragging(drag, false);
     if (!moved && drag.narrowTo) this.selectItem(drag.narrowTo);   // 여럿 고른 채 하나를 그냥 눌렀으면 그것만 고름
     const followers = drag.followers || [];

@@ -1,6 +1,9 @@
 /* ===== 판 — 캘린더 · 연대표 (아이콘_가이드.md 12장, 시안_캘린더판.png · 시안_연대표판.png) =====
    renderer/boards.js · calendar.js · timeline.js — 모든 값은 zoom 1 기준 (--zoom 을 곱해 씀)
-   판은 쪽지 · 사진 · 파일보다 아래 (z-index 0) */
+   쌓임 순서 (뒤에서부터 z-index):
+     0 캘린더 · 연대표 판 → 1 고정한 쪽지 · 사진 → 2 파일 묶음과 담긴 파일 (같은 층 — 다른 것이 지나가면 함께 가려짐)
+     → 3 연결선 → 4 파일 → 5 쪽지 · 사진 (판에 겹친 쪽지 맨 위 6) → 7 고른 쪽지 · 사진
+     → 20 캘린더에서 펼친 쪽지 · 30 이름 바꾸는 파일 · 35 연결선 손잡이 · 40 끄는 중 */
 .board {
   --z: var(--zoom, 1);
   position: absolute;
@@ -323,7 +326,7 @@
 .sticky-note.on-board .note-header { padding-top: calc(12px * var(--z)); }
 .sticky-note.on-board .note-time,
 .sticky-note.on-board .note-resize { display: none; }
-.sticky-note.stack-top { z-index: 2; }
+.sticky-note.stack-top { z-index: 6; }
 .sticky-note.board-hidden { display: none; }
 .sticky-note.locked,
 .sticky-note.locked:active { cursor: default; }
@@ -597,49 +600,50 @@
 }
 .tl-add-seg:hover { background: #F1EEE9; color: #5A6472; }
 
-/* ---- 어두운 배경일 때 (설정 → 캔버스 → 배경 테마) — 쪽지 색은 그대로 ---- */
-body.theme-dark .board {
+/* ---- 검은 판 (판 우클릭 › 판 색상 › 검은색 · 설정 › 판 › 기본 판 색상 · 배경 테마가 어두우면 기본) — 쪽지 색은 그대로
+   renderer/boards.js 가 캘린더 · 연대표 판마다 .tone-dark 를 붙임 (파일 묶음은 포스트잇 색이라 빼고) ---- */
+.board.tone-dark {
   background: #2A3038;
   border-color: #3A424C;
   color: #E7EAEE;
 }
-body.theme-dark .board.selected:not(.board-group) {
+.board.tone-dark.selected:not(.board-group) {
   border-color: #56606D;
   box-shadow: 0 calc(16px * var(--z)) calc(36px * var(--z)) rgba(0, 0, 0, 0.45),
               0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(0, 0, 0, 0.3);
 }
-body.theme-dark .board-head { border-bottom-color: #3A424C; }
-body.theme-dark .board-btn:hover,
-body.theme-dark .board-text-btn:hover,
-body.theme-dark .cal-add:hover,
-body.theme-dark .tl-add-seg:hover { background: rgba(255, 255, 255, 0.07); }
-body.theme-dark .board-text-btn { border-color: #4A5360; color: #C9D1DB; }
-body.theme-dark .board-seg { background: #353D47; }
-body.theme-dark .board-seg button { color: #AEB6C2; }
-body.theme-dark .board-seg button.current { background: #4A5360; color: #FFFFFF; box-shadow: none; }
-body.theme-dark .board-name { color: #8A94A2; }
-body.theme-dark .board-name.tl-title { color: inherit; }
-body.theme-dark .cal-weekdays { color: #8A94A2; }
-body.theme-dark .cal-wd.sun { color: #D9646B; }
-body.theme-dark .cal-wd.sat { color: #4A7FD0; }
-body.theme-dark .cal-grid,
-body.theme-dark .cal-cell { border-color: #353D47; }
-body.theme-dark .cal-cell.other { background: #242A31; }
-body.theme-dark .cal-cell.other .cal-date { color: #6B7480; }
-body.theme-dark .cal-cell.holiday .cal-date { color: #D9646B; }
-body.theme-dark .cal-cell.today { background: rgba(90, 152, 254, 0.12); }
-body.theme-dark .cal-cell.fan-open { background: rgba(90, 152, 254, 0.16); }
-body.theme-dark .cal-date { color: #AEB6C2; }
-body.theme-dark .board:not(.pinned) .cal-cell:hover { background: rgba(255, 255, 255, 0.04); }
-body.theme-dark .cal-count { background: #3A424C; color: #C9D1DB; }
-body.theme-dark .fan-halo { fill: rgba(31, 37, 44, 0.82); }
-body.theme-dark .tl-rail {
+.board.tone-dark .board-head { border-bottom-color: #3A424C; }
+.board.tone-dark .board-btn:hover,
+.board.tone-dark .board-text-btn:hover,
+.board.tone-dark .cal-add:hover,
+.board.tone-dark .tl-add-seg:hover { background: rgba(255, 255, 255, 0.07); }
+.board.tone-dark .board-text-btn { border-color: #4A5360; color: #C9D1DB; }
+.board.tone-dark .board-seg { background: #353D47; }
+.board.tone-dark .board-seg button { color: #AEB6C2; }
+.board.tone-dark .board-seg button.current { background: #4A5360; color: #FFFFFF; box-shadow: none; }
+.board.tone-dark .board-name { color: #8A94A2; }
+.board.tone-dark .board-name.tl-title { color: inherit; }
+.board.tone-dark .cal-weekdays { color: #8A94A2; }
+.board.tone-dark .cal-wd.sun { color: #D9646B; }
+.board.tone-dark .cal-wd.sat { color: #4A7FD0; }
+.board.tone-dark .cal-grid,
+.board.tone-dark .cal-cell { border-color: #353D47; }
+.board.tone-dark .cal-cell.other { background: #242A31; }
+.board.tone-dark .cal-cell.other .cal-date { color: #6B7480; }
+.board.tone-dark .cal-cell.holiday .cal-date { color: #D9646B; }
+.board.tone-dark .cal-cell.today { background: rgba(90, 152, 254, 0.12); }
+.board.tone-dark .cal-cell.fan-open { background: rgba(90, 152, 254, 0.16); }
+.board.tone-dark .cal-date { color: #AEB6C2; }
+.board.tone-dark:not(.pinned) .cal-cell:hover { background: rgba(255, 255, 255, 0.04); }
+.board.tone-dark .cal-count { background: #3A424C; color: #C9D1DB; }
+.fan-overlay.tone-dark .fan-halo { fill: rgba(31, 37, 44, 0.82); }
+.board.tone-dark .tl-rail {
   background: linear-gradient(#434B56, #3A424C 55%, #313840);
   box-shadow: 0 calc(2px * var(--z)) calc(4px * var(--z)) rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
-body.theme-dark .tl-screw { background: radial-gradient(circle at 35% 35%, #8A94A2, #4A5360); }
-body.theme-dark .tl-tick { background: #4E5763; }
-body.theme-dark .tl-tick.year { background: #6B7480; }
-body.theme-dark .tl-label,
-body.theme-dark .tl-seg-label { color: #AEB6C2; }
-body.theme-dark .tl-string { background: #5E6772; }
+.board.tone-dark .tl-screw { background: radial-gradient(circle at 35% 35%, #8A94A2, #4A5360); }
+.board.tone-dark .tl-tick { background: #4E5763; }
+.board.tone-dark .tl-tick.year { background: #6B7480; }
+.board.tone-dark .tl-label,
+.board.tone-dark .tl-seg-label { color: #AEB6C2; }
+.board.tone-dark .tl-string { background: #5E6772; }

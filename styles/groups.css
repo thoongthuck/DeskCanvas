@@ -23,6 +23,7 @@ body.theme-dark .board.board-group {
    담긴 파일은 따로 그려져서 같이 떠오르게 함 (.file-icon.group-lifted — view.js updateFilePosition) */
 .board.board-group,
 body.theme-dark .board.board-group {
+  z-index: 2;                            /* 담긴 파일과 같은 층 — 쪽지 · 사진 · 파일이 지나가면 묶음과 파일이 함께 가려짐 */
   transition: transform 0.2s ease-out, filter 0.2s ease-out;
 }
 .board.board-group.selected,
@@ -32,6 +33,7 @@ body.theme-dark .board.board-group.selected {
           drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.14));
 }
 .file-icon.in-group {
+  z-index: 2;                            /* 묶음과 같은 층 (묶음보다 뒤 문서 순서라 묶음 위에 그려짐) */
   transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s ease-out;
 }
 .file-icon.in-group.group-lifted { transform: translateY(calc(-3px * var(--zoom))); }
@@ -45,6 +47,25 @@ body.theme-dark .board.board-group.selected {
 .board-group.note-green  { --group-fold: url("../icons/fold-green.svg"); }
 .board-group.note-purple { --group-fold: url("../icons/fold-purple.svg"); }
 .board-group.note-gray   { --group-fold: url("../icons/fold-gray.svg"); }
+/* 직접 고른 색은 groups.js 가 --note-bg · --group-fold 를 넣어 줌. 어두운 색이면 글자 · 아이콘을 밝게 (쪽지 .note-dark 와 같음) */
+.board.board-group.group-dark,
+body.theme-dark .board.board-group.group-dark { color: #F3F4F6; }
+.board-group.group-dark .board-name.group-title { color: #F3F4F6; }
+.board-group.group-dark .board-name.group-title.untitled { color: rgba(255, 255, 255, 0.55); }
+.board-group.group-dark .group-count { color: rgba(255, 255, 255, 0.6); }
+.board-group.group-dark .group-icon,
+.board-group.group-dark .group-toggle img,
+.board-group.group-dark .group-more img,
+.board-group.group-dark .group-peek img { filter: invert(1) hue-rotate(180deg) brightness(1.1); }
+.board-group.group-dark .group-more:hover,
+.board-group.group-dark .group-toggle:hover { background: rgba(255, 255, 255, 0.12); }
+.board-group.group-dark .group-empty { color: rgba(255, 255, 255, 0.6); border-color: rgba(255, 255, 255, 0.3); }
+/* 어두운 색 묶음 속 파일: 밝은 칸 위에 (그림 · 이름이 잘 보이게) */
+.file-icon.in-group.on-dark,
+body.theme-dark .file-icon.in-group.on-dark {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(255, 255, 255, 0.5);
+}
 
 /* 머리 — 위 여백 15 + 아이콘 24 (쪽지 머리와 같은 자리). 잡고 끌면 묶음이 옮겨짐 */
 .board-group .board-head.group-head {

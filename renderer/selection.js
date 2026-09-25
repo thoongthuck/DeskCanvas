@@ -9,6 +9,7 @@
 //   this.selection (Set) 이 고른 것 전부. 예전 코드의 this.selectedId 는 '마지막으로 고른 것' (app.js)
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
+import { IS_MAC } from './constants.js';
 
 const MARQUEE_MIN = 3;                              // 이보다 작게 끌면 네모로 고르지 않음 (그냥 누르기)
 
@@ -24,7 +25,7 @@ export const selectionMethods = {
   //   그 밖: 그것 하나만. eligible = false (고정한 것 등): 더하기 없이 그것 하나만
   pressSelect(e, id, eligible = true) {
     this.narrowTo = null;
-    const adding = e.button === 0 && (e.ctrlKey || e.shiftKey || e.metaKey);
+    const adding = e.button === 0 && (e.ctrlKey || e.shiftKey || (IS_MAC && e.metaKey));
     if (adding && eligible) {
       if (this.selection.has(id)) {
         this.selection.delete(id);

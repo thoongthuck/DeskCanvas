@@ -1,0 +1,64 @@
+/* ===== 파일 묶음 풀기 애니메이션 =====
+   '묶음 풀기'를 하면 포스트잇(묶음)은 접힌 모서리가 펴지면서 사라지고,
+   담겨 있던 파일은 벽에 내려앉습니다. 움직임 모양만 여기서 정하고,
+   재생 시점은 group-animations.js가 정합니다.
+
+   빼려면 index.html에서 이 파일과 group-animations.js를 불러오는 두 줄을 지우면 됩니다.
+
+   이 파일이 기대는 이름 — styles/groups.css · styles.css에 있음. 바뀌면 오류 없이 애니메이션이 멈춥니다
+   - --fold : 묶음의 접힌 모서리 크기 (styles/groups.css의 .board-group)
+   - --z    : 캔버스 확대 배율 (styles/boards.css의 .board)
+   - --zoom : 파일 아이콘의 확대 배율 (styles.css의 .file-icon) */
+
+/* 접힌 모서리(--fold)를 부드럽게 펴려고 '길이' 값으로 등록 (note-animations.css와 같은 등록) */
+@property --fold {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 28px;
+}
+
+/* 묶음 풀기 (0.3초)
+   ① 0 ~ 0.14초  접힌 모서리가 펴짐 (묶여 있던 것이 풀리는 모양)
+   ② 0.14 ~ 0.3초 종이가 아주 조금 커지면서 그림자와 함께 사라짐 */
+@keyframes group-unwrap {
+  0% {
+    --fold: calc(28px * var(--z, 1));
+    scale: 1;
+    opacity: 1;
+    filter: drop-shadow(0 calc(4px * var(--z, 1)) calc(10px * var(--z, 1)) rgba(31, 47, 69, 0.08))
+            drop-shadow(0 calc(1px * var(--z, 1)) calc(2px * var(--z, 1)) rgba(31, 47, 69, 0.05));
+  }
+  45% {
+    --fold: 0px;                                   /* 모서리가 다 펴짐 */
+    scale: 1.012;
+    opacity: 0.9;
+    filter: drop-shadow(0 calc(2px * var(--z, 1)) calc(6px * var(--z, 1)) rgba(31, 47, 69, 0.05));
+  }
+  100% {
+    --fold: 0px;
+    scale: 1.03;
+    opacity: 0;
+    filter: none;
+  }
+}
+
+/* 놓여남 (0.26초): 묶음이 사라진 자리에서 파일이 벽에 내려앉음
+   위치(left · top)는 건드리지 않고 크기만 살짝 — 앱이 쓰는 transform(묶음 선택 시 떠오름)과 겹치지 않게
+   scale · translate 를 따로 씁니다 */
+@keyframes file-settle {
+  0% {
+    scale: 1.07;
+    translate: 0 calc(-4px * var(--zoom, 1));
+    filter: drop-shadow(0 calc(7px * var(--zoom, 1)) calc(9px * var(--zoom, 1)) rgba(31, 47, 69, 0.18));
+  }
+  55% {
+    scale: 0.992;
+    translate: 0 0;
+    filter: drop-shadow(0 calc(1px * var(--zoom, 1)) calc(2px * var(--zoom, 1)) rgba(31, 47, 69, 0.06));
+  }
+  100% {
+    scale: 1;
+    translate: 0 0;
+    filter: none;
+  }
+}

@@ -7,7 +7,8 @@
 //   접으면 머리 한 줄만 남고 담긴 파일 그림이 작게 늘어섬 (그 자리에서 다시 펼침 — 창을 여는 폴더와 다름)
 //   누르면 선택 (쪽지처럼 떠오름 — 머리 아이콘은 그대로 묶음 아이콘). 어디를 잡아도 옮겨짐
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
-import { ICON_DIR, ICON_GRID, NOTE_COLORS } from './constants.js';
+import { ICON_DIR, ICON_GRID, NOTE_COLORS, STYLE_COLOR_ORDER } from './constants.js';
+import { customFoldImage, isHexColor, isDarkColor } from './color.js';
 import { t } from './i18n.js';
 import { fallbackIcon, usableIcon } from './file-icon.js';
 
@@ -28,10 +29,13 @@ const div = (className) => {
 
 export const groupMethods = {
   newGroupData() {
+    const s = this.settings || {};
+    const custom = s.groupColor === 'custom' && isHexColor(s.groupCustomColor);
     return {
       width: PAD.left + PAD.right + START.cols * CELL.width,
       height: HEAD + START.rows * CELL.height + PAD.bottom,
-      color: (this.settings && this.settings.groupColor) || 'yellow',   // 설정 › 판 › 새 파일 묶음 색
+      color: custom ? 'custom' : NOTE_COLORS[s.groupColor] ? s.groupColor : 'yellow',   // 설정 › 쪽지 › 기본 파일 묶음 색상
+      customColor: custom ? s.groupCustomColor : '',   // 'custom' 일 때 #RRGGBB (쪽지와 같음)
       collapsed: false,                            // 접어서 머리 한 줄만
       fileIds: [],
     };
@@ -42,7 +46,9 @@ export const groupMethods = {
     const start = this.newGroupData();
     if (typeof board.width !== 'number' || !(board.width >= min.width)) board.width = start.width;
     if (typeof board.height !== 'number' || !(board.height >= min.height)) board.height = start.height;
-    if (!NOTE_COLORS[board.color]) board.color = 'yellow';
+    if (board.color === 'custom' && !isHexColor(board.customColor)) board.color = 'yellow';
+    if (board.color !== 'custom' && !NOTE_COLORS[board.color]) board.color = 'yellow';
+    board.customColor = board.color === 'custom' ? board.customColor.toUpperCase() : '';
     board.collapsed = !!board.collapsed;
     board.fileIds = Array.isArray(board.fileIds) ? [...new Set(board.fileIds.filter(id => typeof id === 'string'))] : [];
     return board;
@@ -115,6 +121,15 @@ export const groupMethods = {
   // ---- 그리기 ----
   renderGroup(board, el) {
     Object.keys(NOTE_COLORS).forEach(c => el.classList.toggle(`note-${c}`, c === board.color));
+    const custom = this.groupCustomColor(board);                  // 직접 고른 색: 바탕 · 접힌 모서리를 그 색으로 (쪽지와 같은 방법)
+    if (custom) {
+      el.style.setProperty('--note-bg', custom);
+      el.style.setProperty('--group-fold', customFoldImage(custom));
+    } else {
+      el.style.removeProperty('--note-bg');
+      el.style.removeProperty('--group-fold');
+    }
+    el.classList.toggle('group-dark', !!custom && isDarkColor(custom));   // 어두운 색: 글자 · 아이콘을 밝게
     el.classList.toggle('collapsed', !!board.collapsed);
     const count = board.fileIds.length;
 
@@ -479,7 +494,7 @@ export const groupMethods = {
     });
     this.boards = this.boards.filter(b => b.id !== group.id);
     const el = document.getElementById(group.id);
-    if (el) el.remove();                          // 포스트잇이 떼어지는 움직임은 animation/note-animations.js 가 붙임
+    if (el) el.remove();                          // 풀리는 움직임(모서리가 펴지며 사라짐 · 파일 내려앉음)은 animation/group-animations.js 가 붙임
     members.forEach(file => {
       const fileEl = document.getElementById(file.id);
       if (fileEl) this.updateFilePosition(fileEl, file);
@@ -487,25 +502,92 @@ export const groupMethods = {
     this.scheduleSave();
   },
 
-  setGroupColor(group, color) {
-    if (group.color === color) return;
-    this.record();
+  // 직접 고른 색 (#RRGGBB) — 정해 둔 색이면 ''
+  groupCustomColor(group) {
+    return group.color === 'custom' && isHexColor(group.customColor) ? group.customColor : '';
+  },
+
+  // 어두운 색으로 직접 고른 묶음 — 담긴 파일은 밝은 칸 위에 (styles/groups.css .on-dark)
+  groupIsDark(group) {
+    const custom = this.groupCustomColor(group);
+    return !!custom && isDarkColor(custom);
+  },
+
+  // color: NOTE_COLORS 이름 · 'custom' (hex 와 함께). record: false 면 되돌리기 기록 없이 (직접 고르는 동안 — recordHistory 로 한 번)
+  setGroupColor(group, color, hex = '', { record = true } = {}) {
+    const custom = color === 'custom' ? String(hex).toUpperCase() : '';
+    if (group.color === color && (group.customColor || '') === custom) return;
+    if (color !== 'custom' && !NOTE_COLORS[color]) return;
+    if (record) this.record();
     group.color = color;
+    group.customColor = custom;
     group.updatedAt = Date.now();
     this.renderBoard(group);
+    this.groupMembers(group).forEach(file => {                    // 어두운 색이면 담긴 파일 칸도 밝게
+      const el = document.getElementById(file.id);
+      if (el) this.updateFilePosition(el, file);
+    });
     this.scheduleSave();
+  },
+
+  // 묶음 우클릭 › '색상 ›' 옆에 열리는 작은 창 — 쪽지 스타일 창의 쪽지 색과 같은 점 6개 + 직접 고르기
+  openGroupColorPanel(menu, anchor, group) {
+    if (this.stylePanel && this.stylePanel.dataset.group === group.id) return;
+    this.closeStylePanel();
+    this.closeContextSubmenu();
+    const panel = document.createElement('div');
+    panel.id = 'style-panel';                 // 바깥 누르면 닫히기는 스타일 창과 같게
+    panel.className = 'color-panel';
+    panel.dataset.group = group.id;
+    document.body.appendChild(panel);
+    this.stylePanel = panel;
+    this.framePanelAt = { menu, anchor };     // 자리 잡기는 사진 틀 창과 같이 (photo-frame.js placeFramePanel)
+    this.renderGroupColorPanel(group.id);
+    anchor.classList.add('open');
+  },
+
+  renderGroupColorPanel(id) {
+    const panel = this.stylePanel;
+    const group = this.boards.find(b => b.id === id);
+    if (!panel || !group) return;
+    panel.innerHTML = '';
+    const section = document.createElement('div');
+    section.className = 'style-section';
+    const title = document.createElement('div');
+    title.className = 'style-title';
+    title.textContent = t('menu.groupColor');
+    const dots = document.createElement('div');
+    dots.className = 'style-colors';
+    STYLE_COLOR_ORDER.forEach(key => {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'style-dot' + (group.color === key ? ' current' : '');
+      dot.style.background = NOTE_COLORS[key].swatch;
+      dot.title = t(`color_${key}`);
+      dot.addEventListener('click', () => {
+        this.setGroupColor(group, key);
+        this.renderGroupColorPanel(id);
+      });
+      dots.appendChild(dot);
+    });
+    dots.appendChild(this.createCustomColorDot({
+      className: 'style-dot',
+      current: group.color === 'custom',
+      value: group.customColor || this.settings.groupCustomColor,
+      onStart: () => this.recordHistory(),
+      onInput: (hex) => this.setGroupColor(group, 'custom', hex, { record: false }),
+      onDone: () => { this.dropHistoryIfUnchanged(); this.renderGroupColorPanel(id); },
+    }));
+    section.append(title, dots);
+    panel.appendChild(section);
+    this.placeFramePanel();
   },
 
   // 판 메뉴(boards.js)의 묶음 항목: 이름 바꾸기 · 색상 › · 묶음 잠금 · ─ · 묶음 풀기
   groupMenuItems(group) {
     return [
       { icon: 'edit.svg', label: t('menu.rename'), action: () => this.renameBoard(group) },
-      {
-        icon: 'palette.svg', label: t('menu.groupColor'), arrow: true,
-        submenu: Object.keys(NOTE_COLORS).map(c => ({
-          label: t(`color.${c}`), swatch: NOTE_COLORS[c].bg, current: group.color === c, action: () => this.setGroupColor(group, c),
-        })),
-      },
+      { icon: 'palette.svg', label: t('menu.groupColor'), arrow: true, panel: (menu, row) => this.openGroupColorPanel(menu, row, group) },
       { icon: 'chevron-down.svg', label: t(group.collapsed ? 'menu.expandGroup' : 'menu.collapseGroup'), action: () => this.toggleGroupCollapse(group) },
       { icon: 'pin.svg', label: t(group.pinned ? 'menu.unlockGroup' : 'menu.lockGroup'), action: () => this.toggleBoardLock(group) },
       ...this.linkMenuItems(group.id),                     // 연결선 잇기 · 지우기 (links.js)

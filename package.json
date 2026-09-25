@@ -1,17 +1,38 @@
 {
-  "name": "wallpaper-canvas",
-  "version": "1.0.0",
+  "name": "DeskCanvas",
+  "version": "0.1.0",
   "description": "Infinite canvas wallpaper with sticky notes and file support",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build:native": "node native/desktop-pin/build.js"
+    "build:native": "node native/desktop-pin/build.js",
+    "build": "electron-builder"
   },
-  "keywords": ["wallpaper", "canvas", "sticky-notes"],
+  "keywords": [
+    "wallpaper",
+    "canvas",
+    "sticky-notes"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "44.4.3"
+    "electron": "44.4.3",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.deskcanvas.app",
+    "productName": "DeskCanvas",
+    "asarUnpack": [
+      "native/**"
+    ],
+    "files": [
+      "**/*",
+      "!native/desktop-pin/build/**",
+      "!dist/**"
+    ],
+    "win": {
+      "target": "nsis"
+    }
   }
 }
