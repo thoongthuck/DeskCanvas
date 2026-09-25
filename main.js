@@ -1145,6 +1145,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     ...screenArea(),              // 주 모니터의 작업 영역 (작업표시줄 뺀 부분) — 해상도 · 배율에 맞춤
     backgroundColor: canvasBackground(),   // 불투명한 창 — 바탕화면 층에서 들고 날 때 한 장면이 비어도 뒤가 비치지 않게
+    icon: path.join(__dirname, 'icons', process.platform === 'win32' ? 'app.ico' : 'app.png'),   // 앱 아이콘 (설치판 exe 는 package.json build.win.icon)
     frame: false,
     thickFrame: false,           // 창 틀 · 그림자 · 여닫는 움직임 없음 (불투명 창에 틀이 붙으면 페이지가 안쪽으로 줄어듦)
     hasShadow: false,
