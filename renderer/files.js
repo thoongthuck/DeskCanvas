@@ -220,8 +220,9 @@ export const fileMethods = {
 
   // 빈 바탕 윈도우 메뉴로 무언가 한 뒤 (새 폴더 · 새로 만들기 › · 붙여넣기 …) — 잠깐 동안 새로 생기는 파일은 누른 자리에 놓고,
   //   하나만 생겼고 '새 …' 이름이면 이름 바꾸기 칸을 띄움 (탐색기처럼)
-  expectNewDesktopItems(at) {
-    this.pendingNewAt = { at, until: Date.now() + 6000, count: 0 };
+  //   group: 새로 생긴 파일을 넣을 묶음 id (캔버스 Ctrl+V 로 묶음 하나를 붙여넣을 때 — clipboard.js)
+  expectNewDesktopItems(at, group = null) {
+    this.pendingNewAt = { at, until: Date.now() + 6000, count: 0, group };
   },
 
   // 빈 바탕 메뉴 '새로 고침' — 바탕화면 폴더를 다시 읽음
@@ -301,6 +302,8 @@ export const fileMethods = {
       this.pendingNewAt = null;
       requestAnimationFrame(() => this.startFileRename(created[0]));
     }
+    const intoGroup = pending && pending.group && created.length ? this.findBoard(pending.group) : null;
+    if (intoGroup && intoGroup.kind === 'group') this.moveFilesToGroup(created, intoGroup);   // 붙여넣은 묶음 속으로
 
     if (changed) {
       this.cleanGroupMembership();                     // 사라진 파일은 파일 묶음에서도 뺌
@@ -311,10 +314,10 @@ export const fileMethods = {
 
   // 바탕 우클릭 '붙여넣기' · '바로 가기 붙여넣기' — 클립보드의 파일을 바탕화면 폴더로 (main.js paste-files)
   //   새로 생긴 아이콘은 우클릭한 자리에 (expectNewDesktopItems)
-  async pasteDesktopFiles(link, at) {
+  async pasteDesktopFiles(link, at, group = null) {
     const api = window.canvasAPI;
     if (!api || !api.pasteFiles) return;
-    if (at) this.expectNewDesktopItems(at);
+    if (at) this.expectNewDesktopItems(at, group);
     await api.pasteFiles(link);
   },
 

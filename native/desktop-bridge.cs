@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 [ComImport, Guid("000214E6-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public interface IShellFolder {
@@ -109,6 +110,10 @@ public class DesktopBridge : Form {
   [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr hwnd);
   [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint tid, ref GUITHREADINFO info);
   [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] static extern uint GetClipboardSequenceNumber();
+  [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SystemParametersInfoW")] static extern bool SpiGetText(uint action, uint param, StringBuilder pv, uint winIni);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SystemParametersInfoW", SetLastError = true)] static extern bool SpiSetText(uint action, uint param, string pv, uint winIni);
+  [DllImport("user32.dll")] static extern bool SetSysColors(int count, int[] elements, int[] colors);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessageW(string name);
   [DllImport("user32.dll")] static extern IntPtr CreatePopupMenu();
   [DllImport("user32.dll")] static extern bool DestroyMenu(IntPtr menu);
@@ -274,6 +279,11 @@ public class DesktopBridge : Form {
       case "menuclose": MenuClose(); return "ok";
       case "lang": return LangInfo();
       case "clipfiles": return ClipFiles();
+      case "clipset": return ClipSet(Encoding.UTF8.GetString(Convert.FromBase64String(p.Length > 1 ? p[1] : "")));
+      case "clipseq": return "ok " + GetClipboardSequenceNumber();
+      case "wallget": return WallGet();
+      case "wallcolor": return WallColor(p.Length > 1 ? p[1] : "");
+      case "wallrestore": return WallRestore(p.Length > 1 ? p[1] : "");
       case "folderverb": return FolderVerb(p[1], Encoding.UTF8.GetString(Convert.FromBase64String(p.Length > 2 ? p[2] : "")));
       case "langapply": { string r = ApplyUiLanguage(); return LangInfo() + " apply[" + r + "] tid=" + GetCurrentThreadId(); }
       case "restore": return Restore(Encoding.UTF8.GetString(Convert.FromBase64String(p.Length > 1 ? p[1] : "")));
@@ -767,6 +777,83 @@ public class DesktopBridge : Form {
     } catch { }
     sb.Append("],\"move\":").Append(move ? "true" : "false").Append('}');
     return "ok " + Convert.ToBase64String(Encoding.UTF8.GetBytes(sb.ToString()));
+  }
+
+  // clipset <base64>: 캔버스에서 Ctrl+C — 파일은 탐색기처럼 파일로 (탐색기 · 바탕화면에 붙여넣기), 쪽지 글은 글자로 윈도우 클립보드에
+  //   첫 줄 = 파일 수 N, 다음 N 줄 = 파일 경로, 나머지 = 글. 답: ok <클립보드 순번> (앱이 붙여넣을 때 그 뒤로 다른 것을 복사했는지 봄)
+  static string ClipSet(string payload) {
+    string[] lines = payload.Replace("\r\n", "\n").Split('\n');
+    int n = 0;
+    int.TryParse(lines.Length > 0 ? lines[0] : "0", out n);
+    var files = new System.Collections.Specialized.StringCollection();
+    for (int i = 1; i <= n && i < lines.Length; i++) if (lines[i].Length > 0) files.Add(lines[i]);
+    string text = n + 1 < lines.Length ? string.Join("\n", lines, n + 1, lines.Length - n - 1) : "";
+    if (files.Count == 0 && text.Length == 0) return "ok " + GetClipboardSequenceNumber();
+    var data = new DataObject();
+    if (files.Count > 0) {
+      data.SetFileDropList(files);
+      data.SetData("Preferred DropEffect", new System.IO.MemoryStream(BitConverter.GetBytes(1)));   // 복사 (DROPEFFECT_COPY)
+    }
+    if (text.Length > 0) data.SetText(text.Replace("\n", "\r\n"), TextDataFormat.UnicodeText);
+    try {
+      Clipboard.SetDataObject(data, true, 5, 40);      // 다른 프로그램이 클립보드를 잠깐 잡고 있으면 몇 번 더
+    } catch (Exception e) {
+      return "fail " + e.Message.Replace('\n', ' ');
+    }
+    return "ok " + GetClipboardSequenceNumber();
+  }
+
+  // ================ 윈도우 배경 화면 (main.js desktopBg — 설정 '바탕화면 배경 색 맞추기') ================
+  // wallget: 지금 배경 화면 → "ok <base64 네 줄>" 그림 경로 · 맞춤 방식(WallpaperStyle) · 바둑판(TileWallpaper) · 배경색("R G B")
+  // wallcolor <#RRGGBB>: 그림을 빼고 그 색 단색으로 — Win+Tab(작업 보기) 등에서 캔버스와 같은 색이 보이게
+  // wallrestore <base64 네 줄>: wallget 으로 적어 둔 원래 배경 화면으로
+  const uint SPI_SETDESKWALLPAPER = 0x0014, SPI_GETDESKWALLPAPER = 0x0073, SPIF_UPDATEINIFILE = 0x1, SPIF_SENDCHANGE = 0x2;
+  const int COLOR_DESKTOP = 1;
+
+  static string WallGet() {
+    var path = new StringBuilder(1024);
+    SpiGetText(SPI_GETDESKWALLPAPER, (uint)path.Capacity, path, 0);
+    string style = "", tile = "", color = "";
+    using (var k = Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop")) {
+      if (k != null) {
+        style = Convert.ToString(k.GetValue("WallpaperStyle", ""));
+        tile = Convert.ToString(k.GetValue("TileWallpaper", ""));
+      }
+    }
+    using (var k = Registry.CurrentUser.OpenSubKey(@"Control Panel\Colors")) {
+      if (k != null) color = Convert.ToString(k.GetValue("Background", ""));
+    }
+    string text = path.ToString() + "\n" + style + "\n" + tile + "\n" + color;
+    return "ok " + Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+  }
+
+  // "R G B" → 윈도우 색 (배경색은 레지스트리에 적고 지금 화면에도 바로)
+  static void SetDesktopColor(int r, int g, int b) {
+    using (var k = Registry.CurrentUser.CreateSubKey(@"Control Panel\Colors")) k.SetValue("Background", r + " " + g + " " + b);
+    SetSysColors(1, new[] { COLOR_DESKTOP }, new[] { r | (g << 8) | (b << 16) });
+  }
+
+  static string WallColor(string hex) {
+    hex = hex.TrimStart('#');
+    int rgb;
+    if (hex.Length != 6 || !int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out rgb)) return "fail color";
+    SetDesktopColor((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
+    if (!SpiSetText(SPI_SETDESKWALLPAPER, 0, "", SPIF_UPDATEINIFILE | SPIF_SENDCHANGE)) return "fail " + Marshal.GetLastWin32Error();
+    return "ok";
+  }
+
+  static string WallRestore(string payload) {
+    string[] l = Encoding.UTF8.GetString(Convert.FromBase64String(payload)).Split('\n');
+    string path = l.Length > 0 ? l[0] : "", style = l.Length > 1 ? l[1] : "", tile = l.Length > 2 ? l[2] : "", color = l.Length > 3 ? l[3] : "";
+    string[] rgb = color.Trim().Split(' ');
+    int r, g, b;
+    if (rgb.Length == 3 && int.TryParse(rgb[0], out r) && int.TryParse(rgb[1], out g) && int.TryParse(rgb[2], out b)) SetDesktopColor(r, g, b);
+    using (var k = Registry.CurrentUser.CreateSubKey(@"Control Panel\Desktop")) {
+      if (style.Length > 0) k.SetValue("WallpaperStyle", style);
+      if (tile.Length > 0) k.SetValue("TileWallpaper", tile);
+    }
+    if (!SpiSetText(SPI_SETDESKWALLPAPER, 0, path, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE)) return "fail " + Marshal.GetLastWin32Error();
+    return "ok";
   }
 
   // folderverb <verb> <base64 폴더>: 그 폴더(항목)의 탐색기 명령을 메뉴 없이 실행 — 'paste' 면 클립보드의 파일을 그 폴더로

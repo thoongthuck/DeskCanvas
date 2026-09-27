@@ -55,6 +55,7 @@
   function peel(el, parent, next, order) {
     ghosts.add(el);
     el.removeAttribute('id');                    // renderer.js가 이 노트를 다시 찾지 않도록
+    el.querySelectorAll('webview').forEach(w => w.remove());   // 웹 페이지 쪽지: 되살리면 페이지를 새로 불러오므로 뗌
     el.classList.remove('selected');
     el.inert = true;                             // 클릭·포커스 안 됨
     el.setAttribute('aria-hidden', 'true');

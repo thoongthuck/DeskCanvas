@@ -1,6 +1,6 @@
 // 설정값 — 불러오기 · 저장 · 화면에 적용 (설정 창 화면은 settings-window.js)
 // 저장 위치: 앱 데이터 폴더의 settings.json (main.js)
-import { DEFAULT_SETTINGS, NEW_NOTE_SIZES, GRID_GAPS, NOTE_COLORS, HOLIDAY_REGIONS } from './constants.js';
+import { DEFAULT_SETTINGS, NEW_NOTE_SIZES, GRID_GAPS, NOTE_COLORS, HOLIDAY_REGIONS, ZOOM_SPEEDS } from './constants.js';
 import { setLanguage } from './i18n.js';
 import { isHexColor } from './color.js';
 
@@ -27,6 +27,9 @@ export const settingsMethods = {
     s.openLastWorkspace = !!s.openLastWorkspace;
     s.wallpaperMode = s.wallpaperMode !== false;
     s.showGrid = !!s.showGrid;
+    s.lockView = !!s.lockView;
+    s.desktopBackground = s.desktopBackground !== false;
+    if (!ZOOM_SPEEDS[s.zoomSpeed]) s.zoomSpeed = 'normal';
     s.gridSnap = !!s.gridSnap;
     s.alignGuides = s.alignGuides !== false;
     if (s.calendarView !== 'week') s.calendarView = 'month';
@@ -85,6 +88,9 @@ export const settingsMethods = {
     if (!key || key === 'wallpaperMode') this.applyWallpaperMode();
     if (!key || key === 'linkStyle') this.requestLinks();
     if (!key || key === 'theme') window.canvasAPI?.setBackground?.(s.theme === 'dark' ? '#1F252C' : '#F5F5F5');   // 창 바탕색도 (main.js)
+    if (!key || key === 'theme' || key === 'desktopBackground') {     // 윈도우 배경 화면도 캔버스 색으로 (끄면 원래대로, main.js)
+      window.canvasAPI?.setDesktopBackground?.(s.desktopBackground, s.theme === 'dark' ? '#1F252C' : '#F5F5F5');
+    }
     if (!key || key === 'language') this.refreshTexts();
     if (!key || key === 'overflow') this.fitAllNotes();
     if (key === 'noteLinkView') this.refreshAllNoteLinks();       // 쪽지 속 주소 보기 방식 (note-links.js)
@@ -96,10 +102,13 @@ export const settingsMethods = {
   },
 
   // 바탕화면에 넣기 — 창 옮기기는 main.js 가 함 (같은 값이면 아무것도 안 함)
+  //   설정 창에서 켜면 설정 창을 닫을 때 넣음 — 바로 넣으면 캔버스 속 설정 창까지 다른 창들 뒤로 숨어 꺼진 것처럼 보임
+  //     ('settings' 까닭을 먼저 알리면 main.js 가 미뤄 둠 → closeSettings 가 까닭을 빼면 넣음)
   //   앞으로 꺼내기 단축키는 main.js 가 비어 있는 것을 골라 잡음 → 설정 창 안내에 씀
   applyWallpaperMode() {
     const api = window.canvasAPI;
     if (!api || !api.setWallpaperMode) return;
+    if (this.settings.wallpaperMode && this.settingsOpen && api.holdFront) api.holdFront('settings', true);
     api.setWallpaperMode(this.settings.wallpaperMode).catch(() => {});
     if (this.popOutKey !== undefined || !api.getWallpaperState) return;
     this.popOutKey = '';

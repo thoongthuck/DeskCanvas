@@ -9,6 +9,7 @@
 import { ICON_DIR } from './constants.js';
 import { t, getLanguage } from './i18n.js';
 import { BOARD_HEAD, BOARD_PAD, BOARD_DAYS_ROW } from './boards.js';
+import { cleanMarks } from './day-marks.js';
 
 const CAL_WIDTH = 1288;           // 칸 180 × 7 + 여백
 const CAL_HEIGHT = 848;           // 5줄일 때 (6줄이면 한 줄만큼 더)
@@ -22,9 +23,9 @@ const FAN_MIN_RADIUS = 120;       // 펼칠 때 날짜 가운데에서 쪽지 �
 const FAN_ANIM_MS = 360;          // 펼치기 · 접기 뒤 표시 정리 (styles/boards.css .fan-anim 기울기 0.28s + 여유)
 const FAN_MOVE_MS = 280;          // 펼치기 · 접기 자리 옮김 — 캔버스 좌표에서 움직여서 그사이 캔버스를 옮겨도 바로 따라감
 const WEEK_GAP = 8;               // 한 주 보기: 아래로 펼친 쪽지 사이
-// 펼친 채로 눌러도 접히지 않는 곳 — 펼친 쪽지 · 메뉴 · 쪽지 스타일 · 설정 창 · 찾기 · 미니맵 (그 캘린더 판은 따로)
+// 펼친 채로 눌러도 접히지 않는 곳 — 펼친 쪽지 · 메뉴 · 쪽지 스타일 · 글자 색 막대 · 설정 창 · 찾기 · 미니맵 (그 캘린더 판은 따로)
 const FAN_KEEP = '.sticky-note.fanned, #context-menu, #context-submenu, #desktop-menu, #add-menu, #template-menu, '
-  + '#board-add-menu, #code-lang-menu, #style-panel, #settings-dropdown, .settings-overlay, #search-box, #minimap';
+  + '#board-add-menu, #code-lang-menu, #style-panel, #text-color-bar, #settings-dropdown, .settings-overlay, #search-box, #minimap';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 export const dateKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -50,6 +51,9 @@ export const calendarMethods = {
     if (typeof board.height !== 'number' || board.height < min.height) board.height = CAL_HEIGHT;
     board.weekStart = board.weekStart === 1 ? 1 : 0;
     board.view = board.view === 'week' ? 'week' : 'month';
+    const marks = cleanMarks(board.marks);                   // 날짜 표시 (day-marks.js)
+    if (marks) board.marks = marks;
+    else delete board.marks;
     return board;
   },
 
@@ -201,6 +205,7 @@ export const calendarMethods = {
       const key = grid.keys[i];
       const dow = date.getDay();
       const holiday = this.holidayName(key);
+      const mark = this.dayMark(board, key);                 // 직접 표시한 날 (day-marks.js)
       const stacked = (counts.get(key) || 0) > 1;
       const cell = document.createElement('div');
       cell.className = ['cal-cell',
@@ -208,13 +213,15 @@ export const calendarMethods = {
         dow === 0 ? 'sun' : '',
         dow === 6 ? 'sat' : '',
         holiday ? 'holiday' : '',
+        mark ? 'marked' : '',
         key === today ? 'today' : '',
         stacked ? 'stacked' : '',
         key === fan ? 'fan-open' : '',
       ].filter(Boolean).join(' ');
       cell.dataset.date = key;
+      if (mark) cell.style.setProperty('--mark', mark.color);
 
-      // 날짜 + 빨간 날 이름
+      // 날짜 + 빨간 날 이름 + 직접 표시한 이름 (그 색 · 글꼴)
       const top = document.createElement('div');
       top.className = 'cal-head';
       const num = document.createElement('span');
@@ -227,6 +234,13 @@ export const calendarMethods = {
         name.textContent = holiday;
         name.title = holiday;
         top.appendChild(name);
+      }
+      if (mark && mark.text) {
+        const label = document.createElement('span');
+        label.className = `cal-mark mark-font-${mark.font}`;
+        label.textContent = mark.text;
+        label.title = mark.text;
+        top.appendChild(label);
       }
       cell.appendChild(top);
 

@@ -76,6 +76,7 @@ export const boardNoteMethods = {
     el.classList.toggle('stack-top', s.top);
     el.classList.toggle('fanned', s.fanned);
     el.classList.toggle('locked', !note.pinned && this.noteLocked(note));
+    this.applyNoteLayer(el, note, s.onBoard);
     if (s.rot || s.dx || s.dy) {
       el.style.setProperty('--stack-rot', `${s.rot}deg`);
       el.style.setProperty('--stack-dx', `${s.dx}px`);
@@ -83,6 +84,16 @@ export const boardNoteMethods = {
     } else {
       ['--stack-rot', '--stack-dx', '--stack-dy'].forEach(v => el.style.removeProperty(v));
     }
+  },
+
+  // 판에 붙은 쪽지는 그 판 바로 위 층 — 판의 층(boards.js boardLayer)을 --layer 로 넣으면
+  //   styles/boards.css 가 +1 (겹친 쪽지) · +2 (맨 위 쪽지) · +3 (고른 쪽지) 로 씀. 판에서 떼면 보통 층으로
+  applyNoteLayer(el, note, onBoard = this.noteBoardState(note).onBoard) {
+    const board = onBoard ? this.noteBoard(note) : null;
+    const layer = board && board.kind !== 'group' ? String(this.boardLayer(board)) : '';
+    if (el.style.getPropertyValue('--layer') === layer) return;
+    if (layer) el.style.setProperty('--layer', layer);
+    else el.style.removeProperty('--layer');
   },
 
   // 고정한 쪽지 · 잠근 판에 붙은 쪽지는 못 옮김

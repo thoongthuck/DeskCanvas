@@ -1,6 +1,6 @@
 // 화면 — 빈 곳을 끌어 이동, 휠로 확대·축소, 격자 그리기, 쪽지·사진·파일을 화면 좌표에 맞추기
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
-import { IS_MAC } from './constants.js';
+import { IS_MAC, ZOOM_SPEEDS } from './constants.js';
 import { t } from './i18n.js';
 
 export const viewMethods = {
@@ -18,6 +18,7 @@ export const viewMethods = {
     // 빈 바탕을 누르면 선택 해제
     this.clearSelection();
 
+    if (e.button === 0 && this.viewLocked()) return;  // 화면 잠금 — 끌어도 움직이지 않음
     this.isDragging = true;
     this.dragStartX = e.clientX;
     this.dragStartY = e.clientY;
@@ -39,12 +40,17 @@ export const viewMethods = {
   },
 
   // 마우스 자리를 중심으로 확대·축소 — 휠을 돌리는 동안은 미리 보기, 멈추면 다시 배치 (previewView)
+  //   돌린 만큼 같은 비율로 (휠 한 칸 = 보통 약 10%, 터치패드는 움직인 만큼). 감도는 설정 › 캔버스 (ZOOM_SPEEDS)
   handleZoom(e) {
     e.preventDefault();
+    if (this.viewLocked()) return;                    // 화면 잠금 — 확대 · 축소 안 됨
     const oldZoom = this.zoom;
     const worldX = (e.clientX - this.panX) / oldZoom;
     const worldY = (e.clientY - this.panY) / oldZoom;
-    this.zoom = e.deltaY > 0 ? Math.max(0.1, this.zoom - 0.1) : Math.min(3, this.zoom + 0.1);
+    const speed = ZOOM_SPEEDS[this.settings && this.settings.zoomSpeed] || 1;
+    const px = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;   // 줄 · 쪽 단위도 픽셀로
+    this.zoom = Math.min(3, Math.max(0.1, oldZoom * Math.exp(-px * 0.00095 * speed)));
+    if (this.zoom === oldZoom) return;
     this.panX = e.clientX - worldX * this.zoom;
     this.panY = e.clientY - worldY * this.zoom;
     this.previewView();
@@ -65,6 +71,7 @@ export const viewMethods = {
     }
     const k = this.zoom / laid.zoom;
     const layer = this.uiLayer;
+    if (this.textColorBar) this.hideTextColorBar();
     layer.style.willChange = 'transform';
     layer.style.transformOrigin = '0 0';
     layer.style.transform = `translate(${this.panX - laid.panX * k}px, ${this.panY - laid.panY * k}px) scale(${k})`;
@@ -79,6 +86,17 @@ export const viewMethods = {
     if (!this.previewing) return;
     this.updateUIPositions();                        // 미리 보기를 걷어 내고 지금 배율로 배치
     if (this.zoom !== this.fitZoom) this.fitAllNotes();
+  },
+
+  // ---- 화면 잠금 (설정 · 빈 곳 우클릭 › 보기 › · 캔버스 메뉴) ----
+  //   빈 곳 끌기 · 휠 · 고정한 것 끌기로 캔버스가 움직이거나 확대되지 않음. 원점으로 · 미니맵 · 찾기는 그대로 (일부러 옮기는 것)
+  //   알림은 띄우지 않음 — 잠겼는지는 메뉴의 체크 표시로
+  viewLocked() {
+    return !!(this.settings && this.settings.lockView);
+  },
+
+  toggleViewLock() {
+    this.updateSetting('lockView', !this.viewLocked());
   },
 
   // 원점 — 정해 둔 화면 (this.home: 화면 왼쪽 위에 오는 캔버스 자리 x · y 와 배율), 없으면 처음 자리 (0, 0 · 100%)
@@ -154,6 +172,8 @@ export const viewMethods = {
   //   (쪽지마다 글이 넘치는지 재면 화면 전체 배치를 쪽지 수만큼 다시 해서 확대가 초당 20장 안팎으로 끊겼음)
   //   배율이 바뀌었으면 멈춘 뒤 한 번 다시 맞춤 — 글자 크기가 배율에 따라 반올림돼 줄바꿈이 조금 달라질 수 있어서
   updateUIPositions() {
+    if (this.textColorBar) this.hideTextColorBar();    // 고른 글자 색 막대는 화면이 움직이면 닫음 (text-color.js)
+    this.scheduleWebCheck();                          // 웹 페이지 쪽지: 보이면 불러오고 오래 안 보이면 내려놓음 (web-note.js)
     if (this.previewing) {                            // 확대 · 축소 미리 보기를 걷어 냄 (previewView)
       clearTimeout(this.commitTimer);
       this.previewing = false;
@@ -194,6 +214,7 @@ export const viewMethods = {
     el.style.width = `${r.width * this.zoom}px`;
     el.style.height = `${r.height * this.zoom}px`;
     el.style.setProperty('--zoom', this.zoom);      // 아이콘·글자·여백·접힘도 같은 배율로
+    this.applyItemOrder(el, note);                  // 순서 (layer-order.js)
     this.applyBoardState(el, note);
     this.requestLinks();                            // 연결선도 따라감 (links.js)
   },
@@ -221,6 +242,8 @@ export const viewMethods = {
     el.classList.toggle('locked', !!(slot && slot.group.pinned));
     el.classList.toggle('group-lifted', !!(slot && this.groupSelected(slot.group)));   // 묶음이 골라져 떠오름 (groups.css)
     el.classList.toggle('on-dark', !!(slot && this.groupIsDark(slot.group)));           // 어두운 색 묶음 속 — 밝은 칸 위에
+    this.applyItemOrder(el, file);                    // 순서 (layer-order.js)
+    this.applyFileLayer(el, file, slot);              // 묶음 속이면 묶음 바로 위 층 (groups.js)
     el.style.left = `${file.x * this.zoom + this.panX}px`;
     el.style.top = `${file.y * this.zoom + this.panY}px`;
     el.style.width = `${file.width * this.zoom}px`;

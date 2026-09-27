@@ -45,8 +45,10 @@
   box-shadow: 0 0 0 2px #373B42, 0 0 0 4px #E5E7EB;
 }
 
-/* 직접 고르기: 무지개 동그라미, 고르면 가운데에 그 색 */
+/* 직접 고르기: 무지개 동그라미, 고르면 가운데에 그 색
+   숨긴 색 칸(input)이 이 동그라미만 덮게 position: relative — 없으면 스타일 창 전체를 덮어 어디를 눌러도 색 창이 뜸 */
 .custom-dot {
+  position: relative;
   display: block;
   cursor: pointer;
   background: conic-gradient(#F87171, #FBBF24, #A3E635, #34D399, #60A5FA, #A78BFA, #F472B6, #F87171);
@@ -70,7 +72,28 @@
   padding: 0;
 }
 
-/* 글자 색: 지름 26 원 6개, 가운데 '가' */
+/* 캘린더 날짜 표시 창 (renderer/day-marks.js) — 이름 칸 */
+.day-mark-name {
+  width: 100%;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #50565F;
+  border-radius: 6px;
+  background: #2E3238;
+  color: #F3F4F6;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.day-mark-name:focus { border-color: #5A98FE; }
+.day-mark-fonts .style-font-sample { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 글자 색: 지름 26 원 6개 + 직접 고르기, 가운데 '가' */
+.style-ink.custom-dot,
+.text-color-dot.custom-dot {
+  background: conic-gradient(#F87171, #FBBF24, #A3E635, #34D399, #60A5FA, #A78BFA, #F472B6, #F87171) !important;
+}
 .style-inks {
   display: flex;
   gap: 8px;
@@ -121,6 +144,54 @@
 .style-font.font-mono .style-font-sample  { font-family: var(--font-mono); }
 
 /* 크기: 네 칸 버튼 + 아래 단계 이름 */
+/* 크기 (pt): − · 칸 · pt · + 와 자주 쓰는 크기 */
+.style-pt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.style-pt-step {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: #40454D !important;
+  color: #F3F4F6 !important;
+  font-size: 16px;
+  line-height: 32px;
+}
+.style-pt-step:hover { background: #4A5058 !important; }
+.style-pt-input {
+  width: 64px;
+  height: 32px;
+  box-sizing: border-box;
+  border: 1px solid #50565F;
+  border-radius: 6px;
+  background: #2E3238;
+  color: #F3F4F6;
+  font: inherit;
+  font-size: 14px;
+  text-align: center;
+  outline: none;
+}
+.style-pt-input:focus { border-color: #5A98FE; }
+.style-pt-input::-webkit-inner-spin-button { opacity: 0.4; }
+.style-pt-unit { color: #9AA3AE; font-size: 13px; margin-right: auto; }
+.style-pt-presets {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+.style-pt-preset {
+  height: 26px;
+  border-radius: 6px;
+  background: #2F3338 !important;
+  color: #C9CDD4 !important;
+  font-size: 12px;
+}
+.style-pt-preset:hover { background: #3A3F46 !important; }
+.style-pt-preset.current { background: #4A5568 !important; color: #FFFFFF !important; }
+
 .style-sizes {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

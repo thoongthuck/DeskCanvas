@@ -49,6 +49,18 @@ export const selectionMethods = {
     if (!this.selection.has(id)) this.selectItem(id);
   },
 
+  // 오브젝트와 무엇을 하든 (글 고치기 · 체크 · 묶음 펼치기 · 영상 · 링크 단추 · 판 단추 …) 그것을 고름 — 고르면 맨 앞으로 (styles/boards.css)
+  //   문서 전체의 누르기를 먼저 받아서 (app.js, 잡기 단계) 오브젝트마다 따로 막아 둔 단추 · 칸도 빠짐없이
+  //   Ctrl · Shift (여러 개 고르기) · 이미 고른 것 (여러 개 함께 끌기) · 연결선 잇는 중은 원래대로 (pressSelect · links.js)
+  selectOnInteract(e) {
+    if (e.ctrlKey || e.shiftKey || (IS_MAC && e.metaKey) || this.linking) return;
+    const el = e.target && e.target.closest
+      && e.target.closest('#ui-layer .sticky-note, #ui-layer .canvas-photo, #ui-layer .file-icon, #ui-layer .board');
+    if (!el || !el.id || this.selection.has(el.id)) return;
+    if (!this.itemById(el.id) && !this.boards.some(b => b.id === el.id)) return;    // 캘린더 · 연대표 판도
+    this.selectItem(el.id);
+  },
+
   // 반환: 풀 것이 있었는지 (Esc 가 씀)
   clearSelection() {
     if (!this.selection.size) return false;
@@ -107,7 +119,8 @@ export const selectionMethods = {
   // ---- 네모로 고르기 (Ctrl · Shift + 빈 곳 끌기, view.js) ----
   startMarquee(e) {
     e.preventDefault();
-    const base = new Set(this.selection);                // 누르기 전에 고른 것에 더해 감
+    // Shift + 끌기: 네모에 든 것만 새로 고름 (먼저 고른 것은 풂). Ctrl + 끌기: 먼저 고른 것에 더해 감 (윈도우 탐색기처럼)
+    const base = e.ctrlKey || (IS_MAC && e.metaKey) ? new Set(this.selection) : new Set();
     const x0 = e.clientX;
     const y0 = e.clientY;
     const box = document.createElement('div');
@@ -179,11 +192,13 @@ export const selectionMethods = {
           submenu: groups.map(g => ({ label: this.groupLabel(g), action: () => this.moveFilesToGroup(files, g) })),
         });
       }
+      items.push(...this.fileMediaMenuItems(files));      // 고른 사진 · 영상 파일을 쪽지로 (file-media.js)
     }
     if (entries.length > 1) {                               // 처음 고른 것에 나머지를 잇기 (links.js)
       items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: entries.length }), action: () => this.connectSelection() });
     }
     items.push(...this.alignMenuItems());                   // 정렬 › (align.js)
+    items.push(...this.layerMenuItems());                   // 순서 › (layer-order.js)
     if (removable.length) {
       if (items.length) items.push({ separator: true });
       items.push({ icon: 'trash.svg', label: t('menu.deleteSelected', { n: removable.length }), danger: true, action: () => this.deleteSelection() });

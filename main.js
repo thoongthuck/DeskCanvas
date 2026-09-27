@@ -154,7 +154,8 @@ const wallpaper = {
   poppedOut: false,     // 바탕화면 층에서 들어 올린 중 (Ctrl+Alt+D, 또는 글 쓰는 동안 · 설정 창)
   lifted: null,         // 들어 올린 모양: 'front'(다른 창들 앞) · 'behind'(맨 앞 창이지만 다른 창들 뒤)
   autoPopped: false,    // 까닭(holds)이 있어 꺼낸 것 — 까닭이 없어지면 다시 넣음
-  holds: new Set(),     // 앞으로 꺼내 둘 까닭: 'editing'(글 쓰는 중) · 'settings'(트레이에서 연 설정 창)
+  holds: new Set(),     // 앞으로 꺼내 둘 까닭: 'editing'(글 쓰는 중) · 'settings'(설정 창)
+  deferred: false,      // 설정 창에서 켰음 — 설정 창을 닫으면 바탕화면 층으로 (지금 넣으면 설정 창까지 다른 창들 뒤로 숨음)
   moving: false,        // 넣고 빼는 중 (그 사이에 오는 창 활성 · 비활성은 무시)
   dialogOpen: false,    // 파일 고르기 · 윈도우 우클릭 메뉴가 떠 있는 중 (그동안은 다시 넣지 않음)
   keyboard: null,       // 캔버스를 눌렀을 때 키보드를 가져왔는지 — 'ok' | 'fail' (기록용)
@@ -611,6 +612,11 @@ async function popOut(auto = false) {
 function holdFront(reason, on) {
   if (on) wallpaper.holds.add(reason);
   else wallpaper.holds.delete(reason);
+  if (wallpaper.deferred && !wallpaper.holds.has('settings')) {     // 설정 창에서 켜 둔 것 — 닫았으니 이제 넣음
+    wallpaper.deferred = false;
+    enterWallpaperWhenFree();
+    return;
+  }
   syncFront();
 }
 
@@ -635,6 +641,17 @@ async function syncFront() {
   if (moved) syncFront();
 }
 ipcMain.on('front-hold', (event, reason, on) => holdFront(String(reason), !!on));
+
+// 색 고르는 창 (input type=color — 글자 색 · 쪽지 색 직접 고르기) — 창이 뜨면 캔버스 창이 포커스를 잃어
+//   앞에 꺼낸 캔버스가 바탕화면 층으로 다시 들어가 버림 → 떠 있는 동안은 그대로 두고, 창을 닫아 캔버스가 다시 포커스를 받으면 풂
+ipcMain.on('color-dialog', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  wallpaper.dialogOpen = true;
+  mainWindow.once('focus', () => {
+    wallpaper.dialogOpen = false;
+    syncFront();
+  });
+});
 
 // Ctrl+Alt+D — 꺼내기 · 다시 넣기
 async function togglePopOut() {
@@ -947,6 +964,31 @@ async function clipboardFiles() {
 }
 ipcMain.handle('clipboard-files', () => clipboardFiles());
 
+// 캔버스 Ctrl+C (renderer/clipboard.js) — 파일은 탐색기처럼 파일로 · 쪽지 글은 글자로 윈도우 클립보드에. 반환: 클립보드 순번 (못 쓰면 null)
+//   순번은 클립보드가 바뀔 때마다 오름 → Ctrl+V 때 같으면 그 사이 다른 것을 복사하지 않은 것
+ipcMain.handle('canvas-clip-set', async (event, files, text) => {
+  const paths = (Array.isArray(files) ? files : []).map(p => String(p).replace(/[\r\n]/g, '')).filter(Boolean);
+  const body = String(text || '');
+  if (process.platform !== 'win32' || !startBridge()) {
+    if (body) clipboard.writeText(body);
+    return null;
+  }
+  const payload = Buffer.from([String(paths.length), ...paths, body].join('\n'), 'utf8').toString('base64');
+  const reply = await bridgeCall(`clipset ${payload}`, 5000);
+  if (!reply.startsWith('ok ')) {
+    logLine(`캔버스 복사를 클립보드에 못 씀: ${reply.slice(0, 80)}`);
+    if (body) clipboard.writeText(body);
+    return null;
+  }
+  return Number(reply.slice(3));
+});
+
+ipcMain.handle('clipboard-seq', async () => {
+  if (process.platform !== 'win32' || !startBridge()) return null;
+  const reply = await bridgeCall('clipseq', 3000);
+  return reply.startsWith('ok ') ? Number(reply.slice(3)) : null;
+});
+
 // 붙여넣기: 탐색기의 '붙여넣기' 그대로 (복사 · 이름 겹침 창) / 바로 가기 붙여넣기: '이름 - 바로 가기.lnk' 를 바탕화면에
 ipcMain.handle('paste-files', async (event, link) => {
   const desktop = app.getPath('desktop');
@@ -1082,11 +1124,14 @@ ipcMain.handle('set-wallpaper-mode', async (event, on) => {
   if (wallpaper.wanted !== on) return wallpaper.pinned || wallpaper.embedded;   // 그사이 또 바뀜
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (on) {
-    if (pinWindow()) return true;
-    if (await embedWindow()) return true;
-    retryEmbed();
-    return false;
+    if (wallpaper.holds.has('settings')) {            // 설정 창을 보는 중 — 닫을 때 넣음 (holdFront)
+      wallpaper.deferred = true;
+      logLine('바탕화면에 넣기: 설정 창을 닫으면 넣음');
+      return false;
+    }
+    return enterWallpaper();
   }
+  wallpaper.deferred = false;
   unpinWindow();
   if (wallpaper.embedded || wallpaper.poppedOut) await unembedWindow(screenArea());
   wallpaper.poppedOut = false;
@@ -1096,6 +1141,22 @@ ipcMain.handle('set-wallpaper-mode', async (event, on) => {
   refreshTray();
   return false;
 });
+
+// 바탕화면 층으로 — 방법 1 (붙잡기) → 방법 2 (넣기) → 조금 뒤 다시 해 봄
+async function enterWallpaper() {
+  if (pinWindow()) return true;
+  if (await embedWindow()) return true;
+  retryEmbed();
+  return false;
+}
+
+// 옮기는 중이면 끝난 뒤에 넣음 (그사이 꺼졌거나 이미 들어갔으면 그만)
+async function enterWallpaperWhenFree() {
+  while (wallpaper.moving) await new Promise(r => setTimeout(r, 50));
+  if (!wallpaper.wanted || wallpaper.deferred || wallpaper.pinned || wallpaper.embedded || wallpaper.poppedOut) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  await enterWallpaper();
+}
 
 // 테마가 바뀌면 창 바탕색도 (settings.js)
 ipcMain.on('set-background', (event, color) => {
@@ -1108,6 +1169,70 @@ ipcMain.on('set-background', (event, color) => {
 
 ipcMain.handle('get-wallpaper-state', () => ({ wanted: wallpaper.wanted, embedded: wallpaper.pinned || wallpaper.embedded, key: popOutKey }));
 
+// ---------------- 바탕화면 배경 색 맞추기 (설정 › 일반) ----------------
+// 윈도우 배경 화면을 캔버스 바탕색 단색으로 — Win+Tab(작업 보기) · 창 맞춰 붙이기에서 보이는 배경이 캔버스와 같은 색
+//   켤 때 원래 배경 화면(그림 · 맞춤 방식 · 배경색)을 앱 데이터 폴더에 적어 두고 (wallpaper-original.json),
+//   끄거나 앱을 끌 때 그것으로 되돌림. 앱이 갑자기 꺼져 적어 둔 것이 남아 있으면 다음에 켤 때 그대로 원래 것으로 씀
+//   윈도우가 쓰는 캐시 그림(TranscodedWallpaper)이었으면 앱 데이터 폴더에 복사해 둠 (윈도우가 바꿔 쓸 수 있어서)
+//   '슬라이드 쇼' · 'Windows 추천' 배경이었으면 되돌릴 때 그때 보이던 그림 한 장으로 돌아감
+//   applied: 지금 단색으로 바꿔 둔 색 (없으면 null). 명령은 차례로 (chain)
+const desktopBg = { applied: null, chain: Promise.resolve(), restoringOnQuit: false };
+
+function wallpaperBackupFile() {
+  return path.join(app.getPath('userData'), 'wallpaper-original.json');
+}
+
+async function saveOriginalWallpaper() {
+  const file = wallpaperBackupFile();
+  if (fs.existsSync(file)) return true;                          // 먼저 적어 둔 것이 진짜 원래 것
+  const reply = await bridgeCall('wallget', 5000);
+  if (!reply.startsWith('ok ')) return false;
+  const [image = '', style = '', tile = '', color = ''] = Buffer.from(reply.slice(3), 'base64').toString('utf8').split('\n');
+  let keep = image;
+  if (image && /TranscodedWallpaper/i.test(image) && fs.existsSync(image)) {
+    keep = path.join(app.getPath('userData'), 'wallpaper-original.jpg');
+    try { fs.copyFileSync(image, keep); } catch (_) { keep = image; }
+  }
+  fs.writeFileSync(file, JSON.stringify({ image: keep, style, tile, color }, null, 2));
+  logLine(`원래 배경 화면을 적어 둠: ${path.basename(image) || '(그림 없음)'} · 배경색 ${color}`);
+  return true;
+}
+
+// on: 켜기 · 끄기, color: 캔버스 바탕색 (#RRGGBB)
+function setDesktopBackground(on, color = null) {
+  desktopBg.chain = desktopBg.chain.then(async () => {
+    if (process.platform !== 'win32' || !startBridge()) return;
+    if (on && /^#[0-9a-f]{6}$/i.test(String(color))) {
+      if (desktopBg.applied === color.toUpperCase()) return;
+      if (!(await saveOriginalWallpaper())) {
+        logLine('원래 배경 화면을 못 읽어서 배경 색을 바꾸지 않음');
+        return;
+      }
+      const reply = await bridgeCall(`wallcolor ${color}`, 8000);
+      logLine(`배경 화면을 캔버스 색으로: ${color} → ${reply}`);
+      if (reply.startsWith('ok')) desktopBg.applied = color.toUpperCase();
+      return;
+    }
+    if (!on) {
+      const file = wallpaperBackupFile();
+      if (!fs.existsSync(file)) { desktopBg.applied = null; return; }
+      let saved = null;
+      try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
+      if (!saved) return;
+      const payload = Buffer.from([saved.image || '', saved.style || '', saved.tile || '', saved.color || ''].join('\n'), 'utf8').toString('base64');
+      const reply = await bridgeCall(`wallrestore ${payload}`, 8000);
+      logLine(`배경 화면을 원래대로: ${reply}`);
+      if (reply.startsWith('ok')) {
+        desktopBg.applied = null;
+        try { fs.unlinkSync(file); } catch (_) {}
+      }
+    }
+  }).catch((err) => logLine(`배경 화면 바꾸기 오류: ${err && err.message}`));
+  return desktopBg.chain;
+}
+
+ipcMain.on('set-desktop-background', (event, on, color) => { setDesktopBackground(!!on, color); });
+
 // ---------------- 시작 앱 (윈도우에 로그인하면 켜기) ----------------
 // 설정 › 일반 › 시작 앱. 윈도우의 시작 앱 목록(작업 관리자 › 시작 앱 · 윈도우 설정 › 앱 › 시작 프로그램)에 올림
 //   켜져 있는지는 윈도우에 등록된 것을 그대로 읽음 (settings.json 에 두지 않음) — 윈도우 쪽에서 끄면 여기도 꺼져 보임
@@ -1118,10 +1243,13 @@ function loginItemOptions() {
     : { path: process.execPath, args: [app.getAppPath()], name: 'DeskCanvas (dev)' };
 }
 
+//   윈도우: openAtLogin 은 앱 id(AppUserModelID) 이름으로 등록된 것만 봐서, 이름을 따로 준 우리 등록은 늘 false 로 나옴
+//     → 윈도우 시작 목록(launchItems)에서 우리 이름 · 켜짐(작업 관리자에서 끄지 않음)으로 찾음
 function startupState() {
   if (process.platform !== 'win32' && process.platform !== 'darwin') return { available: false, on: false };
   const o = loginItemOptions();
   const s = app.getLoginItemSettings({ path: o.path, args: o.args });
+  if (Array.isArray(s.launchItems)) return { available: true, on: s.launchItems.some(i => i.name === o.name && i.enabled) };
   return { available: true, on: !!s.openAtLogin && s.executableWillLaunchAtLogin !== false };
 }
 
@@ -1161,6 +1289,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       autoplayPolicy: 'no-user-gesture-required',   // 소리를 켜 둔 영상도 켤 때 바로 재생 (renderer/photos.js)
+      webviewTag: true,            // 웹 페이지 쪽지 (renderer/web-note.js) — 붙기 전에 설정을 조임 (setupWebNotes)
       spellcheck: false,           // 맞춤법 검사 안 함 (글 칸마다 이미 끔 — 검사 사전도 불러오지 않게)
     }
   });
@@ -1419,6 +1548,25 @@ ipcMain.handle('import-image', (event, filePath) => {
   const ext = path.extname(src).slice(1).toLowerCase();
   if (!IMAGE_EXTENSIONS.includes(ext) || !fs.existsSync(src)) return null;
   return copyImageToStore(src);
+});
+
+// 파일 우클릭 › 이미지 · 영상 쪽지로 바꾸기 (renderer/file-media.js) — 앱 데이터 폴더로 복사한 주소
+//   원본은 renderer 가 휴지통으로 보내므로 큰 영상도 원본 자리를 가리키지 않고 늘 복사. 한꺼번에 여럿이라 이름이 겹치지 않게
+ipcMain.handle('import-media', async (event, filePath) => {
+  const src = String(filePath || '');
+  const ext = path.extname(src).slice(1).toLowerCase();
+  const media = IMAGE_EXTENSIONS.includes(ext) ? 'image' : VIDEO_EXTENSIONS.includes(ext) ? 'video' : null;
+  if (!media || !fs.existsSync(src)) return null;
+  const dir = media === 'image' ? getImagesDir() : getVideosDir();
+  const dest = path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`);
+  try {
+    await fs.promises.copyFile(src, dest);
+    logLine(`쪽지로 바꾸려고 복사: ${path.basename(src)} → ${dest}`);
+    return { url: pathToFileURL(dest).href, media };
+  } catch (err) {
+    logLine(`쪽지로 바꾸기 복사 실패: ${err && err.message}`);
+    return null;
+  }
 });
 
 // 코드 칸 복사 버튼
@@ -1950,6 +2098,65 @@ function allowYouTubeEmbeds() {
     });
 }
 
+// ---------------- 웹 페이지 쪽지 (renderer/web-note.js) ----------------
+//   <webview> = 캔버스 창 안에서 따로 도는 페이지. 앱과 떨어진 저장소(persist:web) — 로그인 · 쿠키는 여기 남음
+//   붙기 전에 조임: preload 없음 · node 없음 · 격리 · http(s) 주소만
+//   새 탭으로 여는 링크 → 그 쪽지 안에서, 로그인 창처럼 따로 뜨는 작은 창 → 보통 창으로 (맨 위 — 캔버스 뒤에 숨지 않게)
+//   내려받기 → 묻지 않고 '다운로드' 폴더에 (묻는 창이 캔버스 뒤에 숨는 일이 있어서)
+//   권한(카메라 · 위치 · 알림 …)은 주지 않음 — 전체 화면 · 복사만
+const WEB_PARTITION = 'persist:web';
+function setupWebNotes() {
+  app.on('web-contents-created', (event, contents) => {
+    contents.on('will-attach-webview', (e, webPreferences, params) => {
+      delete webPreferences.preload;
+      webPreferences.nodeIntegration = false;
+      webPreferences.nodeIntegrationInSubFrames = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox = true;
+      if (params.partition !== WEB_PARTITION || !/^https?:\/\//i.test(params.src || '')) {
+        logLine(`웹 페이지 쪽지: 막음 (${params.partition} ${String(params.src).slice(0, 80)})`);
+        e.preventDefault();
+      }
+    });
+    if (contents.getType() !== 'webview') return;
+    contents.setWindowOpenHandler(({ url, disposition }) => {
+      if (!/^https?:\/\//i.test(url)) return { action: 'deny' };
+      if (disposition === 'new-window') {
+        return { action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 680, autoHideMenuBar: true, alwaysOnTop: true } };
+      }
+      contents.loadURL(url).catch(() => {});
+      return { action: 'deny' };
+    });
+  });
+  const ses = session.fromPartition(WEB_PARTITION);
+  ses.setPermissionRequestHandler((wc, permission, callback) => callback(permission === 'fullscreen' || permission === 'clipboard-sanitized-write'));
+  ses.on('will-download', (e, item) => {
+    const dir = app.getPath('downloads');
+    const ext = path.extname(item.getFilename());
+    const base = path.basename(item.getFilename(), ext) || 'download';
+    let dest = path.join(dir, base + ext);
+    for (let i = 2; fs.existsSync(dest); i++) dest = path.join(dir, `${base} (${i})${ext}`);
+    item.setSavePath(dest);
+    logLine(`웹 페이지 쪽지: 내려받기 → ${dest}`);
+  });
+}
+
+// 화면 밖에 오래 있던 페이지를 내려놓기 전에 지금 모습 (renderer/web-note.js unloadWebView) — 작은 JPEG
+ipcMain.handle('web-snapshot', async (event, id) => {
+  try {
+    const { webContents } = require('electron');
+    const wc = webContents.fromId(Number(id));
+    if (!wc || wc.isDestroyed() || wc.getType() !== 'webview') return null;
+    const image = await wc.capturePage();
+    if (image.isEmpty()) return null;
+    const size = image.getSize();
+    const small = size.width > 960 ? image.resize({ width: 960 }) : image;
+    return `data:image/jpeg;base64,${small.toJPEG(75).toString('base64')}`;
+  } catch (_) {
+    return null;
+  }
+});
+
 ipcMain.handle('open-path', async (event, filePath) => {
   const error = await shell.openPath(filePath);   // 성공하면 빈 문자열
   return error === '' ? true : error;
@@ -2076,6 +2283,7 @@ app.on('ready', () => {
   if (!firstInstance) return;
   genericIcons();          // 윈도우 기본 그림을 창이 뜨는 동안 미리 알아 둠 (저장된 내용을 불러올 때 씀)
   allowYouTubeEmbeds();
+  setupWebNotes();
   wallpaper.wanted = wallpaperSetting();
   if (process.platform === 'win32') startBridge(); // 다리를 창이 뜨는 동안 미리 띄워 둠 (바탕화면 층 · 윈도우 우클릭 메뉴, 준비에 1초쯤)
   if (process.platform === 'win32') {
@@ -2089,6 +2297,13 @@ app.on('ready', () => {
 });
 
 app.on('before-quit', () => { quitting = true; });
+// 끌 때 윈도우 배경 화면을 원래대로 (설정 '바탕화면 배경 색 맞추기' — 되돌린 뒤 다시 끔)
+app.on('before-quit', (event) => {
+  if (!desktopBg.applied || desktopBg.restoringOnQuit) return;
+  event.preventDefault();
+  desktopBg.restoringOnQuit = true;
+  setDesktopBackground(false).finally(() => app.quit());
+});
 
 // 끌 때: 단축키를 풀고 다리를 닫음 (다리는 입력이 끊기면 스스로 끝남)
 app.on('will-quit', () => {

@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const TEXT_INPUTS = new Set(['text', 'search', 'url', 'email', 'number', 'password', 'tel']);
 function isEditable(el) {
   if (!el) return false;
-  if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'WEBVIEW') return true;   // 웹 페이지 쪽지에서 글을 쓸 수도 있음
   return el.tagName === 'INPUT' && TEXT_INPUTS.has(el.type);
 }
 let editingTimer = null;
@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),   // 쪽지 속 링크 (http · https 만)
   // 바탕 우클릭 — 클립보드의 파일 · 바탕화면에 붙여넣기(link: 바로 가기로) · 정렬 기준에 쓸 파일 정보
   clipboardFiles: () => ipcRenderer.invoke('clipboard-files'),
+  // 캔버스 Ctrl+C · Ctrl+V (renderer/clipboard.js) — 파일 · 글을 윈도우 클립보드에 (반환: 클립보드 순번) · 지금 순번
+  canvasClipSet: (files, text) => ipcRenderer.invoke('canvas-clip-set', files, text),
+  clipboardSeq: () => ipcRenderer.invoke('clipboard-seq'),
   pasteFiles: (link) => ipcRenderer.invoke('paste-files', !!link),
   fileStats: (paths) => ipcRenderer.invoke('file-stats', paths),
   // 문제 찾기용 기록
@@ -55,6 +58,8 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   // 클립보드
   saveImageData: (bytes, mime) => ipcRenderer.invoke('save-image-data', bytes, mime),
   importImage: (filePath) => ipcRenderer.invoke('import-image', filePath),
+  importMedia: (filePath) => ipcRenderer.invoke('import-media', filePath),      // 파일 › 이미지 · 영상 쪽지로 바꾸기
+  webSnapshot: (id) => ipcRenderer.invoke('web-snapshot', id),                   // 웹 페이지 쪽지를 내려놓기 전 모습
   copyText: (text) => ipcRenderer.invoke('copy-text', text),
   // 바탕화면 폴더
   listDesktop: () => ipcRenderer.invoke('list-desktop'),
@@ -68,7 +73,10 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   getStartup: () => ipcRenderer.invoke('get-startup'),
   setStartup: (on) => ipcRenderer.invoke('set-startup', !!on),
   holdFront: (reason, on) => ipcRenderer.send('front-hold', reason, !!on),
+  colorDialog: () => ipcRenderer.send('color-dialog'),
   setBackground: (color) => ipcRenderer.send('set-background', color),
+  // 윈도우 배경 화면을 캔버스 색 단색으로 · 원래대로 (설정 '바탕화면 배경 색 맞추기', main.js)
+  setDesktopBackground: (on, color) => ipcRenderer.send('set-desktop-background', !!on, color),
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),
   onApplySetting: (callback) => ipcRenderer.on('apply-setting', (event, key, value) => callback(key, value)),
   // 윈도우 우클릭 메뉴 · 파일 이름 바꾸기

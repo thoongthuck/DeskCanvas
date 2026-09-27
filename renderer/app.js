@@ -45,15 +45,21 @@ import { settingsMethods } from './settings.js';
 import { settingsWindowMethods } from './settings-window.js';
 import { historyMethods } from './history.js';
 import { keyboardMethods } from './keyboard.js';
+import { clipboardMethods } from './clipboard.js';
+import { textColorMethods } from './text-color.js';
+import { dayMarkMethods } from './day-marks.js';
 import { searchMethods } from './search.js';
 import { minimapMethods } from './minimap.js';
 import { selectionMethods } from './selection.js';
 import { linkMethods } from './links.js';
 import { noteLinkMethods } from './note-links.js';
+import { fileMediaMethods } from './file-media.js';
+import { webNoteMethods } from './web-note.js';
+import { layerOrderMethods } from './layer-order.js';
 import { alignMethods } from './align.js';
 
 // 휠을 확대·축소로 가로채지 않는 곳 (여기 안에서는 목록이 그대로 스크롤됨)
-const SCROLLABLE_UI = '.settings-overlay, .popup-menu, #style-panel, #search-box, #minimap';
+const SCROLLABLE_UI = '.settings-overlay, .popup-menu, #style-panel, #text-color-bar, #search-box, #minimap';
 
 export class InfiniteCanvas {
   constructor() {
@@ -210,6 +216,8 @@ export class InfiniteCanvas {
     window.addEventListener('resize', () => this.resizeCanvas());
     // 확대 · 축소 미리 보기 중에 무언가를 누르면 먼저 제대로 배치 (끌기 · 고르기가 진짜 자리로 계산되게, view.js)
     document.addEventListener('mousedown', () => this.commitView(), true);
+    // 오브젝트의 어디를 누르든 (단추 · 글 칸 · 체크 칸 · 묶음 펼치기 …) 그 오브젝트를 고름 (selection.js)
+    document.addEventListener('mousedown', (e) => this.selectOnInteract(e), true);
     // 캔버스가 다른 창에 다 가려지면 (윈도우가 알려 줌) 영상을 쉬고, 오래 가려져 있으면 내려놓음 (photos.js)
     document.addEventListener('visibilitychange', () => this.refreshVideoRest());
     this.watchPixelRatio();
@@ -238,12 +246,12 @@ export class InfiniteCanvas {
       }
     }, true);
 
-    // 수정 중인 쪽지 바깥을 누르면 수정 끝
+    // 수정 중인 쪽지 바깥을 누르면 수정 끝 (글자 색 막대는 쪽지 안으로 침 — 누르기 전에 수정이 끝나 막대가 사라지지 않게)
     document.addEventListener('mousedown', (e) => {
       if (!this.editingId) return;
       const el = document.getElementById(this.editingId);
       if (el && el.contains(e.target)) return;
-      if (e.target.closest && e.target.closest('#context-menu, #context-submenu, #style-panel, #desktop-menu, #add-menu, #template-menu, #board-add-menu, #code-lang-menu, #settings-dropdown, .settings-overlay')) return;
+      if (e.target.closest && e.target.closest('#context-menu, #context-submenu, #style-panel, #text-color-bar, #desktop-menu, #add-menu, #template-menu, #board-add-menu, #code-lang-menu, #settings-dropdown, .settings-overlay')) return;
       this.stopEditing();
     }, true);
 
@@ -263,6 +271,9 @@ Object.assign(
   noteMethods,
   noteBodyMethods,
   noteLinkMethods,
+  fileMediaMethods,
+  webNoteMethods,
+  layerOrderMethods,
   fitMethods,
   codeCellMethods,
   stylePanelMethods,
@@ -281,6 +292,9 @@ Object.assign(
   settingsWindowMethods,
   historyMethods,
   keyboardMethods,
+  clipboardMethods,
+  textColorMethods,
+  dayMarkMethods,
   searchMethods,
   minimapMethods,
   selectionMethods,

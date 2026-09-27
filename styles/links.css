@@ -9,7 +9,7 @@
   height: 100%;
   overflow: visible;
   pointer-events: none;
-  z-index: 3;                            /* 판 · 파일 묶음 위, 파일 · 쪽지 · 사진 아래 (styles/boards.css 머리 설명) */
+  z-index: 2000;                         /* 판 · 파일 묶음 위, 파일 · 쪽지 · 사진 아래 (styles/boards.css 머리 설명) */
   --link: #A3AEBF;
   --link-strong: #6E7C93;
   --link-selected: #4A99EB;
@@ -85,7 +85,7 @@ body.theme-dark .link.colored { --link-strong: color-mix(in srgb, var(--link-col
   height: 100%;
   overflow: visible;
   pointer-events: none;
-  z-index: 35;
+  z-index: 94500;
 }
 .link-handle {
   fill: #FFFFFF;

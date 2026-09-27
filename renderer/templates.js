@@ -22,15 +22,19 @@ export const TEMPLATES = {
     type: 'markdown', color: 'yellow',
     width: 320, height: 272, title: '', content: '# 제목\n',
   }),
-  meeting: () => ({
+  meeting: () => ({                       // 마크다운 셀이라 제목 칸 대신 본문 맨 위 '# 회의록'
     type: 'markdown', color: 'green',
-    width: 320, height: 272,
-    title: getLanguage() === 'en' ? 'Meeting notes' : '회의록',
+    width: 320, height: 272, title: '',
     content: getLanguage() === 'en'
-      ? `**Date** ${today()} · **Attendees** \n### Agenda\n1. \n### To-do\n- [ ] `
-      : `**날짜** ${today()} · **참석** \n### 안건\n1. \n### 할 일\n- [ ] `,
+      ? `# Meeting notes\n**Date** ${today()} · **Attendees** \n### Agenda\n1. \n### To-do\n- [ ] `
+      : `# 회의록\n**날짜** ${today()} · **참석** \n### 안건\n1. \n### 할 일\n- [ ] `,
   }),
 };
+
+// 웹 페이지 쪽지 (web-note.js) — 주소는 만들고 바로 넣음
+export const WEB_NOTE = () => ({
+  type: 'web', url: '', color: 'gray', width: 480, height: 360, title: '', content: '',
+});
 
 export function buildTemplate(kind) {
   const make = TEMPLATES[kind];

@@ -30,6 +30,7 @@ export const menuMethods = {
           { label: t('view.gridSnap'), current: !!s.gridSnap, action: toggle('gridSnap') },
           { label: t('row.grid'), current: !!s.showGrid, action: toggle('showGrid') },
           { label: t('row.align'), current: s.alignGuides !== false, action: toggle('alignGuides') },
+          { label: t('menu.lockView'), current: !!s.lockView, action: () => this.toggleViewLock() },
           { separator: true },
           ...this.homeMenuItems().map(({ icon, ...rest }) => rest),     // 하위 목록의 다른 줄처럼 그림 없이
         ],
@@ -127,6 +128,7 @@ export const menuMethods = {
     const linkView = this.noteLinkMenuItem(note);          // 글에 인터넷 주소가 있으면: 링크 보기 › 영상 · 사진 바로 보기 · 링크만
     if (linkView) items.push(linkView);
     items.push(...this.linkMenuItems(note.id));            // 연결선 잇기 · 지우기 (links.js)
+    items.push(...this.layerMenuItems(note.id));           // 순서 › (layer-order.js)
     items.push({ separator: true });
     items.push({ icon: 'palette.svg', label: t('menu.style'), styleFor: note, arrow: true });
     items.push({ separator: true });
@@ -153,6 +155,7 @@ export const menuMethods = {
       { icon: 'palette.svg', label: t('menu.frame'), arrow: true, panel: (menu, row) => this.openFramePanel(menu, row, photo) },
       { icon: 'pin.svg', label: photo.pinned ? t('menu.unpin') : t('menu.pin'), action: () => this.togglePhotoPin(photo) },
       ...this.linkMenuItems(photo.id),
+      ...this.layerMenuItems(photo.id),                     // 순서 › (layer-order.js)
       { separator: true },
       { icon: 'trash.svg', label: t('menu.delete'), action: () => this.deletePhoto(photo.id), danger: true },
     ], x, y);
@@ -195,7 +198,8 @@ export const menuMethods = {
   //   끌어다 놓은 파일(바탕화면 밖)은 '아이콘 지우기' (파일은 그대로). 지우기 · 휴지통은 윈도우 메뉴에 있음
   //   fallback: 윈도우 메뉴를 못 띄울 때 — 바탕화면 파일은 휴지통으로 보내기도
   fileMenuItems(file, { fallback = false } = {}) {
-    const items = [...this.fileGroupMenuItems(file), ...this.linkMenuItems(file.id)];
+    const items = [...this.fileMediaMenuItems([file]), ...this.fileGroupMenuItems(file), ...this.linkMenuItems(file.id),   // 이미지 · 영상 쪽지로 (file-media.js)
+      ...this.layerMenuItems(file.id)];                                                                                     // 순서 › (layer-order.js)
     const remove = file.source !== 'desktop'
       ? { icon: 'close.svg', label: t('menu.removeIcon'), action: () => this.deleteFile(file.id) }
       : fallback ? { icon: 'trash.svg', label: t('menu.trash'), action: () => this.trashDesktopFile(file), danger: true } : null;
@@ -246,23 +250,27 @@ export const menuMethods = {
         btn.appendChild(arrow);
       }
 
+      // 옆 창(스타일 · 틀 · 하위 목록): 마우스를 올리면 열림. 눌러서 연 것은 붙박이 (menu.pinnedRow) —
+      //   다른 줄에 마우스가 닿아도 닫히거나 다른 창이 열리지 않음 (옆 창으로 비스듬히 가다 다른 줄을 스쳐도 그대로). 다른 줄을 누르면 바뀜
+      const hover = (fn) => () => { if (!menu.pinnedRow || menu.pinnedRow === btn) fn(); };
+      const press = (fn) => () => { menu.pinnedRow = btn; fn(); };
       if (item.styleFor) {
         // 스타일 변경: 마우스를 올리거나 누르면 옆에 스타일 창
         const open = () => { this.closeContextSubmenu(); this.openStylePanel(menu, btn, item.styleFor); };
-        btn.addEventListener('mouseenter', open);
-        btn.addEventListener('click', open);
+        btn.addEventListener('mouseenter', hover(open));
+        btn.addEventListener('click', press(open));
       } else if (item.panel) {
         // 틀 바꾸기처럼 옆에 창이 열리는 줄
         const open = () => { this.closeContextSubmenu(); item.panel(menu, btn); };
-        btn.addEventListener('mouseenter', open);
-        btn.addEventListener('click', open);
+        btn.addEventListener('mouseenter', hover(open));
+        btn.addEventListener('click', press(open));
       } else if (item.submenu) {
         // 주 시작 요일 › · 교시 수 › — 옆에 고르는 목록
         const open = () => this.openContextSubmenu(menu, btn, item.submenu);
-        btn.addEventListener('mouseenter', open);
-        btn.addEventListener('click', open);
+        btn.addEventListener('mouseenter', hover(open));
+        btn.addEventListener('click', press(open));
       } else {
-        btn.addEventListener('mouseenter', () => { this.closeStylePanel(); this.closeContextSubmenu(); });
+        btn.addEventListener('mouseenter', hover(() => { this.closeStylePanel(); this.closeContextSubmenu(); }));
         btn.addEventListener('click', () => {
           this.closeMenus();
           item.action();
@@ -336,17 +344,16 @@ export const menuMethods = {
     this.closeMenus();
     // 새 쪽지·파일이 놓일 자리 = 우클릭한 곳 (캔버스 좌표)
     const at = { x: (x - this.panX) / this.zoom, y: (y - this.panY) / this.zoom };
+    //   쪽지 추가 › · 판 추가 › 는 눌러서 엶 — 연 창은 다른 줄에 마우스가 닿아도 닫히지 않음 (다른 줄을 눌러야 바뀜)
     const menu = this.buildPopup('desktop-menu', [
-      { icon: 'add-note.svg', label: t('menu.addNote'), arrow: true,
-        onHover: () => { if (!document.getElementById('add-menu')) this.closeAddMenu(); },
-        onClick: (row) => this.openAddMenu(menu, row, at) },
-      { icon: 'add-board.svg', label: t('menu.addBoard'), arrow: true,
-        onHover: () => { if (!document.getElementById('board-add-menu')) this.closeAddMenu(); },
-        onClick: (row) => this.openBoardAddMenu(menu, row, at) },
+      { icon: 'add-note.svg', label: t('menu.addNote'), arrow: true, onClick: (row) => this.openAddMenu(menu, row, at) },
+      { icon: 'add-board.svg', label: t('menu.addBoard'), arrow: true, onClick: (row) => this.openBoardAddMenu(menu, row, at) },
       { icon: this.gridSnapOn() ? 'checkbox-checked.svg' : 'checkbox.svg', label: t('menu.gridMode'), current: this.gridSnapOn(),
-        onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); this.toggleGridSnap(); } },
+        onClick: () => { this.closeMenus(); this.toggleGridSnap(); } },
+      { icon: this.viewLocked() ? 'checkbox-checked.svg' : 'checkbox.svg', label: t('menu.lockView'), current: this.viewLocked(),
+        onClick: () => { this.closeMenus(); this.toggleViewLock(); } },
       ...this.homeMenuItems().map(item => ({
-        icon: item.icon, label: item.label, onHover: () => this.closeAddMenu(), onClick: () => { this.closeMenus(); item.action(); },
+        icon: item.icon, label: item.label, onClick: () => { this.closeMenus(); item.action(); },
       })),
     ]);
     menu.style.left = `${x}px`;
@@ -366,6 +373,7 @@ export const menuMethods = {
       { icon: 'add-video.svg', label: t('menu.addVideo'), onClick: () => { this.closeMenus(); this.addVideoAt(at); } },
       { icon: 'add-file.svg', label: t('menu.addFile'), onClick: () => { this.closeMenus(); this.addFileAt(at); } },
       { icon: 'add-group.svg', label: t('menu.addGroup'), onClick: () => { this.closeMenus(); this.addGroupAt(at); } },
+      { icon: 'note-link.svg', label: t('menu.addWeb'), onClick: () => { this.closeMenus(); this.addWebNoteAt(at); } },
       { separator: true },
       { icon: 'add-template.svg', label: t('menu.template'), arrow: true, onHover: (r) => this.openTemplateMenu(menu, r, at), onClick: (r) => this.openTemplateMenu(menu, r, at) },
     ]);

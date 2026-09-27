@@ -68,6 +68,8 @@ export const NEW_NOTE_SIZES = {
 };
 
 export const GRID_GAPS = [24, 36, 48, 60];
+// 확대 · 축소 감도 (설정 › 캔버스) — 휠 한 칸(100)에 보통은 약 10% (view.js handleZoom)
+export const ZOOM_SPEEDS = { slowest: 0.5, slow: 0.75, normal: 1, fast: 1.5, fastest: 2 };
 
 // 격자 모드에서 파일 아이콘이 들어가는 칸 — 기존 바탕화면처럼 (설정의 '격자 간격'과는 별개)
 export const ICON_GRID = { left: 16, top: 16, width: 92, height: 108 };
@@ -84,6 +86,9 @@ export const DEFAULT_SETTINGS = {
   theme: 'light',            // 'light' | 'dark'
   showGrid: false,
   gridGap: 36,
+  desktopBackground: true,   // 바탕화면 배경 색 맞추기 — 윈도우 배경 화면을 캔버스 바탕색 단색으로 (main.js, 끄거나 앱을 끄면 원래대로)
+  lockView: false,           // 화면 잠금 — 빈 곳 끌기 · 휠로 캔버스가 움직이거나 확대되지 않음 (view.js)
+  zoomSpeed: 'normal',       // 확대 · 축소 감도 — ZOOM_SPEEDS 의 이름
   gridSnap: false,           // 격자 모드 — 파일 아이콘이 칸에 맞춰 움직임
   alignGuides: true,         // 자 — 끌 때 다른 것의 가장자리 · 가운데에 맞춰 붙음 (align.js)
   calendarView: 'month',     // 새 캘린더 판 보기 — 'month' | 'week' (calendar.js)

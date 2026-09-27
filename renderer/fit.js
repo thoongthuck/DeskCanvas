@@ -23,7 +23,7 @@ export const fitMethods = {
     this.fitSizes.delete(note.id);
     this.updateNotePosition(el, note);           // 자리·크기를 화면 배율에 맞춤 (확대·축소·화면 이동도 여기로 옴)
     const onTimeline = this.isNoteOnTimeline(note);
-    if (note.type === 'code') return;            // 코드 쪽지는 늘어나지 않고 코드 칸 안에서 스크롤
+    if (note.type === 'code' || note.type === 'web') return;   // 코드 · 웹 페이지 쪽지는 늘어나지 않고 안에서 스크롤
     if (!onTimeline && this.isNoteOnBoard(note)) return;   // 캘린더 칸에 붙은 쪽지 · 끄는 중인 쪽지는 크기 그대로
     this.fitNoteSize(note, el);
     const after = this.fitSizes.get(note.id);

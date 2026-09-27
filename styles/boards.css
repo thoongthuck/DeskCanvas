@@ -1,9 +1,15 @@
 /* ===== 판 — 캘린더 · 연대표 (아이콘_가이드.md 12장, 시안_캘린더판.png · 시안_연대표판.png) =====
    renderer/boards.js · calendar.js · timeline.js — 모든 값은 zoom 1 기준 (--zoom 을 곱해 씀)
-   쌓임 순서 (뒤에서부터 z-index):
-     0 캘린더 · 연대표 판 → 1 고정한 쪽지 · 사진 → 2 파일 묶음과 담긴 파일 (같은 층 — 다른 것이 지나가면 함께 가려짐)
-     → 3 연결선 → 4 파일 → 5 쪽지 · 사진 (판에 겹친 쪽지 맨 위 6) → 7 고른 쪽지 · 사진
-     → 20 캘린더에서 펼친 쪽지 · 30 이름 바꾸는 파일 · 35 연결선 손잡이 · 40 끄는 중 */
+   쌓임 순서 (뒤에서부터 z-index — #ui-layer 안에서만 견줌, 메뉴 · 창은 따로):
+     0+ 캘린더 · 연대표 판과 붙은 쪽지 → 100 고정한 쪽지 · 사진 → 110+ 고정한 파일 묶음
+     → 1000+ 파일 묶음 → 2000 연결선 → 10000+ 쪽지 · 사진 · 파일 (한 무리로 순서 — renderer/layer-order.js)
+     → 50000+ 고른 쪽지 · 사진 · 파일 → 90000+ 고른 판과 붙은 쪽지 → 90100+ 고른 파일 묶음
+     → 91000 캘린더에서 펼친 쪽지 바탕 · 91100 펼친 쪽지 · 94000 이름 바꾸는 파일 · 94400 판 크기 손잡이
+     · 94500 연결선 손잡이 · 95000 끄는 중
+     순서 바꾸기(우클릭 › 순서)는 무리 안에서만: 쪽지 · 사진 · 파일끼리 · 판끼리 · 파일 묶음끼리
+     판은 판마다 자기 층: 판 = 밴드 + 4 × 차례, 붙은 쪽지 = 그 바로 위 +1 · 맨 위 +2 · 고른 쪽지 +3 (renderer/boards.js boardLayer)
+     파일 묶음도 묶음마다 자기 층: 묶음 = 밴드 + 2 × 차례, 담긴 파일 = 그 바로 위 (renderer/groups.js groupLayer)
+       → 다른 것이 판과 붙은 쪽지 · 묶음과 담긴 파일 사이에 끼지 않음. 고르면 붙은 것과 함께 맨 앞으로 */
 .board {
   --z: var(--zoom, 1);
   position: absolute;
@@ -23,8 +29,8 @@
   user-select: none;
 }
 
-/* 고른 판 (누르면 고름 → Delete 로 지우기) — 쪽지처럼 그림자가 진해짐. 파란 테두리 없음,
-   떠오르지는 않음 (칸에 붙은 쪽지는 따로 그려져서 어긋나므로). 파일 묶음은 styles/groups.css */
+/* 고른 판 (누르면 고름 → Delete 로 지우기) — 쪽지처럼 그림자가 진해지고 붙은 쪽지와 함께 맨 앞 층으로 (boards.js boardLayer).
+   파란 테두리 없음, 위로 들리지는 않음 (칸에 붙은 쪽지는 따로 그려져서 어긋나므로). 파일 묶음은 styles/groups.css */
 .board { transition: box-shadow 0.2s ease-out, border-color 0.2s ease-out; }
 .board.selected:not(.board-group) {
   border-color: #D6D1C9;
@@ -155,9 +161,17 @@
   right: 0;
   bottom: 0;
   z-index: 3;
-  width: calc(18px * var(--z));
-  height: calc(18px * var(--z));
+  width: max(14px, calc(18px * var(--z)));    /* 많이 줄여도 잡을 수 있게 */
+  height: max(14px, calc(18px * var(--z)));
   cursor: nwse-resize;
+}
+/* 고른 캘린더 · 연대표의 크기 조절 손잡이 — 고른 판도 고른 파일 묶음보다는 아래라 모서리에 겹치면 판의 손잡이를 못 잡아서
+   같은 자리에 모든 것보다 위 층으로 하나 더 (renderer/boards.js updateBoardResizeFloat) */
+.board-resize-float {
+  position: absolute;
+  z-index: 94400;
+  cursor: nwse-resize;
+  pointer-events: auto;
 }
 .board-resize::after {
   content: '';
@@ -256,6 +270,22 @@
 .cal-cell.other .cal-date { color: #C3C7CE; }
 .cal-cell.holiday .cal-date { color: #D9646B; }             /* 빨간 날은 지난달 · 다음 달 칸에서도 빨갛게 */
 .cal-cell.other .cal-holiday { color: #E2A9AC; }             /* 이름만 연하게 */
+/* 직접 표시한 날 (renderer/day-marks.js) — 날짜 숫자 · 이름이 고른 색 · 글꼴, 칸에 옅은 그 색 */
+.cal-cell.marked { background: color-mix(in srgb, var(--mark) 9%, transparent); }
+.cal-cell.marked .cal-date { color: var(--mark); }
+.cal-mark {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(10.5px * var(--z));
+  font-weight: 600;
+  color: var(--mark);
+}
+.cal-cell.other .cal-mark { opacity: 0.55; }
+.cal-mark.mark-font-pen   { font-family: var(--font-pen); font-size: calc(14px * var(--z)); font-weight: 400; }
+.cal-mark.mark-font-serif { font-family: var(--font-serif); font-weight: 700; }
+.cal-mark.mark-font-mono  { font-family: var(--font-mono); }
 .cal-cell.today .cal-date {                                  /* 오늘 — 파란 알약 */
   margin-left: calc(-4px * var(--z));
   min-width: calc(20px * var(--z));
@@ -326,23 +356,30 @@
 .sticky-note.on-board .note-header { padding-top: calc(12px * var(--z)); }
 .sticky-note.on-board .note-time,
 .sticky-note.on-board .note-resize { display: none; }
-.sticky-note.stack-top { z-index: 6; }
+/* 붙은 판 바로 위 층 — --layer 는 판의 층 (board-notes.js applyNoteLayer). 겹친 쪽지 +1 · 맨 위 +2 · 고른 쪽지 +3
+   고정한 쪽지도 판에 붙었으면 판 층 (styles.css .pinned 100 보다 앞서게 .on-board.pinned) */
+.sticky-note.on-board,
+.sticky-note.on-board.pinned { z-index: calc(var(--layer, 0) + 1); }
+.sticky-note.on-board.stack-top { z-index: calc(var(--layer, 0) + 2); }
+.sticky-note.on-board.selected { z-index: calc(var(--layer, 0) + 3); }
+/* 연대표에 그린 캘린더 쪽지는 판 안의 것 — 판 안의 걸이 · 줄 · 손잡이보다 위 */
+.tl-hangs .note-mirror { --layer: 2298; }
 .sticky-note.board-hidden { display: none; }
 .sticky-note.locked,
 .sticky-note.locked:active { cursor: default; }
 
 /* 겹친 쪽지 펼치기 — 날짜를 가운데 두고 둥글게 (calendar.js)
    펼치고 접히는 동안(fan-anim)은 둥근 바탕보다 위에서 움직이고, 맨 위 쪽지가 끝까지 맨 위 */
-.sticky-note.on-board.fanned { z-index: 20; }
-.sticky-note.on-board.fan-anim { z-index: 20; }
-.sticky-note.on-board.fan-anim.stack-top { z-index: 21; }
+.sticky-note.on-board.fanned { z-index: 91100; }
+.sticky-note.on-board.fan-anim { z-index: 91100; }
+.sticky-note.on-board.fan-anim.stack-top { z-index: 91200; }
 /* 자리 옮김은 calendar.js 가 캔버스 좌표에서 한 장면씩 (캔버스를 옮기면 바로 따라가게) — 여기서는 기울기 · 그림자만 */
 .sticky-note.fan-anim {
   transition: transform 0.28s ease-out, filter 0.2s ease-out;
 }
 .fan-overlay {
   position: absolute;
-  z-index: 19;
+  z-index: 91000;
   pointer-events: none;
   animation: fan-in 0.2s ease-out;
 }

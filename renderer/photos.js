@@ -161,16 +161,17 @@ export const photoMethods = {
   },
 
   // 새 사진 · 영상 — 틀 · 영상 소리 · 바로 재생은 설정 › 사진 · 영상
-  async addPhotoAt(at, src, extra = {}) {
+  //   record · select: 파일을 쪽지로 바꿀 때(file-media.js)는 여럿을 한 단계로 · 끝나고 한꺼번에 고름
+  async addPhotoAt(at, src, extra = {}, { record = true, select = true } = {}) {
     const size = extra.media === 'video' ? await this.videoSize(src) : await this.photoSize(src);
-    this.record();
+    if (record) this.record();
     const s = this.settings || {};
     const defaults = { frame: PHOTO_FRAMES.includes(s.photoFrame) ? s.photoFrame : 'paper' };
     if (extra.media === 'video') Object.assign(defaults, { muted: !s.videoSound, paused: s.videoAutoplay === false });
     const photo = this.newPhoto({ x: at.x, y: at.y, src, ...size, ...defaults, ...extra });
     this.photos.push(photo);
     this.createPhotoElement(photo);
-    this.selectItem(photo.id);
+    if (select) this.selectItem(photo.id);
     this.scheduleSave();
     return photo;
   },
@@ -276,6 +277,7 @@ export const photoMethods = {
   },
 
   updatePhotoPosition(el, photo) {
+    this.applyItemOrder(el, photo);                   // 순서 (layer-order.js)
     const z = this.zoom;
     const pad = this.photoPadding(photo);
     const size = this.photoOuterSize(photo);
@@ -508,6 +510,7 @@ export const photoMethods = {
   duplicatePhoto(photo) {
     this.record();
     const copy = this.newPhoto({ ...photo, id: this.newId('photo'), x: photo.x + 24, y: photo.y + 24, pinned: false });
+    delete copy.z;                                    // 순서: 맨 위 (layer-order.js)
     this.photos.push(copy);
     this.createPhotoElement(copy);
     this.selectItem(copy.id);

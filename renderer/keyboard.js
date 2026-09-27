@@ -1,4 +1,5 @@
-// 단축키와 붙여넣기 — Ctrl+Z · Ctrl+Shift+Z · Ctrl+S · Ctrl+F · Ctrl+M · Ctrl+A · Ctrl+G · Ctrl+L · F2 · Delete · Shift+Enter(글자칸에서) · Ctrl+V · Esc
+// 단축키와 붙여넣기 — Ctrl+Z · Ctrl+Shift+Z · Ctrl+S · Ctrl+F · Ctrl+M · Ctrl+A · Ctrl+G · Ctrl+L · F2 · Delete · Shift+Enter(글자칸에서) · Ctrl+C · Ctrl+V · Esc
+//   캔버스 오브젝트 복사 · 붙여넣기는 clipboard.js
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
 import { IS_MAC } from './constants.js';
@@ -62,6 +63,17 @@ export const keyboardMethods = {
       this.selectAll();
       return;
     }
+    if (ctrl && key === 'c' && !typing && this.selection.size) {   // 고른 것 복사 (clipboard.js) — 고른 글자가 있으면 글자 복사
+      const picked = window.getSelection && String(window.getSelection() || '');
+      if (!picked && this.copySelection()) e.preventDefault();
+      return;
+    }
+    if (ctrl && !typing && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {   // 순서: ] 앞으로 · [ 뒤로, Shift 는 맨 끝까지 (layer-order.js)
+      e.preventDefault();
+      const up = e.code === 'BracketRight';
+      this.reorderSelection(e.shiftKey ? (up ? 'front' : 'back') : (up ? 'forward' : 'backward'));
+      return;
+    }
     if (ctrl && key === 'g' && !typing) {                 // 고른 파일을 새 묶음으로
       e.preventDefault();
       this.groupSelectedFiles();
@@ -103,7 +115,7 @@ export const keyboardMethods = {
     const { kind, item } = entry;
     if (kind === 'file') this.startFileRename(item);
     else if (kind === 'board') this.renameBoard(item);
-    else if (kind === 'note') this.startEditing(item, 'note-title');
+    else if (kind === 'note') this.startEditing(item, item.type === 'markdown' ? '' : 'note-title');   // 마크다운 셀은 제목 칸 없음 — 본문
     else if (kind === 'photo') this.editPhotoCaption(item);
     else return false;
     return true;
@@ -122,29 +134,47 @@ export const keyboardMethods = {
     return { x: (p.x - this.panX) / this.zoom, y: (p.y - this.panY) / this.zoom };
   },
 
+  // Ctrl+V — 캔버스에서 복사해 둔 것이 먼저 (그 뒤로 클립보드가 그대로일 때, clipboard.js)
+  //   아니면 사진 → 사진 붙이기 (수정 중인 쪽지면 쪽지 사진) · 글 → 새 쪽지 · 탐색기에서 복사한 파일 → 바탕화면에
   async handlePaste(e) {
     if (this.settingsOpen) return;
     const data = e.clipboardData;
     if (!data) return;
+    const typing = this.isTyping(e.target);
+    const at = this.pasteAt();
 
+    // 클립보드 내용은 이 순간에만 읽을 수 있어서 먼저 꺼내 둠
     const imageItem = [...(data.items || [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
+    const imageFile = imageItem ? imageItem.getAsFile() : null;
+    const text = data.getData('text/plain');
     const editingNote = this.editingId ? this.notes.find(n => n.id === this.editingId) : null;
+    if (!typing) e.preventDefault();
 
-    if (imageItem) {
-      e.preventDefault();
-      const file = imageItem.getAsFile();
-      const url = file ? await this.saveImageBlob(file) : null;
-      if (!url) return;
-      if (editingNote) this.setNotePhoto(editingNote, url);           // 수정 중인 쪽지에 사진 넣기
-      else await this.addPhotoAt(this.pasteAt(), url);                // 바탕에 사진 붙이기
+    if (!typing && this.canvasClip && await this.canvasClipCurrent()) {
+      this.pasteCanvasClip(at);
       return;
     }
 
-    if (this.isTyping(e.target)) return;                              // 글자칸에서는 그대로 붙여넣기
-    const text = data.getData('text/plain');
-    if (!text || !text.trim()) return;
-    e.preventDefault();
-    this.addNoteAt(this.pasteAt(), { content: text.replace(/\r\n/g, '\n') }, { edit: false });
+    if (imageFile) {
+      if (typing) e.preventDefault();
+      const url = await this.saveImageBlob(imageFile);
+      if (!url) return;
+      if (editingNote) this.setNotePhoto(editingNote, url);           // 수정 중인 쪽지에 사진 넣기
+      else await this.addPhotoAt(at, url);                            // 바탕에 사진 붙이기
+      return;
+    }
+
+    if (typing) return;                                               // 글자칸에서는 그대로 붙여넣기
+    if (text && text.trim()) {
+      this.addNoteAt(at, { content: text.replace(/\r\n/g, '\n') }, { edit: false });
+      return;
+    }
+    // 탐색기에서 복사한 파일 — 바탕화면 폴더에 붙여넣기 (빈 바탕 우클릭 '붙여넣기' 와 같음)
+    const api = window.canvasAPI;
+    try {
+      const clip = api && api.clipboardFiles ? await api.clipboardFiles() : null;
+      if (clip && clip.files && clip.files.length) this.pasteDesktopFiles(false, at);
+    } catch (_) {}
   },
 
   // 붙여넣은 그림을 앱 데이터 폴더에 저장하고 주소를 받음

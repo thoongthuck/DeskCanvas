@@ -62,6 +62,22 @@ export const groupMethods = {
     return this.boards.filter(b => b.kind === 'group');
   },
 
+  // ---- 쌓임 순서 (styles/boards.css 머리 설명) ----
+  // 묶음마다 자기 층: 묶음 = 밴드 + 2 × 차례, 담긴 파일 = 그 바로 위
+  //   → 다른 묶음이나 그 파일이 묶음과 담긴 파일 사이에 끼지 않음 (쪽지 · 사진 · 파일이 지나가면 묶음과 파일이 함께 가려짐)
+  //   차례: 묶음끼리의 순서 (layer-order.js — 우클릭 › 순서). 밴드: 고정한 묶음 110 · 보통 1000 · 고른 묶음 90100 (맨 앞 — 고른 판 90000 ~ 위)
+  groupLayer(group) {
+    const rank = Math.min(190, Math.max(0, this.layerZ('group', group)));
+    const band = group.pinned ? 110 : this.groupSelected(group) ? 90100 : 1000;
+    return band + rank * 2;
+  },
+
+  // 묶음에 든 파일은 묶음 바로 위 층, 아니면 CSS 대로 (styles.css .file-icon)
+  applyFileLayer(el, file, slot = this.fileSlot(file)) {
+    const z = slot ? String(this.groupLayer(slot.group) + 1) : '';
+    if (el.style.zIndex !== z) el.style.zIndex = z;
+  },
+
   // 파일이 든 묶음 (없으면 null)
   fileGroup(file) {
     return this.boards.find(b => b.kind === 'group' && b.fileIds.includes(file.id)) || null;
@@ -207,15 +223,19 @@ export const groupMethods = {
     return this.selection.has(group.id) && !group.pinned;
   },
 
-  // 선택이 바뀌면 (notes.js updateSelection): 묶음이 떠오르고 담긴 파일도 같이 떠오름
+  // 선택이 바뀌면 (notes.js updateSelection): 묶음이 떠오르고 담긴 파일도 같이 떠오름 — 고른 묶음은 맨 앞 층으로
   updateGroupSelection() {
     this.fileGroups().forEach(g => {
       const el = document.getElementById(g.id);
-      if (el) el.classList.toggle('selected', this.groupSelected(g));
+      if (!el) return;
+      el.classList.toggle('selected', this.groupSelected(g));
+      el.style.zIndex = String(this.groupLayer(g));
     });
     this.files.forEach(file => {
       const el = document.getElementById(file.id);
-      if (el) el.classList.toggle('group-lifted', this.fileLifted(file));
+      if (!el) return;
+      el.classList.toggle('group-lifted', this.fileLifted(file));
+      this.applyFileLayer(el, file);
     });
   },
 
@@ -591,6 +611,7 @@ export const groupMethods = {
       { icon: 'chevron-down.svg', label: t(group.collapsed ? 'menu.expandGroup' : 'menu.collapseGroup'), action: () => this.toggleGroupCollapse(group) },
       { icon: 'pin.svg', label: t(group.pinned ? 'menu.unlockGroup' : 'menu.lockGroup'), action: () => this.toggleBoardLock(group) },
       ...this.linkMenuItems(group.id),                     // 연결선 잇기 · 지우기 (links.js)
+      ...this.layerMenuItems(group.id),                    // 순서 › — 담긴 파일과 함께 (layer-order.js)
       { separator: true },
       { icon: 'menu-ungroup.svg', label: t('menu.ungroup'), action: () => this.ungroup(group) },
     ];

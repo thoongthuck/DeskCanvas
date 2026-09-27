@@ -14,6 +14,10 @@ export const noteBodyMethods = {
       this.renderCodeBody(note, body);
       return;
     }
+    if (note.type === 'web') {                       // 웹 페이지 쪽지는 주소 줄 + 페이지가 본문 전체 (web-note.js)
+      this.renderWebBody(note, body);
+      return;
+    }
 
     const content = this.buildNoteContent(note);
     if (note.image) {
@@ -60,6 +64,7 @@ export const noteBodyMethods = {
     });
   },
 
+  // 글 쪽지 본문 — 고른 글자 색(note.spans)을 그리는 층과 함께 (text-color.js)
   createNoteTextarea(note) {
     const ta = document.createElement('textarea');
     ta.className = 'note-text';
@@ -70,24 +75,34 @@ export const noteBodyMethods = {
     ta.readOnly = this.editingId !== note.id;
     ta.addEventListener('input', () => {
       this.recordTyping();
+      const before = note.content || '';
       note.content = ta.value;
+      this.shiftFieldSpans(ta, before);             // 색 칠한 글자 자리도 따라 옮김
       this.touch(note);
       this.fitNote(note);
     });
     this.bindFieldKeys(ta);
-    return ta;
+    return this.inkField(note, ta, {
+      spans: () => note.spans || [],
+      set: (spans) => {
+        if (spans.length) note.spans = spans;
+        else delete note.spans;
+      },
+    });
   },
 
   // 할 일 한 줄: 체크박스(누르면 완료 ↔ 미완료) + 글자
   createCheckItem(note, item) {
     const row = document.createElement('div');
     row.className = 'check-item';
-    row.innerHTML = `
-      <img class="check-box" alt="" draggable="false">
-      <textarea class="check-text" rows="1" spellcheck="false"></textarea>
-    `;
-    const box = row.querySelector('.check-box');
-    const input = row.querySelector('.check-text');
+    const box = document.createElement('img');
+    box.className = 'check-box';
+    box.alt = '';
+    box.draggable = false;
+    const input = document.createElement('textarea');
+    input.className = 'check-text';
+    input.rows = 1;
+    input.spellcheck = false;
     const paint = () => {
       row.classList.toggle('done', item.done);
       box.src = ICON_DIR + (item.done ? 'checkbox-checked.svg' : 'checkbox.svg');
@@ -96,6 +111,13 @@ export const noteBodyMethods = {
     input.value = item.text;
     input.placeholder = t('note.todo');
     input.readOnly = this.editingId !== note.id;
+    row.append(box, this.inkField(note, input, {        // 고른 글자 색 (item.spans, text-color.js)
+      spans: () => item.spans || [],
+      set: (spans) => {
+        if (spans.length) item.spans = spans;
+        else delete item.spans;
+      },
+    }));
 
     box.addEventListener('click', () => {
       this.record();
@@ -105,8 +127,10 @@ export const noteBodyMethods = {
     });
     input.addEventListener('input', () => {
       this.recordTyping();
+      const before = item.text;
       item.text = input.value.replace(/\n/g, ' ');
       if (input.value !== item.text) input.value = item.text;
+      this.shiftFieldSpans(input, before);          // 색 칠한 글자 자리도 따라 옮김
       this.touch(note);
       this.fitNote(note);
     });

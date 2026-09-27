@@ -1,7 +1,7 @@
 // 설정 창 — 시안(설정창_미리보기.png)과 가이드 7장 그대로
 //   왼쪽 사이드바 + 오른쪽 한 페이지, 누르면 그 자리로 스크롤
 //   닫기: 오른쪽 위 X · Esc · 창 밖 클릭
-import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS, HOLIDAY_REGIONS } from './constants.js';
+import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS, HOLIDAY_REGIONS, ZOOM_SPEEDS } from './constants.js';
 import { PHOTO_FRAMES } from './photos.js';
 import { t } from './i18n.js';
 
@@ -27,6 +27,8 @@ const SHORTCUTS = [
   ['sc.marquee', 'key.ctrlDrag'],
   ['sc.selectAll', 'Ctrl + A'],
   ['sc.groupFiles', 'Ctrl + G'],
+  ['sc.orderStep', 'Ctrl + ]  /  Ctrl + ['],
+  ['sc.orderEnd', 'Ctrl + Shift + ]  /  ['],
   ['sc.canvasMenu', 'key.dblclickEmpty'],
   ['sc.windowsMenu', 'key.rightClick'],
   ['sc.connect', 'key.altDrag'],
@@ -200,6 +202,8 @@ export const settingsWindowMethods = {
     if (this.popOutKey) {
       wallpaperRow.querySelector('.settings-row-desc').textContent += ' ' + t('row.wallpaper.key', { key: this.popOutKey });
     }
+    row(general, 'row-desktopbg', 'row.desktopBg', 'row.desktopBg.desc',
+      this.buildToggle(s.desktopBackground, (on) => this.updateSetting('desktopBackground', on), 'desktopbg'));
 
     // 캔버스
     const canvas = section('section-canvas', 'add-image.svg', 'sec.canvas');
@@ -215,6 +219,11 @@ export const settingsWindowMethods = {
     row(canvas, 'row-gridgap', 'row.gridGap', 'row.gridGap.desc',
       this.buildDropdown(GRID_GAPS.map(g => ({ label: `${g} px`, value: g })), s.gridGap,
         (v) => this.updateSetting('gridGap', v), 'gridgap'));
+    row(canvas, 'row-lockview', 'row.lockView', 'row.lockView.desc',
+      this.buildToggle(s.lockView, (on) => this.updateSetting('lockView', on), 'lockview'));
+    row(canvas, 'row-zoomspeed', 'row.zoomSpeed', 'row.zoomSpeed.desc',
+      this.buildDropdown(Object.keys(ZOOM_SPEEDS).map(k => ({ label: t(`zoomSpeed.${k}`), value: k })), s.zoomSpeed,
+        (v) => this.updateSetting('zoomSpeed', v), 'zoomspeed'));
 
     // 쪽지
     const notes = section('section-notes', 'add-file.svg', 'sec.notes');

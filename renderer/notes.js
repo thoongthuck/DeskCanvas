@@ -7,7 +7,8 @@ import {
 import { t, formatClock } from './i18n.js';
 import { customFoldImage, isHexColor, isDarkColor } from './color.js';
 import { CODE_LANGUAGES } from './syntax.js';
-import { buildTemplate } from './templates.js';
+import { buildTemplate, WEB_NOTE } from './templates.js';
+import { cleanSpans } from './text-color.js';
 
 // 쪽지 요소에 잠깐 붙었다 떨어지는 표시 — refreshNote 가 class 를 다시 쓸 때도 남김
 //   fan-anim: 캘린더에서 펼치기 · 접기 움직임 (calendar.js) · search-hit: 찾기로 간 쪽지 반짝임 (search.js)
@@ -37,7 +38,7 @@ export const noteMethods = {
       customColor,           // 'custom' 일 때 쓰는 #rrggbb
       title: '',
       content: '',
-      type: 'text',          // 'text' | 'checklist' | 'code' | 'markdown'
+      type: 'text',          // 'text' | 'checklist' | 'code' | 'markdown' | 'web'(웹 페이지 — note.url, web-note.js)
       items: [],             // 할 일 목록 [{ id, text, done }]
       image: '',             // 쪽지에 넣은 사진 주소
       pinned: false,
@@ -66,6 +67,11 @@ export const noteMethods = {
     return note;
   },
 
+  // 웹 페이지 쪽지 — 만들고 바로 주소 칸 (web-note.js)
+  addWebNoteAt(at) {
+    return this.addNoteAt(at, WEB_NOTE(), { edit: true });
+  },
+
   // 템플릿 추가 (코드 셀 · 마크다운 노트 · 회의록)
   addTemplateAt(at, kind) {
     return this.addNoteAt(at, buildTemplate(kind), { edit: true });
@@ -85,13 +91,33 @@ export const noteMethods = {
     if (typeof note.content !== 'string') note.content = '';
     if (typeof note.image !== 'string') note.image = '';
     if (note.type === 'image') note.type = 'text';                    // 예전 '이미지 메모' → 사진이 든 글 쪽지
-    if (!['text', 'checklist', 'code', 'markdown'].includes(note.type)) note.type = 'text';
+    if (!['text', 'checklist', 'code', 'markdown', 'web'].includes(note.type)) note.type = 'text';
+    if (note.type === 'web') {                                        // 웹 페이지 쪽지 — http · https 주소만
+      if (typeof note.url !== 'string' || !/^https?:\/\//i.test(note.url)) note.url = '';
+    } else {
+      delete note.url;
+    }
+    // 마크다운 셀은 제목 칸이 없음 (styles.css) — 예전에 쓴 제목은 본문 맨 위 '# 제목' 으로 옮김
+    if (note.type === 'markdown' && note.title.trim()) {
+      const heading = `# ${note.title.trim()}`;
+      if (note.content.split('\n')[0].trim() !== heading) note.content = `${heading}\n${note.content}`;
+      note.title = '';
+    }
     if (!Array.isArray(note.items)) note.items = [];
-    note.items = note.items.map(it => ({ id: it.id || this.newId('item'), text: String(it.text || ''), done: !!it.done }));
+    note.items = note.items.map(it => {
+      const item = { id: it.id || this.newId('item'), text: String(it.text || ''), done: !!it.done };
+      const spans = cleanSpans(it.spans, item.text.length);              // 고른 글자 색 (text-color.js)
+      if (spans.length) item.spans = spans;
+      return item;
+    });
+    const spans = cleanSpans(note.spans, note.content.length);
+    if (spans.length) note.spans = spans;
+    else delete note.spans;
     note.pinned = !!note.pinned;
     if (!NOTE_FONTS.includes(note.font)) note.font = 'default';
     if (!NOTE_TEXT_SIZES.includes(note.size)) note.size = 'm';
-    if (!INK_COLORS[note.ink]) note.ink = 'default';
+    if (note.ink === 'custom' ? !isHexColor(note.inkCustom) : !INK_COLORS[note.ink]) note.ink = 'default';   // 글자 색 — 6색 · 직접 고른 색
+    if (typeof note.pt !== 'number' || !Number.isFinite(note.pt) || note.pt < 6 || note.pt > 72) delete note.pt;   // 글자 크기 pt (없으면 size 단계)
     if (note.lang && !note.codeLang) note.codeLang = note.lang;      // 예전 이름
     delete note.lang;
     if (!CODE_LANGUAGES[note.codeLang]) note.codeLang = 'python';
@@ -239,6 +265,7 @@ export const noteMethods = {
     if (note.pinned) return 'note-pinned.svg';
     if (note.type === 'code') return 'note-code.svg';
     if (note.type === 'markdown') return 'note-markdown.svg';
+    if (note.type === 'web') return 'note-link.svg';
     if (note.image) return 'note-image.svg';
     if (note.type === 'checklist') return 'note-checklist.svg';
     return 'note-text.svg';
@@ -275,8 +302,7 @@ export const noteMethods = {
       el.style.removeProperty('--note-bg');
       el.style.removeProperty('--fold-img');
     }
-    if (note.ink !== 'default') el.style.setProperty('--ink', INK_COLORS[note.ink]);
-    else el.style.removeProperty('--ink');
+    this.applyNoteTextVars(el, note);
 
     el.querySelectorAll('.note-title, .note-text, .check-text, .code-input, .md-input')
       .forEach(input => { input.readOnly = !editing; });
@@ -306,6 +332,7 @@ export const noteMethods = {
   toggleNoteType(note) {
     if (note.type !== 'text' && note.type !== 'checklist') return;    // 코드·마크다운 쪽지는 종류 전환 없음
     this.record();
+    delete note.spans;                                                // 고른 글자 색은 종류를 바꾸면 없어짐 (글자 자리가 달라져서)
     if (note.type === 'checklist') {
       // 체크리스트 → 텍스트: 할 일을 한 줄씩
       note.content = note.items.map(it => it.text).filter(t2 => t2.trim() !== '').join('\n');
@@ -340,7 +367,8 @@ export const noteMethods = {
     if (el && (note.type === 'code' || note.type === 'markdown')) this.renderNoteBody(note, el);
     this.updateSelection();
     if (!el) return;
-    const target = el.querySelector(preferField ? `.${preferField}` : 'nothing')
+    const target = (note.type === 'web' ? el.querySelector('.web-address') : null)   // 웹 페이지: 주소 칸
+      || el.querySelector(preferField ? `.${preferField}` : 'nothing')
       || (!note.title ? el.querySelector('.note-title') : null)
       || el.querySelector('.code-input, .md-input')
       || (note.type === 'checklist' ? [...el.querySelectorAll('.check-text')].pop() : el.querySelector('.note-text'))
@@ -356,6 +384,7 @@ export const noteMethods = {
   },
 
   stopEditing() {
+    this.hideTextColorBar();                          // 고른 글자 색 막대 (text-color.js)
     const id = this.editingId;
     this.editingId = null;
     this.typingRecorded = false;
@@ -375,6 +404,7 @@ export const noteMethods = {
     this.record();
     const copy = JSON.parse(JSON.stringify(note));
     copy.id = this.newId('note');
+    delete copy.z;                                      // 순서: 맨 위 (layer-order.js)
     copy.x += 24;
     copy.y += 24;
     copy.pinned = false;
@@ -413,7 +443,29 @@ export const noteMethods = {
   },
 
   resetNoteStyle(note) {                  // '기본 스타일로' — 글꼴·크기·글자 색만 되돌림 (쪽지 색은 그대로)
-    this.setNoteStyle(note, { font: 'default', size: 'm', ink: 'default' });
+    this.setNoteStyle(note, { font: 'default', size: 'm', ink: 'default', pt: null });
+  },
+
+  // 글자 크기 (pt) — 정한 값, 없으면 크기 단계(작게 · 보통 · 크게 · 아주 크게)의 본문 크기 (styles.css .size-*)
+  notePt(note) {
+    if (typeof note.pt === 'number') return note.pt;
+    return ({ s: 12, m: 13, l: 15, xl: 17 }[note.size] || 13) * 0.75;
+  },
+
+  // 쪽지 글자 색 · 크기를 요소에 (쪽지 · 연대표에 걸린 쪽지 그림이 같이 씀)
+  //   pt 를 정했으면 본문 = pt, 제목 = 본문 × 15/13 (보통 크기의 제목 · 본문 비율)
+  applyNoteTextVars(el, note) {
+    if (note.ink === 'custom' && isHexColor(note.inkCustom)) el.style.setProperty('--ink', note.inkCustom);
+    else if (note.ink !== 'default' && INK_COLORS[note.ink]) el.style.setProperty('--ink', INK_COLORS[note.ink]);
+    else el.style.removeProperty('--ink');
+    if (typeof note.pt === 'number') {
+      const px = note.pt * 4 / 3;
+      el.style.setProperty('--body-size', `${px.toFixed(2)}px`);
+      el.style.setProperty('--title-size', `${(px * 15 / 13).toFixed(2)}px`);
+    } else {
+      el.style.removeProperty('--body-size');
+      el.style.removeProperty('--title-size');
+    }
   },
 
   // 사진 넣기 / 빼기
@@ -493,6 +545,7 @@ export const noteMethods = {
     this.calendarCache.clear();
     this.timelineLayouts.clear();
     this.cleanGroupMembership();                   // 파일 묶음: 없어진 파일 · 두 묶음에 겹친 파일 정리
+    this.normalizeLayerOrder();                    // 순서 (layer-order.js) — 0, 1, 2 … 로 다시 매김
     this.boards.forEach(board => this.createBoardElement(board));   // 판은 맨 아래 (판끼리는 나중 판이 위)
     this.notes.forEach(note => this.createNoteElement(note));
     this.photos.forEach(photo => this.createPhotoElement(photo));

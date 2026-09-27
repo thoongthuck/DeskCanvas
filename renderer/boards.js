@@ -112,7 +112,10 @@ export const boardMethods = {
       e.preventDefault();
       e.stopPropagation();
       if (board.kind === 'group' && this.multiSelected(board.id)) this.openSelectionMenu(e.clientX, e.clientY);
-      else this.openBoardMenu(board, e.clientX, e.clientY);
+      else {
+        const cell = e.target.closest('.cal-cell');                  // 캘린더 날짜 칸이면 그 날짜 표시 줄도 (day-marks.js)
+        this.openBoardMenu(board, e.clientX, e.clientY, cell ? cell.dataset.date : null);
+      }
     });
 
     // 판은 쪽지 · 사진 · 파일보다 아래, 판끼리는 나중에 만든 판이 위 (다른 판 바로 뒤에 끼움)
@@ -147,6 +150,11 @@ export const boardMethods = {
     el.style.width = `${size.width * this.zoom}px`;
     el.style.height = `${size.height * this.zoom}px`;
     el.style.setProperty('--zoom', this.zoom);
+    if (board.kind === 'group') el.style.zIndex = String(this.groupLayer(board));   // 묶음마다 자기 층 (groups.js)
+    else {
+      el.style.zIndex = String(this.boardLayer(board));                             // 판마다 자기 층 — 붙은 쪽지는 바로 위
+      if (this.selection.has(board.id)) this.updateBoardResizeFloat();             // 위에 띄운 크기 조절 손잡이도 따라감
+    }
     this.requestLinks();                            // 파일 묶음에 이은 선도 따라감 (links.js)
   },
 
@@ -228,6 +236,7 @@ export const boardMethods = {
   //   고른 것은 그대로 둠. 끌고 난 뒤의 클릭은 판 칸 누르기로 치지 않음 (justPannedBoard)
   startGrabPan(e) {
     e.preventDefault();
+    if (this.viewLocked()) return;                            // 화면 잠금 (view.js)
     document.body.classList.add('pointer-busy');            // 쪽지 속 영상 재생기가 마우스를 가로채지 않게
     let lastX = e.clientX;
     let lastY = e.clientY;
@@ -265,8 +274,59 @@ export const boardMethods = {
     this.boards.forEach(board => {
       if (board.kind === 'group') return;
       const el = document.getElementById(board.id);
-      if (el) el.classList.toggle('selected', this.boardSelected(board));
+      if (!el) return;
+      el.classList.toggle('selected', this.boardSelected(board));
+      el.style.zIndex = String(this.boardLayer(board));       // 고르면 붙은 쪽지와 함께 맨 앞 층으로
     });
+    this.notes.forEach(note => {                                // 붙은 쪽지도 판의 층을 따라감 (board-notes.js)
+      if (!note.boardId) return;
+      const el = document.getElementById(note.id);
+      if (el) this.applyNoteLayer(el, note);
+    });
+    this.updateBoardResizeFloat();
+  },
+
+  // ---- 쌓임 순서 (styles/boards.css 머리 설명) ----
+  // 캘린더 · 연대표마다 자기 층: 판 = 밴드 + 4 × 차례, 붙은 쪽지 = 그 바로 위 (board-notes.js applyNoteLayer)
+  //   → 다른 쪽지 · 사진 · 파일 · 파일 묶음 · 다른 판이 판과 붙은 쪽지 사이에 끼지 않음 (지나가면 판과 쪽지가 함께 가려짐)
+  //   차례: 판끼리의 순서 (layer-order.js — 우클릭 › 순서, 24 까지 — 고정한 쪽지 100 아래)
+  //   밴드: 보통 0 (맨 뒤) · 고른 판 90000 (붙은 쪽지와 함께 맨 앞). 잠근 판은 고르지 않으니 늘 뒤
+  boardLayer(board) {
+    const rank = Math.min(24, Math.max(0, this.layerZ('board', board)));
+    return (this.boardSelected(board) ? 90000 : 0) + rank * 4;
+  },
+
+  // 고른 캘린더 · 연대표의 크기 조절 손잡이를 모든 것보다 위에 하나 더 (styles/boards.css .board-resize-float)
+  //   고른 판도 고른 파일 묶음보다는 아래라 모서리에 겹치면 판의 손잡이를 못 잡음. 고른 판 하나만 (마지막으로 고른 것)
+  updateBoardResizeFloat() {
+    const board = [...this.selection].reverse().map(id => this.boards.find(b => b.id === id))
+      .find(b => b && b.kind !== 'group' && !b.pinned);
+    let handle = document.getElementById('board-resize-float');
+    if (!board) {
+      if (handle) handle.remove();
+      return;
+    }
+    if (!handle || handle.parentNode !== this.uiLayer) {
+      if (handle) handle.remove();
+      handle = document.createElement('div');
+      handle.id = 'board-resize-float';
+      handle.className = 'board-resize-float';
+      handle.addEventListener('mousedown', (e) => {
+        const target = this.findBoard(handle.dataset.board);
+        if (!target || target.pinned || e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.startItemResize(e, 'board', target);
+      });
+      this.uiLayer.appendChild(handle);
+    }
+    handle.dataset.board = board.id;
+    const size = this.boardSize(board);
+    const s = Math.max(14, 18 * this.zoom);
+    handle.style.left = `${(board.x + size.width) * this.zoom + this.panX - s}px`;
+    handle.style.top = `${(board.y + size.height) * this.zoom + this.panY - s}px`;
+    handle.style.width = `${s}px`;
+    handle.style.height = `${s}px`;
   },
 
   // ---- 판 색 — 흰색 · 검은색 (캘린더 · 연대표. 파일 묶음은 포스트잇 색 — groups.js) ----
@@ -308,7 +368,8 @@ export const boardMethods = {
   },
 
   // ---- 판 메뉴 (판 우클릭 · 판 머리 …) ----
-  openBoardMenu(board, x, y) {
+  //   date: 우클릭한 캘린더 날짜 칸 ('YYYY-MM-DD') — 맨 위에 '이 날짜 표시 ›' (day-marks.js)
+  openBoardMenu(board, x, y, date = null) {
     if (board.kind === 'group') {                                   // 파일 묶음 메뉴 (groups.js)
       this.openContextMenu(this.groupMenuItems(board), x, y);
       return;
@@ -317,6 +378,7 @@ export const boardMethods = {
       { icon: 'edit.svg', label: t('menu.rename'), action: () => this.renameBoard(board) },
       this.boardToneMenuItem(board),                                // 판 색상 › 흰색 · 검은색
     ];
+    if (board.kind === 'calendar' && date && !board.pinned) items.unshift(...this.dayMarkMenuItems(board, date), { separator: true });
     if (board.kind === 'calendar') {
       // 가이드 12-3: 이름 바꾸기 · 보기 › (한 달 · 한 주) · 오늘로 이동 · 주 시작 요일 › · 판 잠금 · ─ · 판 지우기
       items.push({

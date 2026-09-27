@@ -78,7 +78,7 @@ export function findLinks(text) {
 export const noteLinkMethods = {
   // 쪽지 글 전부 (제목 · 본문 · 할 일) 에서 주소
   noteLinks(note) {
-    if (note.type === 'code') return [];
+    if (note.type === 'code' || note.type === 'web') return [];
     const parts = [note.title, note.content, ...(Array.isArray(note.items) ? note.items.map(it => it.text) : [])];
     return findLinks(parts.filter(Boolean).join('\n'));
   },

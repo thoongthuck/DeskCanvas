@@ -6,7 +6,7 @@
 //   캘린더 판 연동: 그 캘린더 판에 붙은 쪽지도 막대에 함께 걸림 — 같은 쪽지를 연대표에 따라 그린 것 (note-mirror)
 //   막대를 잡고 좌우로 끌면 보이는 때가 옮겨감. 보고 있는 때는 저장하지 않음 (켜면 오늘이 왼쪽 1/4쯤)
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
-import { ICON_DIR, INK_COLORS } from './constants.js';
+import { ICON_DIR } from './constants.js';
 import { t, getLanguage } from './i18n.js';
 import { isHexColor, isDarkColor, customFoldImage } from './color.js';
 import { dateKey, parseKey } from './calendar.js';
@@ -455,7 +455,7 @@ export const timelineMethods = {
       m.style.setProperty('--note-bg', note.customColor);
       m.style.setProperty('--fold-img', customFoldImage(note.customColor));
     }
-    if (note.ink !== 'default') m.style.setProperty('--ink', INK_COLORS[note.ink]);
+    this.applyNoteTextVars(m, note);                  // 글자 색 · pt 크기 (notes.js)
     place(m, item.x, item.y, item.width, item.height);
     m.innerHTML = `
       <div class="note-header">

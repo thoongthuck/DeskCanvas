@@ -88,7 +88,10 @@ export const dragMethods = {
         d.item.height = Math.max(NOTE_MIN_HEIGHT, d.item.height + snap.dh);
       }
     }
-    this.updateItemPosition(d.kind, d.item);
+    // 쪽지 크기 조절: 맞춘 크기(글이 넘쳐 늘어난 크기, fit.js)도 새 크기로 다시 맞춤
+    //   (자리만 옮기면 맞춰 둔 예전 크기로 그려져서 글이 넘친 쪽지는 끌어도 크기가 안 바뀌었음)
+    if (d.kind === 'note' && d.mode === 'resize') this.fitNote(d.item);
+    else this.updateItemPosition(d.kind, d.item);
     // 판에 붙이기는 쪽지 하나만 끌 때 (여럿을 함께 끌면 그냥 옮기기만)
     if (d.kind === 'note' && d.mode === 'move' && !d.followers.length) this.updateBoardDropTarget(d, e.clientX, e.clientY);
     if (d.kind === 'file' && d.mode === 'move') this.updateGroupDropTarget(d, e.clientX, e.clientY);
