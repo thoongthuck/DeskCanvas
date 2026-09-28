@@ -10,6 +10,9 @@ function isEditable(el) {
 }
 let editingTimer = null;
 window.addEventListener('mousedown', () => ipcRenderer.send('canvas-pressed'), true);
+// 절전 (main.js) — 다른 창에 다 가려졌는지 (크로미움이 알려 줌)
+document.addEventListener('visibilitychange', () => ipcRenderer.send('canvas-visibility', document.hidden));
+window.addEventListener('DOMContentLoaded', () => ipcRenderer.send('canvas-visibility', document.hidden));
 window.addEventListener('focusin', (e) => {
   if (!isEditable(e.target)) return;
   clearTimeout(editingTimer);

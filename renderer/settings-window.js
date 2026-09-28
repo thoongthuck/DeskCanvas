@@ -204,6 +204,9 @@ export const settingsWindowMethods = {
     }
     row(general, 'row-desktopbg', 'row.desktopBg', 'row.desktopBg.desc',
       this.buildToggle(s.desktopBackground, (on) => this.updateSetting('desktopBackground', on), 'desktopbg'));
+    row(general, 'row-sleep', 'row.sleep', 'row.sleep.desc',
+      this.buildDropdown([0, 1, 5, 15, 30].map(m => ({ label: t(m ? 'sleep.minutes' : 'sleep.off', { n: m }), value: m })), s.sleepAfter,
+        (v) => this.updateSetting('sleepAfter', Number(v)), 'sleep'));
 
     // 캔버스
     const canvas = section('section-canvas', 'add-image.svg', 'sec.canvas');

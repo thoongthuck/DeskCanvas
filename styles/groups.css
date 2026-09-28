@@ -225,7 +225,6 @@ body.theme-dark .board-name.group-title.untitled { color: rgba(31, 47, 69, 0.55)
 body.theme-dark .file-icon.in-group {
   background: transparent;
   border-color: transparent;
-  backdrop-filter: none;
 }
 .file-icon.in-group:hover,
 body.theme-dark .file-icon.in-group:hover {

@@ -96,11 +96,19 @@ export const selectionMethods = {
   },
 
   // 끌기 시작 (drag.js startItemDrag): 여럿을 골랐고 잡은 것이 옮길 수 있으면, 나머지도 같은 만큼 따라오게
+  //   고른 캘린더 · 연대표도 (붙은 쪽지는 판을 따라감 — drag.js updateItemPosition)
   followersFor(kind, item) {
-    if (!this.multiSelected(item.id) || !this.movableEntry(kind, item)) return [];
-    return this.selectedEntries()
-      .filter(en => en.item !== item && this.movableEntry(en.kind, en.item))
+    if (!this.multiSelected(item.id) || !this.canCarry(kind, item)) return [];
+    return [...this.selection]
+      .map(id => this.layerEntryById(id))                       // 캘린더 · 연대표도 찾음 (layer-order.js)
+      .filter(en => en && en.item !== item && this.canCarry(en.kind, en.item))
       .map(en => ({ ...en, x0: en.item.x, y0: en.item.y }));
+  },
+
+  // 여럿을 함께 끌 때 옮길 수 있는 것 — movableEntry + 잠그지 않은 캘린더 · 연대표
+  //   (정렬 › 은 여전히 movableEntry 만 — 큰 판까지 줄 맞추면 배치가 흐트러져서)
+  canCarry(kind, item) {
+    return this.movableEntry(kind, item) || (kind === 'board' && item.kind !== 'group' && !item.pinned);
   },
 
   // Ctrl+A — 보이는 것 모두 (다른 달에 붙어 숨은 쪽지 · 접은 묶음 속 파일 · 고정한 것 빼고)
@@ -158,7 +166,7 @@ export const selectionMethods = {
   },
 
   // 네모(월드 좌표)에 든 것 — 쪽지 · 사진 · 파일은 조금이라도 걸치면 (윈도우 바탕화면처럼),
-  //   파일 묶음은 크니까 네모 안에 다 들어와야 (옆 파일을 고르다 묶음까지 딸려 오지 않게)
+  //   판(파일 묶음 · 캘린더 · 연대표)은 크니까 네모 안에 다 들어와야 (옆 것을 고르다 판까지 딸려 오지 않게)
   itemsInRect(r) {
     const touches = (b) => b.x < r.x + r.width && b.x + b.width > r.x && b.y < r.y + r.height && b.y + b.height > r.y;
     const inside = (b) => b.x >= r.x && b.y >= r.y && b.x + b.width <= r.x + r.width && b.y + b.height <= r.y + r.height;
@@ -169,7 +177,7 @@ export const selectionMethods = {
       const slot = this.fileSlot(f);
       if (!(slot && slot.hidden) && touches(this.itemRect('file', f))) ids.push(f.id);
     });
-    this.fileGroups().forEach(g => { if (!g.pinned && inside(this.itemRect('board', g))) ids.push(g.id); });
+    this.boards.forEach(b => { if (!b.pinned && inside(this.itemRect('board', b))) ids.push(b.id); });
     return ids;
   },
 

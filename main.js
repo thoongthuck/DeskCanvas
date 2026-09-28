@@ -655,6 +655,10 @@ ipcMain.on('color-dialog', () => {
 
 // Ctrl+Alt+D — 꺼내기 · 다시 넣기
 async function togglePopOut() {
+  if (sleep.asleep) {
+    wake('앞으로 꺼내기', () => togglePopOut());
+    return;
+  }
   if (!mainWindow || mainWindow.isDestroyed() || !wallpaper.wanted || wallpaper.moving) return;
   if (wallpaper.pinned) {
     setPinnedFront(!wallpaper.front);
@@ -701,6 +705,138 @@ function claimKeyboard() {
   });
 }
 ipcMain.on('canvas-pressed', claimKeyboard);
+
+// ================ 절전 — 오래 가려져 있으면 캔버스 화면을 내려놓음 (설정 › 일반 › 가려져 있을 때 절전) ================
+// 캔버스는 바탕화면이라 거의 늘 다른 창에 가려져 있음 → 다 가려진 채로 정한 시간(기본 5분)이 지나면
+//   저장 → 바탕화면 층 사진(mirror)을 새로 찍음 → 캔버스 창 · 우클릭 메뉴 창을 닫아 화면 · GPU 메모리를 돌려줌
+//   그동안 바탕화면 자리에는 사진이 보임. 바탕화면이 보이면 (1초마다 다리 uncovered) · 트레이 · 단축키로 다시 엶 (1~2초)
+//   안 하는 때: 글을 쓰는 중 · 저장 안 한 변경 (자동 저장 끔) · 소리가 나는 중 (영상 · 웹 페이지 쪽지) · 앞으로 꺼내 둔 중 · 메뉴 · 고르는 창
+//   가려졌는지는 화면(preload.js)의 visibilitychange — 크로미움이 창이 다 가려지면 hidden 으로 알림
+const sleep = { hidden: false, timer: null, asleep: false, poll: null, since: 0, tempMirror: false };
+const SLEEP_WAKE_OPEN = 20;          // 바탕화면이 이만큼(천분율) 보이면 깨움
+
+function sleepAfterMs() {
+  try {
+    const minutes = JSON.parse(fs.readFileSync(getSettingsFile(), 'utf-8')).sleepAfter;
+    if (typeof minutes === 'number' && minutes >= 0) return minutes * 60 * 1000;
+  } catch (_) {}
+  return 5 * 60 * 1000;
+}
+
+function scheduleSleep(delay = sleepAfterMs()) {
+  clearTimeout(sleep.timer);
+  if (!sleep.hidden || sleep.asleep || !delay) return;
+  sleep.timer = setTimeout(trySleep, delay);
+}
+
+ipcMain.on('canvas-visibility', (event, hidden) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return;
+  sleep.hidden = !!hidden;
+  if (sleep.hidden) {
+    sleep.since = Date.now();
+    scheduleSleep();
+  } else {
+    clearTimeout(sleep.timer);
+  }
+});
+
+// 소리가 나는지 — 캔버스(쪽지 속 유튜브 재생기 포함) · 웹 페이지 쪽지
+function anyAudible() {
+  const { webContents } = require('electron');
+  return webContents.getAllWebContents().some(wc => !wc.isDestroyed() && wc.isCurrentlyAudible());
+}
+
+async function trySleep() {
+  if (sleep.asleep || quitting || !sleep.hidden || !mainWindow || mainWindow.isDestroyed() || process.platform !== 'win32') return;
+  const busy = !wallpaper.wanted ? '바탕화면에 넣기 꺼짐'
+    : wallpaper.front || wallpaper.poppedOut ? '앞으로 꺼내 둔 중'
+    : wallpaper.holds.size || wallpaper.dialogOpen || shellMenuOpen ? '글 · 메뉴 · 고르는 창'
+    : unsaved.dirty ? '저장 안 한 변경'
+    : anyAudible() ? '소리가 나는 중' : '';
+  if (busy) {
+    logLine(`절전 미룸: ${busy}`);
+    scheduleSleep(60 * 1000);                          // 1분 뒤 다시 봄 (그동안 보이면 취소)
+    return;
+  }
+  let ready;
+  try {
+    ready = await mainWindow.webContents.executeJavaScript('window.canvasApp ? canvasApp.prepareSleep() : { ok: false, reason: "화면 준비 전" }', true);
+  } catch (err) {
+    ready = { ok: false, reason: err && err.message };
+  }
+  if (!ready || !ready.ok) {
+    logLine(`절전 미룸: ${(ready && ready.reason) || '?'}`);
+    scheduleSleep(60 * 1000);
+    return;
+  }
+  if (!sleep.hidden || !mainWindow || mainWindow.isDestroyed()) return;   // 그사이 보이게 됨
+  // 절전 동안 보일 사진 — 붙잡기(방법 1)면 이미 있음, 넣기(방법 2)면 이번만 만듦
+  sleep.tempMirror = !mirror.ready;
+  if (!mirror.ready) await createMirror();
+  if (!mirror.ready) {                                 // 사진 창을 못 만들면 절전하지 않음 (바탕화면이 비어 보이지 않게)
+    logLine('절전 미룸: 바탕화면 층 사진 창을 못 만듦');
+    scheduleSleep(60 * 1000);
+    return;
+  }
+  clearTimeout(mirror.timer);
+  while (mirror.busy) await new Promise(r => setTimeout(r, 50));
+  await updateMirror();
+  if (!sleep.hidden || !mainWindow || mainWindow.isDestroyed()) return;
+  sleep.asleep = true;
+  logLine(`절전: 캔버스 화면을 내려놓음 (가려진 지 ${Math.round((Date.now() - sleep.since) / 60000)}분)`);
+  if (menuOverlay && !menuOverlay.isDestroyed()) menuOverlay.destroy();   // 우클릭 메뉴 창도 (깨면 다시 만듦)
+  mainWindow.destroy();
+  if (collectGarbage) setTimeout(() => { try { collectGarbage(); } catch (_) {} }, 1000);
+  // GPU 프로세스도 끝냄 — 창이 없어도 그래픽 드라이버 몫 · 캐시로 150MB 넘게 쥐고 있음. 깨면 크로미움이 새로 띄움
+  //   (크로미움은 GPU 프로세스가 몇 번 끝나면 하드웨어 가속을 아주 꺼 버려서 그 한도를 풀어 둠 — 아래 disable-gpu-process-crash-limit)
+  setTimeout(() => {
+    if (!sleep.asleep) return;
+    const gpu = app.getAppMetrics().find(m => m.type === 'GPU');
+    if (!gpu) return;
+    try {
+      process.kill(gpu.pid);
+      logLine(`절전: GPU 프로세스 끝냄 (${Math.round(gpu.memory.privateBytes / 1024)}MB)`);
+    } catch (err) {
+      logLine(`절전: GPU 프로세스를 못 끝냄: ${err && err.message}`);
+    }
+  }, 1500);
+  clearInterval(sleep.poll);
+  sleep.poll = setInterval(checkWake, 1000);
+}
+
+// 바탕화면이 보이는지 1초마다 — 다른 창이 비키거나 최소화되거나 '바탕화면 보기'(Win+D)
+async function checkWake() {
+  if (!sleep.asleep) return;
+  const b = screen.dipToScreenRect(null, screenArea());
+  const reply = await bridgeCall(`uncovered ${b.x} ${b.y} ${b.width} ${b.height}`, 3000);
+  const m = /^ok (\d+)/.exec(reply);
+  if (m && Number(m[1]) >= SLEEP_WAKE_OPEN) wake(`바탕화면이 보임 (${m[1]}‰)`);
+}
+
+// 다시 엶 — then: 화면이 다 뜬 뒤 할 일 (트레이 · 단축키로 깨웠을 때 그 일)
+function wake(reason, then = null) {
+  if (!sleep.asleep) {
+    if (then) then();
+    return;
+  }
+  clearInterval(sleep.poll);
+  sleep.poll = null;
+  sleep.asleep = false;
+  sleep.hidden = false;
+  logLine(`절전 끝: ${reason}`);
+  createWindow();
+  const win = mainWindow;
+  win.webContents.once('did-finish-load', () => {
+    setTimeout(() => {
+      if (sleep.tempMirror && !wallpaper.pinned) destroyMirror();       // 넣기(방법 2)에서 절전용으로만 만든 사진 창
+      sleep.tempMirror = false;
+      if (then && mainWindow === win) then();
+    }, 1500);
+  });
+}
+
+// 시험용 (run-app.js — DESKCANVAS_TEST 일 때만)
+if (process.env.DESKCANVAS_TEST) global.__deskCanvasSleep = { trySleep, wake, state: () => ({ ...sleep, window: !!mainWindow }) };
 
 // ================ 윈도우 우클릭 메뉴 ================
 // 파일 · 바탕화면 빈 곳을 우클릭하면 윈도우 탐색기 메뉴를 그대로 띄움 (native/desktop-bridge.ps1) — 앱 줄은 위에 붙임
@@ -1083,7 +1219,7 @@ function refreshTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     {
       label: wallpaper.poppedOut || wallpaper.front ? tx.back : tx.front, accelerator: key, registerAccelerator: false,
-      enabled: wallpaper.wanted && (wallpaper.pinned || wallpaper.embedded || wallpaper.poppedOut), click: () => togglePopOut(),
+      enabled: wallpaper.wanted && (sleep.asleep || wallpaper.pinned || wallpaper.embedded || wallpaper.poppedOut), click: () => togglePopOut(),
     },
     {
       label: tx.wallpaper, type: 'checkbox', checked: wallpaper.wanted, enabled: process.platform === 'win32',
@@ -1098,11 +1234,17 @@ function refreshTray() {
 
 // 설정값은 화면(settings.js)이 저장하고 적용함 — 트레이는 부탁만
 function applySettingFromTray(key, value) {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('apply-setting', key, value);
+  wake('트레이', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('apply-setting', key, value);
+  });
 }
 
 // 설정 창은 캔버스 안에 뜨므로 캔버스를 앞으로 꺼내고 엶 (설정 창을 닫으면 다시 바탕화면 층으로 — settings-window.js)
 function openSettingsFromTray() {
+  if (sleep.asleep) {
+    wake('트레이 › 설정', () => openSettingsFromTray());
+    return;
+  }
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (wallpaper.wanted) holdFront('settings', true);
   else showOnTop();
@@ -1414,7 +1556,7 @@ function createWindow() {
     desktopWatchers.forEach(w => { try { w.close(); } catch (_) {} });
     desktopWatchers = [];
     mainWindow = null;
-    destroyMirror();                               // 바탕화면 층 사진도 (남아 있으면 앱이 끝나지 않음)
+    if (!sleep.asleep) destroyMirror();            // 바탕화면 층 사진도 (남아 있으면 앱이 끝나지 않음) — 절전이면 그 사진을 보여 줌
     if (menuOverlay && !menuOverlay.isDestroyed()) menuOverlay.destroy();   // 우클릭 메뉴 창도
     wallpaper.pinned = false;                      // 모듈은 창이 사라질 때 스스로 풂
     wallpaper.front = false;
@@ -1422,7 +1564,8 @@ function createWindow() {
     wallpaper.poppedOut = false;
     wallpaper.lifted = null;
     // 바탕화면(탐색기)이 다시 시작되면 바탕화면 층과 함께 창도 사라짐 → 잠시 뒤 다시 만들어 넣음
-    if (wallpaper.wanted && !quitting) {
+    clearTimeout(sleep.timer);
+    if (wallpaper.wanted && !quitting && !sleep.asleep) {
       logLine('바탕화면이 다시 시작돼 창이 사라짐 → 다시 만듦');
       setTimeout(() => { if (!mainWindow && !quitting) createWindow(); }, 2000);
     }
@@ -2275,9 +2418,17 @@ ipcMain.on('save-canvas-state-sync', (event, state) => {
 
 // 앱은 하나만 — 두 번 켜면 캔버스 두 장이 바탕화면 바로 위 자리를 서로 다투고, 같은 저장 파일에 번갈아 씀
 //   (앱 데이터 폴더마다 하나 — 시험용으로 다른 폴더를 쓰면 따로 켜짐)
+// (GPU 메모리 한도 force-gpu-mem-available-mb 는 쓰지 않음 — 실제 화면에서 화면 조각이 모자라 일부가 비거나 깜빡이고 느려졌음.
+//  메모리는 가려져 있을 때 절전으로 줄임)
+// 절전 때 GPU 프로세스를 끝내도 (main.js 절전) 하드웨어 가속을 끄지 않게 — 크로미움은 GPU 프로세스가 몇 번 끝나면 가속을 아주 끔
+app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
+
 const firstInstance = app.requestSingleInstanceLock();
 if (!firstInstance) app.quit();
-app.on('second-instance', () => logLine('앱을 한 번 더 켜려 함 → 이미 켜진 앱을 그대로 씀'));
+app.on('second-instance', () => {
+  logLine('앱을 한 번 더 켜려 함 → 이미 켜진 앱을 그대로 씀');
+  wake('앱을 한 번 더 켬');
+});
 
 app.on('ready', () => {
   if (!firstInstance) return;

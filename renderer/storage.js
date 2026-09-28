@@ -83,6 +83,18 @@ export const storageMethods = {
     }
   },
 
+  // 절전 (main.js) — 화면을 내려놓기 전에 main 이 물어봄. 저장까지 마치면 { ok: true }, 안 되면 까닭
+  async prepareSleep() {
+    if (!this.ready) return { ok: false, reason: '불러오는 중' };
+    if (this.editingId) return { ok: false, reason: '글을 쓰는 중' };
+    if (this.settings.autoSave) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+      if (!(await this.persist())) return { ok: false, reason: '저장 실패' };
+    }
+    return { ok: true };
+  },
+
   // Ctrl+S
   async saveNow() {
     const ok = await this.persist();

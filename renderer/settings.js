@@ -30,6 +30,7 @@ export const settingsMethods = {
     s.lockView = !!s.lockView;
     s.desktopBackground = s.desktopBackground !== false;
     if (!ZOOM_SPEEDS[s.zoomSpeed]) s.zoomSpeed = 'normal';
+    if (![0, 1, 5, 15, 30].includes(s.sleepAfter)) s.sleepAfter = 5;
     s.gridSnap = !!s.gridSnap;
     s.alignGuides = s.alignGuides !== false;
     if (s.calendarView !== 'week') s.calendarView = 'month';

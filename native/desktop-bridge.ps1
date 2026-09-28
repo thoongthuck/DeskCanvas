@@ -9,6 +9,7 @@
 #   배경 화면:    wallget (지금 배경 화면 — 그림 · 맞춤 · 바둑판 · 배경색) · wallcolor <#색> (단색으로) · wallrestore <base64> (원래대로)
 #   클립보드:     clipfiles (복사한 파일 목록) · clipset <base64> (캔버스 Ctrl+C — 파일 · 글) · clipseq (클립보드 순번)
 #   바탕화면 층 사진: mirroropen (사진 창을 만들고 hwnd — attach 로 넣음) · mirrorshot <base64 jpg> <#색> · mirrorclose
+#   절전:         uncovered <x> <y> <w> <h> (그 넓이에서 바탕화면이 보이는 몫, 천분율 — ok 0 ~ ok 1000)
 #   살펴보기:    info <hwnd> · layout · hit <x> <y>
 #   답은 명령마다 한 줄 (ok … / fail …). 명령과 상관없이 오는 알림은 'evt …' 로 시작 (evt desktop-restarted: 탐색기가 다시 시작됨)
 #   x y w h 는 화면 픽셀 (Electron 의 screen.dipToScreenRect 값)

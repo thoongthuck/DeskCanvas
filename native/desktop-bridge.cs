@@ -102,6 +102,7 @@ public class DesktopBridge : Form {
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr hwnd, StringBuilder sb, int max);
   [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr ctx);
   [DllImport("user32.dll")] static extern IntPtr ChildWindowFromPointEx(IntPtr parent, BridgePoint p, uint flags);
+  [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(BridgePoint p);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr pid);
@@ -290,6 +291,7 @@ public class DesktopBridge : Form {
       case "mirroropen": return MirrorOpen();
       case "mirrorshot": return MirrorShot(Encoding.UTF8.GetString(Convert.FromBase64String(p.Length > 1 ? p[1] : "")), p.Length > 2 ? p[2] : "");
       case "mirrorclose": MirrorClose(); return "ok";
+      case "uncovered": return Uncovered(int.Parse(p[1]), int.Parse(p[2]), int.Parse(p[3]), int.Parse(p[4]));
       default: return "fail unknown";
     }
   }
@@ -452,6 +454,21 @@ public class DesktopBridge : Form {
     if (attached) AttachThreadInput(self, tid, false);
     GetGUIThreadInfo(tid, ref info);
     return (info.hwndFocus == hwnd ? "ok" : "fail") + " focus=" + Cls(info.hwndFocus) + " attached=" + attached;
+  }
+
+  // 그 넓이(화면 픽셀) 가운데 바탕화면이 보이는 몫 (천분율) — 격자 점마다 맨 위 창이 바탕화면 창(Progman · WorkerW 와 그 안)인지
+  //   절전한 캔버스(main.js 절전)를 깨울 때 — 다른 창이 비켜서 바탕화면이 보이면
+  static string Uncovered(int x, int y, int w, int h) {
+    const int COLS = 32, ROWS = 18;
+    int open = 0;
+    for (int r = 0; r < ROWS; r++) {
+      for (int c = 0; c < COLS; c++) {
+        var pt = new BridgePoint { X = x + (int)((c + 0.5) * w / COLS), Y = y + (int)((r + 0.5) * h / ROWS) };
+        string cls = Cls(GetAncestor(WindowFromPoint(pt), GA_ROOT));
+        if (cls == "Progman" || cls == "WorkerW") open++;
+      }
+    }
+    return "ok " + (open * 1000 / (COLS * ROWS));
   }
 
   // 바탕화면 층에 잘 붙어 있는지 — 탐색기가 다시 시작되면 떨어지고, 바탕화면을 새로 고치면 아이콘 층이 위로 올라오기도 함

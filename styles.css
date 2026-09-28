@@ -621,7 +621,8 @@ body.overflow-expand .check-text {
   padding: calc(8px * var(--zoom));
   pointer-events: auto;
   transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;   /* 위치·크기는 바로 따라감 */
-  backdrop-filter: blur(4px);
+  /* 뒤 흐림(backdrop-filter)은 쓰지 않음 — 아이콘마다 GPU 층이 따로 생기고, 그 위에 겹친 큰 층(연결선 · 판 …)까지
+     GPU 에 올라가 메모리를 수백 MB 더 씀. 아이콘 뒤는 거의 늘 단색 바탕이라 흐림은 눈에 띄지 않았음 */
 }
 
 /* 격자 모드에서 놓았을 때: 칸으로 미끄러져 들어가기 */

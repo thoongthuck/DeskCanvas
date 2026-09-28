@@ -34,11 +34,29 @@
       "!icons/시안_*.png",
       "!icons/*.md",
       "!.gitignore",
-      "!.gitattributes"
+      "!.gitattributes",
+      "!build/**"
     ],
     "win": {
       "target": "nsis",
       "icon": "icons/app.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "license": "build/license.txt",
+      "installerLanguages": [
+        "ko_KR"
+      ],
+      "language": "1042",
+      "installerIcon": "icons/app.ico",
+      "uninstallerIcon": "icons/app.ico",
+      "installerHeaderIcon": "icons/app.ico",
+      "shortcutName": "DeskCanvas",
+      "uninstallDisplayName": "DeskCanvas",
+      "runAfterFinish": true,
+      "include": "build/installer.nsh"
     }
   }
 }
