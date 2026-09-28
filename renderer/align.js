@@ -1,7 +1,8 @@
 // 자 (맞춰 붙기) — 쪽지 · 사진 · 파일 · 판을 끌거나 크기를 바꿀 때 다른 것의 가장자리 · 가운데에 맞춰 딱 붙음
 //   맞추는 선: 세로(왼쪽 · 가운데 · 오른쪽), 가로(위 · 가운데 · 아래). 화면에서 6px 안이면 붙음. 화면에 보이는 것하고만
 //   안내선은 그리지 않음 (정신 사나워서 — 사용자 요청으로 뺌)
-//   여러 개를 함께 끌면 그 묶음 전체 네모로 맞춤. 끄는 도중 Alt 를 누르고 있으면 붙지 않음. 설정 '자 (맞춰 붙기)'
+//   여러 개를 함께 끌면 그 묶음 전체 네모로 맞춤. 끄는 도중 Alt 를 누르고 있을 때만 붙음 (그냥 끌면 붙지 않음 — 사용자 요청)
+//   (Alt 를 누른 채 끌기 시작하면 연결선 잇기 — links.js. 붙이기는 끌기 시작한 뒤에 Alt). 설정 '자 (맞춰 붙기)'
 //   고른 것 정렬 (여러 개 메뉴 › 정렬): 왼쪽 · 가로 가운데 · 오른쪽 · 위 · 세로 가운데 · 아래 맞춤, 가로 · 세로 간격 같게
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
@@ -62,7 +63,7 @@ export const alignMethods = {
   // 끄는 동안 (drag.js) — 끄는 것들을 맞춰 옮김
   snapDrag(d, e) {
     const moving = [{ kind: d.kind, item: d.item }, ...d.followers];
-    if (!this.alignOn() || e.altKey || (this.gridSnapOn() && moving.every(en => en.kind === 'file'))) return;
+    if (!this.alignOn() || !e.altKey || (this.gridSnapOn() && moving.every(en => en.kind === 'file'))) return;   // Alt 를 누른 동안만
     const box = this.unionRect(moving.map(en => this.itemRect(en.kind, en.item)));
     if (!box) return;
     const targets = this.alignTargets(moving);
@@ -80,7 +81,7 @@ export const alignMethods = {
 
   // 크기 바꾸는 동안 — 오른쪽 · 아래 가장자리를 맞춤 (사진은 비율 그대로라 가로만)
   snapResize(d, e) {
-    if (!this.alignOn() || e.altKey) return null;
+    if (!this.alignOn() || !e.altKey) return null;                           // Alt 를 누른 동안만
     const r = this.itemRect(d.kind, d.item);
     const targets = this.alignTargets([{ kind: d.kind, item: d.item }]);
     const pickX = (t) => [t.x, t.x + t.width];

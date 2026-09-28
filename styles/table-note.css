@@ -1,0 +1,93 @@
+/* ===== 표 쪽지 (renderer/table-note.js) =====
+   칸 글자는 본문과 같은 글꼴 · 크기 · 색 (스타일 창). 선은 글자 색을 옅게 — 어두운 쪽지에서도 보임
+   바깥 테두리 없이 안쪽 선만 (쪽지 종이에 그린 표처럼), 첫 행은 머리 행 — 굵게 + 옅은 바탕
+   열이 많으면 한 열 최소 64px — 쪽지보다 넓어지면 설정 '글이 넘칠 때' 대로 (자동 확장: 쪽지가 넓어짐 · 자동 줄넘김: 옆으로 스크롤)
+   수정 중에만 오른쪽 · 아래 가장자리에 + (열 · 행 추가 — 누르면 하나, 끌면 끄는 만큼)
+   표는 쪽지를 가득 채움 — 쪽지를 늘리면 열은 옆으로, 행은 아래로 고르게 늘어남 */
+.note-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(min-content, 1fr) auto;   /* 표 칸은 남는 높이를 다 씀 */
+  overflow: auto;
+  scrollbar-width: none;
+}
+.note-table-wrap::-webkit-scrollbar { display: none; }
+.sticky-note.editing .note-table-wrap { gap: calc(4px * var(--z)); }
+
+.note-table {
+  --line-color: color-mix(in srgb, var(--ink) 22%, transparent);
+  grid-column: 1;
+  grid-row: 1;
+  width: max(100%, calc(var(--cols, 3) * 64px * var(--z)));
+  height: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border-style: hidden;           /* 바깥 테두리는 숨김 (겹친 선 가운데 hidden 이 이김) */
+}
+.note-table td {
+  border: calc(1px * var(--z)) solid var(--line-color);
+  padding: calc(4px * var(--z)) calc(6px * var(--z));
+  vertical-align: top;
+}
+.note-table tr:first-child td {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+/* 칸 글자칸 (연대표에 걸린 쪽지는 같은 class 의 div) */
+.table-cell {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: calc(var(--body-size) * var(--font-scale) * var(--line) * var(--z));
+  field-sizing: content;           /* 글이 길면 칸이 아래로 늘어남 */
+  font-family: var(--note-font, inherit);
+  font-size: calc(var(--body-size) * var(--font-scale) * var(--z));
+  line-height: var(--line);
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.note-table tr:first-child .table-cell { font-weight: 600; }
+.sticky-note:not(.editing) .table-cell { cursor: inherit; }   /* 보통 상태: 쪽지를 잡는 손 모양 */
+
+/* 행 · 열 추가 (+) — 수정 중에만 */
+.table-add {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: calc(1px * var(--z)) dashed var(--line-color, rgba(31, 47, 69, 0.22));
+  border-radius: calc(4px * var(--z));
+  background: transparent;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  font: inherit;
+  font-size: calc(13px * var(--z));
+  line-height: 1;
+  cursor: pointer;
+}
+.sticky-note.editing .table-add { display: flex; }
+.table-add:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+/* 여러 칸 고르기 (table-note.js) — 고른 칸은 파랗게, 그동안 글자칸 커서 · 고른 글자 표시는 숨김 */
+.note-table-wrap:focus { outline: none; }
+.note-table tr > td.cell-selected { background: color-mix(in srgb, #5A98FE 22%, transparent); }
+.note-table.cell-range .table-cell { caret-color: transparent; }
+.note-table.cell-range textarea::selection { background: transparent; }
+.text-table-act:disabled { opacity: 0.4; cursor: default; }
+.table-add-col { grid-column: 2; grid-row: 1; width: calc(16px * var(--z)); cursor: ew-resize; }
+.table-add-row { grid-column: 1; grid-row: 2; height: calc(16px * var(--z)); cursor: ns-resize; }
+/* 끄는 동안은 어디에 있든 같은 모양 */
+body.table-drag-row, body.table-drag-row * { cursor: ns-resize !important; }
+body.table-drag-col, body.table-drag-col * { cursor: ew-resize !important; }

@@ -163,7 +163,7 @@ const wallpaper = {
   queue: [],
   buffer: '',
 };
-let quitting = false;   // 사용자가 끄는 중 (탐색기가 다시 시작돼 창이 사라진 것과 구분)
+let quitting = false;   // 사용자가 끄는 중 — 트레이 · 메뉴의 종료, 윈도우 끄기 (탐색기가 다시 시작돼 창이 사라진 것 · Alt+F4 와 구분)
 let shellMenuOpen = false;   // 윈도우 11 모양 메뉴 · 윈도우 메뉴가 떠 있는 중 (다리를 바꿔 타지 않음)
 
 function wallpaperSetting() {
@@ -845,8 +845,9 @@ if (process.env.DESKCANVAS_TEST) global.__deskCanvasSleep = { trySleep, wake, st
 //   윈도우 11 모양으로 그림 (menu.html · menu-layout.js): 다리가 메뉴를 만들어 두고(menuopen) 줄들을 주면 앱이 그려 고르게 하고,
 //   고른 줄을 다리가 실행(menuinvoke). '추가 옵션 표시' 는 같은 메뉴를 예전 모양으로 (menushow). 못 그리면 예전 모양 그대로 (menu)
 //   items 의 role · icon · key: 윈도우 11 메뉴의 자리 · 앱 아이콘 · 오른쪽 단축키 글자 (renderer/menus.js)
-ipcMain.handle('shell-menu', async (event, paths, items) => {
+ipcMain.handle('shell-menu', async (event, paths, items, waited) => {
   if (process.platform !== 'win32' || !startBridge()) return null;
+  const began = Date.now();                           // 우클릭이 느리면 어디서 늦었는지 (기록: 우클릭 메뉴 보임)
   const clean = (s) => String(s || '').replace(/[\t\r\n]/g, ' ').replace(/&/g, '&&');   // & 는 윈도우 메뉴에서 밑줄 글자
   const list = Array.isArray(items) ? items : [];
   const targets = menuPaths(paths);
@@ -868,7 +869,8 @@ ipcMain.handle('shell-menu', async (event, paths, items) => {
     if (opened.startsWith('ok ')) {
       try { tree = JSON.parse(Buffer.from(opened.slice(3), 'base64').toString('utf8')); } catch (_) {}
     }
-    if (tree) logLine(`윈도우 우클릭 메뉴 받음: ${Date.now() - asked}ms (${tree.prep ? '미리 받아 둔 것' : '새로 받음'}, ${targets.length ? `파일 ${targets.length}개` : '바탕'})`);
+    const timing = { began, waited: Math.round(Number(waited) || 0), bridge: Date.now() - asked,
+      note: `${tree && tree.prep ? '미리 받아 둔 것' : '새로 받음'}, ${targets.length ? `파일 ${targets.length}개` : '바탕'}` };
     if (!tree) {
       logLine(`윈도우 11 모양 메뉴 못 만듦 → 예전 모양: ${opened.slice(0, 80)}`);
       reply = await bridgeCall(`menu ${payload}`, 10 * 60 * 1000);
@@ -879,7 +881,7 @@ ipcMain.handle('shell-menu', async (event, paths, items) => {
         appInfo.set(it.id | 0, info);
         if (list.some(x => (x.parent | 0) === (it.id | 0))) appInfo.set(`sub:${cleanText(clean(it.label)).text}`, info);   // 하위 목록은 글자로
       });
-      const choice = await showFluentMenu(buildLayout(tree, appInfo, trayText().more));
+      const choice = await showFluentMenu(buildLayout(tree, appInfo, trayText().more), timing);
       if (choice === null) {
         await bridgeCall('menuclose', 3000);
         reply = 'ok none';
@@ -892,7 +894,10 @@ ipcMain.handle('shell-menu', async (event, paths, items) => {
   } finally {
     wallpaper.dialogOpen = false;
     shellMenuOpen = false;
-    setTimeout(() => prepMenu([]), 300);               // 다음 바탕 우클릭을 위해 다시 만들어 둠
+    setTimeout(() => {
+      prepMenu([]);                                   // 다음 바탕 우클릭을 위해 다시 만들어 둠
+      if (targets.length && reply === 'ok none') prepMenu(targets);   // 그냥 닫은 파일 메뉴도 — 곧바로 또 우클릭해도 바로 뜨게
+    }, 300);
   }
   logLine(`윈도우 우클릭 메뉴: ${reply}`);
   if (wallpaper.embedded) claimKeyboard();            // 메뉴가 가져간 키보드를 캔버스로 (붙잡은 창은 다리가 메뉴 전 맨 앞 창으로 되돌려 줌)
@@ -1055,7 +1060,8 @@ ipcMain.on('menu-ready', (event) => {
 });
 
 // 메뉴를 띄우고 고른 줄 id 를 돌려줌 (-1 추가 옵션 표시 · null 그만둠)
-async function showFluentMenu(layout) {
+//   timing: 우클릭부터 보일 때까지 — 화면이 기다린 것(클립보드) · 다리(탐색기 메뉴) · 그리기 (debug-log.txt)
+async function showFluentMenu(layout, timing = null) {
   const win = menuOverlayWindow();
   if (win.webContents.isLoading()) await new Promise(r => win.webContents.once('did-finish-load', r));
   finishMenu(null);                                          // 떠 있던 것은 닫고
@@ -1077,6 +1083,7 @@ async function showFluentMenu(layout) {
     work: { left: w.x - b.x, top: w.y - b.y, right: w.x - b.x + w.width, bottom: w.y - b.y + w.height },
     dark: nativeTheme.shouldUseDarkColors,
   });
+  const drawAsked = Date.now();
   await drawn;
   menuReady = null;
   if (menuResolve && !win.isDestroyed()) {
@@ -1084,6 +1091,7 @@ async function showFluentMenu(layout) {
     win.show();
     win.focus();
   }
+  if (timing) logLine(`우클릭 메뉴 보임: ${timing.waited + Date.now() - timing.began}ms — 클립보드 ${timing.waited} · 탐색기 메뉴 ${timing.bridge} · 그리기 ${Date.now() - drawAsked} (${timing.note})`);
   return chosen;
 }
 
@@ -1253,6 +1261,7 @@ function openSettingsFromTray() {
 
 // 종료 — 창 닫기를 거쳐야 '저장할까요?'를 물어봄
 function quitFromTray() {
+  quitting = true;                                   // Alt+F4 가 아니라 끄기 (창 close 에서 구분)
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
   else app.quit();
 }
@@ -1512,12 +1521,19 @@ function createWindow() {
     mainWindow.setAlwaysOnTop(false);
   });
 
-  // 자동 저장이 꺼져 있고 저장 안 한 변경이 있으면 닫기 전에 물어봄
+  // 윈도우를 끄거나 로그아웃할 때는 그대로 닫히게 (아래 close 가 막지 않게)
+  mainWindow.on('session-end', () => { quitting = true; });
+
   mainWindow.on('close', (event) => {
-    if (allowClose || !unsaved.dirty) {
-      quitting = true;                             // 사용자가 닫음 (탐색기가 다시 시작돼 사라진 것과 구분)
+    // Alt+F4 로는 꺼지지 않음 — 끄기는 트레이 · 메뉴의 종료로만 (quitting). 앞에 꺼내 둔 캔버스는 바탕화면 층으로 돌려보냄
+    if (!quitting) {
+      event.preventDefault();
+      logLine('창 닫기(Alt+F4) 무시' + (wallpaper.poppedOut ? ' → 바탕화면 층으로' : ''));
+      if (wallpaper.poppedOut) embedWindow();
       return;
     }
+    // 자동 저장이 꺼져 있고 저장 안 한 변경이 있으면 닫기 전에 물어봄
+    if (allowClose || !unsaved.dirty) return;
     event.preventDefault();
     const labels = unsaved.labels || { message: '저장하지 않은 변경 사항이 있어요. 저장할까요?', save: '저장', discard: '저장 안 함', cancel: '취소' };
     const restore = dropAlwaysOnTop();
@@ -1539,6 +1555,8 @@ function createWindow() {
     } else if (choice === 1) {
       allowClose = true;
       mainWindow.close();
+    } else {
+      quitting = false;                              // 취소 — 계속 씀
     }
   });
 
@@ -1849,6 +1867,7 @@ ipcMain.on('set-dirty', (event, dirty, labels) => {
 });
 // 종료 메뉴: 창 닫기를 main 에서 해야 '저장할까요?'를 거침 (화면에서 window.close() 하면 바로 닫힘)
 ipcMain.on('request-quit', () => {
+  quitting = true;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
 });
 ipcMain.on('quit-now', () => {

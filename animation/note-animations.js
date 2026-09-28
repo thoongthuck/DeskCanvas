@@ -2,6 +2,7 @@
    renderer.js를 고치지 않고, 화면(#ui-layer)에 노트가 생기고 지워지는 것만 지켜보다가 재생합니다.
    - 새 노트가 생기면 → 붙이기 (note-animations.css의 note-stick)
    - 노트가 지워지면 → 지워진 노트를 잠깐 화면에 되살려 떼기(note-peel)를 보여준 뒤 없앰
+     (웹 페이지 쪽지는 떼기 대신 사진처럼 사라짐 — group-animations.js)
      (데이터 삭제와 저장은 renderer.js가 이미 끝낸 뒤라 영향 없음)
 
    재생하지 않는 경우
@@ -37,6 +38,7 @@
   }
 
   const isNote = (node) => node.nodeType === 1 && node.classList.contains('sticky-note');
+  const isWebNote = (node) => isNote(node) && node.classList.contains('type-web');
 
   // 인라인 style로 재생 → renderer.js가 className을 다시 써도 끊기지 않음
   function run(el, anim, delayMs = 0) {
@@ -55,10 +57,10 @@
   function peel(el, parent, next, order) {
     ghosts.add(el);
     el.removeAttribute('id');                    // renderer.js가 이 노트를 다시 찾지 않도록
-    el.querySelectorAll('webview').forEach(w => w.remove());   // 웹 페이지 쪽지: 되살리면 페이지를 새로 불러오므로 뗌
     el.classList.remove('selected');
     el.inert = true;                             // 클릭·포커스 안 됨
     el.setAttribute('aria-hidden', 'true');
+    el.dataset.leaving = '1';                    // 사라지는 중 (group-animations.js 와 서로 알아봄)
     el.style.pointerEvents = 'none';
     el.style.zIndex = '50';                      // 화면 앞쪽으로 떼어 내므로 다른 노트 위로
     parent.insertBefore(el, next && next.parentNode === parent ? next : null);
@@ -75,10 +77,10 @@
     const added = [];
     for (const r of records) {
       for (const n of r.removedNodes) {
-        if (isNote(n) && !ghosts.has(n)) removed.push({ el: n, parent: r.target, next: r.nextSibling });
+        if (isNote(n) && !isWebNote(n) && !ghosts.has(n)) removed.push({ el: n, parent: r.target, next: r.nextSibling });
       }
       for (const n of r.addedNodes) {
-        if (isNote(n) && !ghosts.has(n)) added.push(n);
+        if (isNote(n) && !ghosts.has(n) && !n.dataset.leaving) added.push(n);   // 다른 쪽이 사라지게 하려고 되살린 것은 빼고 (웹 페이지 쪽지 — group-animations.js)
       }
     }
     if (reduceMotion.matches || (!removed.length && !added.length)) return;

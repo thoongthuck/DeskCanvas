@@ -192,6 +192,24 @@
 .style-pt-preset:hover { background: #3A3F46 !important; }
 .style-pt-preset.current { background: #4A5568 !important; color: #FFFFFF !important; }
 
+/* 글 정렬: 네 칸 (왼쪽 · 가운데 · 오른쪽 · 양쪽) */
+.style-aligns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.style-align {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: #2F3338 !important;
+  color: #C9CDD4 !important;
+}
+.style-align:hover { background: #3A3F46 !important; }
+.style-align.current { background: #4A5568 !important; color: #FFFFFF !important; }
+
 .style-sizes {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

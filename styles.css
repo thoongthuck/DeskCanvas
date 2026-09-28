@@ -12,6 +12,7 @@
 @import url("styles/search.css");
 @import url("styles/minimap.css");
 @import url("styles/web-note.css");
+@import url("styles/table-note.css");
 
 * {
   margin: 0;
@@ -355,6 +356,38 @@ body.theme-dark #infinite-canvas {
   overflow-wrap: break-word;
 }
 .ink-mirror:empty { display: none; }
+
+/* 제목 · 표 칸의 서식 층 — 그 글자칸과 같은 크기 · 굵기 · 줄 간격 */
+.ink-note-title { flex: 0 0 auto; margin-top: calc(9px * var(--z)); }
+.ink-note-title > .note-title { margin-top: 0; }
+.ink-note-title > .ink-mirror {
+  font-size: calc(var(--title-size) * var(--font-scale) * var(--z));
+  font-weight: var(--title-weight);
+  line-height: 1.35;
+}
+.sticky-note.type-markdown .ink-note-title,
+.sticky-note.type-web .ink-note-title { display: none; }
+.ink-table-cell > .table-cell { width: 100%; }
+.note-table tr:first-child .ink-mirror { font-weight: 600; }
+
+/* 고른 글자 서식 — 글자 너비가 바뀌지 않는 것만 (뒤의 글자칸 커서 자리와 맞게, renderer/text-color.js)
+   굵게: 글자 테두리를 같은 색으로 칠함 · 기울임: 똑바른 글자를 기울여 그림 (아래 'DC Upright' — 따로 그린 기울임 글꼴은 너비가 달라서) */
+.ink-mirror .ink-b { -webkit-text-stroke: 0.045em currentColor; }
+.ink-line { min-height: 1lh; }                      /* 줄 정렬을 보일 때 줄마다 한 칸 (빈 줄도 높이) */
+/* 수정을 마치면 글자칸의 고른 자리 표시는 숨김 — 줄 정렬로 글이 옮겨져 그려질 때 빈 곳에 남아 보여서 */
+.sticky-note:not(.editing) textarea::selection { background: transparent; }
+.sticky-note:not(.editing) .table-cell { user-select: none; }
+.ink-mirror .ink-i { font-style: italic; }
+.sticky-note:not(.font-pen):not(.font-serif):not(.font-mono) .ink-mirror .ink-i {
+  font-family: 'DC Upright', 'Apple Color Emoji', Tahoma, Geneva, Verdana, sans-serif;
+}
+.note-dark .ink-mirror .ink-hl { color: #1F2F45; }   /* 어두운 쪽지에서 형광펜 칠한 글은 어둡게 */
+
+/* 글 정렬 (스타일 창 · renderer/notes.js noteAlignClass) — 제목 · 본문 · 할 일 · 글자 색 층 · 마크다운 · 표 칸이 같이
+   글자 색 층(.ink-mirror) · 마크다운 색 층(.md-highlight)도 같게 해야 글자가 겹침. 코드 · 웹 페이지 쪽지에는 class 가 붙지 않음 */
+.sticky-note.align-center :is(.note-title, .note-text, .check-text, .ink-mirror, .md-view, .md-highlight, .md-input, .table-cell) { text-align: center; }
+.sticky-note.align-right :is(.note-title, .note-text, .check-text, .ink-mirror, .md-view, .md-highlight, .md-input, .table-cell) { text-align: right; }
+.sticky-note.align-justify :is(.note-title, .note-text, .check-text, .ink-mirror, .md-view, .md-highlight, .md-input, .table-cell) { text-align: justify; }
 textarea.inked {
   color: transparent;
   caret-color: var(--ink);
@@ -363,12 +396,19 @@ textarea.inked::selection { background: rgba(90, 152, 254, 0.3); color: transpar
 .check-item.done .ink-mirror { text-decoration: line-through; opacity: 0.5; }
 body.overflow-expand .ink-mirror { white-space: pre; overflow-wrap: normal; }
 
-/* 글자를 고르면 뜨는 색 막대 — 글자 색 6가지 · 직접 고르기 · 기본 색으로 (쪽지 스타일 창과 같은 색) */
+/* 기본 글꼴(Segoe UI)을 똑바른 모양만 있는 이름으로 — 기울임을 주면 글자 너비 그대로 기울여 그림 (서식 층 .ink-i) */
+@font-face { font-family: 'DC Upright'; src: local('Segoe UI Light'), local('SegoeUI-Light'); font-weight: 300; font-style: normal; }
+@font-face { font-family: 'DC Upright'; src: local('Segoe UI'), local('SegoeUI'); font-weight: 400; font-style: normal; }
+@font-face { font-family: 'DC Upright'; src: local('Segoe UI Semibold'), local('SegoeUI-Semibold'); font-weight: 600; font-style: normal; }
+@font-face { font-family: 'DC Upright'; src: local('Segoe UI Bold'), local('SegoeUI-Bold'); font-weight: 700; font-style: normal; }
+
+/* 글자를 고르면 뜨는 서식 막대 — 굵게 · 기울임 · 밑줄 · 취소선 · 형광펜 · 서식 지우기 / 글자 색 (쪽지 스타일 창과 같은 색) */
 #text-color-bar {
   position: fixed;
   z-index: 2002;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 6px;
   padding: 6px 8px;
   border-radius: 10px;
@@ -741,3 +781,35 @@ body.theme-dark .file-icon-name {
   opacity: 1;
   transform: translate(-50%, 0);
 }
+
+/* 서식 막대의 줄 · 단추 */
+.text-style-row { display: flex; align-items: center; gap: 6px; }
+.text-style-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: #40454D;
+  color: #E5E7EB;
+  font: 700 14px/26px 'Segoe UI', sans-serif;
+  padding: 0;
+  cursor: pointer;
+}
+.text-style-btn:hover { background: #4A5058; }
+.text-style-btn.current { background: #5A98FE; color: #FFFFFF; }
+.text-style-i { font-style: italic; font-family: Georgia, serif; }
+.text-style-u { text-decoration: underline; }
+.text-style-x { text-decoration: line-through; }
+.text-style-sep { width: 1px; height: 18px; background: #50565F; margin: 0 2px; }
+.text-style-align { display: flex; align-items: center; justify-content: center; }
+.text-style-clear-all { margin-left: auto; }
+.text-hl-dot {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 5px;
+  padding: 0;
+  cursor: pointer;
+}
+.text-hl-dot.current { box-shadow: 0 0 0 2px #373B42, 0 0 0 4px #E5E7EB; }
+.text-hl-none { background: #F4F2EC linear-gradient(135deg, transparent 45%, #E11D48 45% 55%, transparent 55%); }

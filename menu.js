@@ -111,7 +111,7 @@
     panel.node.style.left = `${left}px`;
     panel.node.style.top = `${top}px`;
     if (up) panel.node.classList.add('up');
-    requestAnimationFrame(() => panel.node.classList.add('shown'));
+    panel.node.classList.add('shown', 'instant');   // 첫 판은 바로 다 보이게 — 서서히 나타나면 그만큼 늦게 뜬 것처럼 보여서 (하위 목록만 움직임)
   }
 
   function placeSub(panel, rowNode, parentNode) {

@@ -50,6 +50,7 @@ export const noteBodyMethods = {
       return list;
     }
     if (note.type === 'markdown') return this.createMarkdownBody(note);
+    if (note.type === 'table') return this.createTableBody(note);      // 표 (table-note.js)
     return this.createNoteTextarea(note);
   },
 
@@ -209,6 +210,16 @@ export const noteBodyMethods = {
     });
     ta.addEventListener('scroll', sync);
     ta.addEventListener('keydown', (e) => this.handleMarkdownKey(e, ta));
+    ta.addEventListener('keydown', (e) => this.mdStyleKey(e, note, ta));           // Ctrl+B · I · U (text-color.js)
+    // 고른 글자 위 우클릭 → 서식 막대 (기호를 넣고 뺌 — text-color.js 마크다운)
+    ta.addEventListener('contextmenu', (e) => {
+      const s = ta.selectionStart, end = ta.selectionEnd;
+      if (this.editingId !== note.id || ta.readOnly || s === end) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.closeMenus();
+      this.showTextColorBar(note, null, s, end, { x: e.clientX, y: e.clientY }, { md: ta });
+    });
     this.bindFieldKeys(ta);
     editor.append(pre, ta);
     return editor;

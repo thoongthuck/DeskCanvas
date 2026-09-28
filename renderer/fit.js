@@ -4,12 +4,15 @@
 // 사용자가 접힌 모서리로 정한 크기(note.width · height)보다 작아지지는 않음
 // 맞춘 크기는 저장하지 않고 this.fitSizes 에만 둠 (글을 지우면 원래 크기로 돌아감)
 // 코드 쪽지는 크기 그대로 두고 코드 칸 안에서 스크롤. 캘린더 칸에 붙은 쪽지는 칸 크기 그대로
+// 표 쪽지는 설정과 상관없이 표가 다 들어가게 — 옆으로도 (table-note.js). 표는 쪽지를 가득 채움 (정한 크기가 크면 행 · 열이 늘어남)
 // 연대표에 걸린 쪽지는 보통 쪽지처럼 맞추고, 크기가 바뀌면 층을 다시 나눔
 import { NOTE_MAX_AUTO_WIDTH } from './constants.js';
 
+const TABLE_MAX_WIDTH = 2400;                    // 표 쪽지가 열 때문에 넓어질 수 있는 한계 (zoom 1 기준)
+
 // 넘친 만큼 재는 곳
-const WIDE_FIELDS = '.note-title, .note-text, .check-text, .md-view, .md-input';
-const TALL_FIELDS = '.note-text, .note-checklist, .md-view, .md-input';
+const WIDE_FIELDS = '.note-title, .note-text, .check-text, .md-view, .md-input, .note-table-wrap';
+const TALL_FIELDS = '.note-text, .note-checklist, .md-view, .md-input, .note-table-wrap';
 
 export const fitMethods = {
   // 화면에 그릴 쪽지 크기 (월드 좌표)
@@ -33,14 +36,17 @@ export const fitMethods = {
 
   fitNoteSize(note, el) {
     const z = this.zoom;
+    const table = note.type === 'table';
     let width = note.width;
     let height = note.height;
 
-    if (this.settings.overflow === 'expand') {
+    // 자동 확장이거나 표: 옆으로 넘친 만큼 넓힘 (자동 줄넘김인 표는 표만 봄 — 긴 제목으로는 넓어지지 않게)
+    const wide = this.settings.overflow === 'expand' ? WIDE_FIELDS : table ? '.note-table-wrap' : null;
+    if (wide) {
       let extra = 0;
-      el.querySelectorAll(WIDE_FIELDS).forEach(f => { extra = Math.max(extra, f.scrollWidth - f.clientWidth); });
+      el.querySelectorAll(wide).forEach(f => { extra = Math.max(extra, f.scrollWidth - f.clientWidth); });
       if (extra > 1) {
-        width = Math.min(NOTE_MAX_AUTO_WIDTH, note.width + extra / z + 2);
+        width = Math.min(table ? TABLE_MAX_WIDTH : NOTE_MAX_AUTO_WIDTH, note.width + extra / z + 2);
         this.fitSizes.set(note.id, { width, height });
         this.updateNotePosition(el, note);
       }
@@ -48,12 +54,14 @@ export const fitMethods = {
 
     // 글 밑에 링크 · 영상이 붙은 쪽지 (note-links.js): 링크 칸이 쪽지 밖으로 넘친 만큼 + 그 때문에 글칸이 눌려 안에 숨은 만큼
     //   — 둘은 따로라 더하고, 늘린 뒤 긴 주소의 줄바꿈이 달라질 수 있어 넘치지 않을 때까지 몇 번 더 잼
+    //   표도 같게 — 정한 높이가 작으면 머리 · 제목이 넘친 만큼과 표가 눌린 만큼이 따로라서
     const withLinks = !!el.querySelector('.note-links');
-    for (let pass = 0; pass < (withLinks ? 3 : 1); pass++) {
+    const addUp = withLinks || table;
+    for (let pass = 0; pass < (addUp ? 3 : 1); pass++) {
       const boxY = Math.max(0, el.scrollHeight - el.clientHeight);
       let fieldY = 0;
       el.querySelectorAll(TALL_FIELDS).forEach(f => { fieldY = Math.max(fieldY, f.scrollHeight - f.clientHeight); });
-      const extraY = withLinks ? boxY + fieldY : Math.max(boxY, fieldY);
+      const extraY = addUp ? boxY + fieldY : Math.max(boxY, fieldY);
       if (extraY <= 1) break;
       height += extraY / z + 2;
       this.fitSizes.set(note.id, { width, height });

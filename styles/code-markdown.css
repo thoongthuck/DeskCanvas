@@ -258,6 +258,10 @@
 }
 .md-input::selection { background: rgba(90, 152, 254, 0.3); }
 .md-sym { color: #9A6B12; }
+/* 서식 막대로 넣은 것 (renderer/markdown.js) */
+.md-view mark { background: #FDE68A; color: inherit; border-radius: 2px; }
+.md-view del { opacity: 0.7; }
+.note-dark .md-view mark { color: #1F2F45; }
 
 /* 글이 넘칠 때 '자동 확장' */
 body.overflow-expand .md-view p,

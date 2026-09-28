@@ -7,7 +7,8 @@ const MAX_RESULTS = 8;
 // 쪽지에서 찾을 글 전부 (할 일 목록은 항목 글을 이어 붙임)
 function noteText(note) {
   const items = Array.isArray(note.items) ? note.items.map(it => it.text || '').join('\n') : '';
-  return `${note.title || ''}\n${note.content || ''}\n${items}`;
+  const table = note.table && Array.isArray(note.table.rows) ? note.table.rows.map(r => r.join(' ')).join('\n') : '';   // 표 칸
+  return `${note.title || ''}\n${note.content || ''}\n${items}\n${table}`;
 }
 
 // 찾은 글자 주변만 잘라서 보여 줌

@@ -1,6 +1,6 @@
 {
   "name": "DeskCanvas",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Infinite canvas wallpaper with sticky notes and file support",
   "main": "main.js",
   "scripts": {

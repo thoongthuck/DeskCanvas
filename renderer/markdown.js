@@ -1,5 +1,7 @@
 // 마크다운 → 꾸며진 HTML (쪽지 안에서만 씀 · 가이드 8-2)
-// 지원: # 제목, - 목록, 1. 번호, **굵게**, *기울임*, `코드`, > 인용, - [ ] 할 일, --- 구분선
+// 지원: # 제목, - 목록, 1. 번호, **굵게**, *기울임* · _기울임_, ~~취소선~~, ==형광펜==, `코드`, > 인용, - [ ] 할 일, --- 구분선
+//   서식 막대가 넣는 태그도 (이 모양 그대로만 — 다른 HTML 은 글자로): <u>밑줄</u>, <mark style="background:#RRGGBB">형광펜</mark>,
+//   <span style="color:#RRGGBB">글자 색</span> (renderer/text-color.js 마크다운)
 // 할 일 체크박스에는 원문 줄 번호(data-line)를 넣어 두고, 누르면 원문의 [ ] ↔ [x] 를 바꿈
 import { ICON_DIR } from './constants.js';
 
@@ -16,6 +18,13 @@ function inline(text) {
   s = escapeHtml(s);
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  s = s.replace(/(^|[^A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '$1<em>$2</em>');
+  s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  s = s.replace(/==([^=]+)==/g, '<mark>$1</mark>');
+  // 서식 막대의 태그 (escapeHtml 뒤라 &lt; &quot; 모양) — 정해진 모양 · 색 값이고 여는 · 닫는 짝이 맞을 때만 되살림
+  s = s.replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, '<u>$1</u>');
+  s = s.replace(/&lt;mark style=&quot;background:(#[0-9A-Fa-f]{6})&quot;&gt;([\s\S]*?)&lt;\/mark&gt;/g, '<mark style="background:$1">$2</mark>');
+  s = s.replace(/&lt;span style=&quot;color:(#[0-9A-Fa-f]{6})&quot;&gt;([\s\S]*?)&lt;\/span&gt;/g, '<span style="color:$1">$2</span>');
   s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${escapeHtml(codes[Number(i)])}</code>`);
   return s;
 }
@@ -102,7 +111,9 @@ export function highlightMarkdownSource(src) {
     out = out.replace(/^(\s*)(#{1,6}|&gt;|[-*]\s\[[ xX]\]|[-*]|\d+[.)])(\s|$)/,
       (_, space, mark, tail) => `${space}<span class="md-sym">${mark}</span>${tail}`);
     out = out.replace(/^(\s*)(---+)(\s*)$/, (_, a, mark, b) => `${a}<span class="md-sym">${mark}</span>${b}`);
-    out = out.replace(/(\*\*|\*|`)/g, '<span class="md-sym">$1</span>');
+    out = out.replace(/(\*\*|\*|`|~~|==)/g, '<span class="md-sym">$1</span>');
+    // 서식 막대의 태그도 기호 색으로
+    out = out.replace(/(&lt;\/?(?:u|mark|span)(?: style=&quot;[^&]*&quot;)?&gt;)/g, '<span class="md-sym">$1</span>');
     return out || ' ';
   }).join('\n');
 }

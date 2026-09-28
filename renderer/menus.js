@@ -17,9 +17,9 @@ export const menuMethods = {
     e.preventDefault();
     const x = e.clientX, y = e.clientY;
     const at = { x: (x - this.panX) / this.zoom, y: (y - this.panY) / this.zoom };
-    const api = window.canvasAPI;
-    let clip = { files: [] };
-    try { if (api && api.clipboardFiles) clip = await api.clipboardFiles(); } catch (_) {}
+    const asked = performance.now();
+    const clip = await this.takeClipboardFiles();
+    const waited = performance.now() - asked;
     const hasFiles = !!(clip && clip.files && clip.files.length);
     const s = this.settings;
     const toggle = (key) => () => this.updateSetting(key, !this.settings[key]);
@@ -42,8 +42,29 @@ export const menuMethods = {
       { role: 'refresh', label: t('menu.refresh'), action: () => this.refreshDesktop() },
       { role: 'pastelink', label: t('menu.pasteShortcut'), disabled: !hasFiles, action: () => this.pasteDesktopFiles(true, at) },
       { role: 'undo', label: t('menu.undo'), key: 'Ctrl+Z', disabled: !this.undoStack.length, action: () => this.undo() },
-    ], { at });
+    ], { at, waited });
     if (!shown) this.openDesktopMenu(x, y);
+  },
+
+  // 바탕 메뉴 '붙여넣기' 를 쓸 수 있는지 (클립보드에 파일이 있는지 — 다리 clipfiles)
+  //   오른쪽 단추를 누르는 순간 물어 두고 (app.js) 뗄 때 뜨는 메뉴는 그 답을 씀 — 다리를 한 번 오가는 시간을 메뉴가 기다리지 않게
+  //   누른 지 오래된 답(2초)은 버림 · 키보드 메뉴 키처럼 누르지 않고 온 메뉴는 그때 물음
+  prefetchClipboardFiles() {
+    const api = window.canvasAPI;
+    if (!api || !api.clipboardFiles) return;
+    this.clipPrefetch = { at: performance.now(), answer: api.clipboardFiles().catch(() => null) };
+  },
+
+  async takeClipboardFiles() {
+    const api = window.canvasAPI;
+    const pre = this.clipPrefetch;
+    this.clipPrefetch = null;
+    try {
+      const answer = pre && performance.now() - pre.at < 2000 ? pre.answer : (api && api.clipboardFiles ? api.clipboardFiles() : null);
+      return (await answer) || { files: [] };
+    } catch (_) {
+      return { files: [] };
+    }
   },
 
   // 원점 줄 — 원점으로 · 지금 화면을 원점으로 · (정해 두었으면) 원점 처음대로 (view.js)
@@ -59,20 +80,20 @@ export const menuMethods = {
   // 윈도우 메뉴로 띄우기 (main.js 'shell-menu') — 앱 메뉴 줄(글자 · 하위 목록 · 할 일)을 윈도우 메뉴 줄로 바꿔 위에 붙임
   //   file: 그 파일의 '이름 바꾸기'를 앱이 받음, at: 빈 바탕 메뉴로 새로 만든 파일을 놓을 자리
   //   반환: 띄웠으면 true, 못 띄웠으면 false (그때는 앱 메뉴로)
-  async showNativeMenu(paths, items, { file = null, at = null } = {}) {
+  async showNativeMenu(paths, items, { file = null, at = null, waited = 0 } = {}) {
     const api = window.canvasAPI;
     if (!api || !api.shellMenu) return false;
     // 윈도우에서 우클릭 한 번에 contextmenu 가 두 번 오기도 함 → 메뉴를 부르는 중(닫힐 때까지)에 온 것은 버림 (메뉴가 두 번 뜨지 않게)
     if (this.nativeMenuBusy) return true;
     this.nativeMenuBusy = true;
     try {
-      return await this.showNativeMenuNow(paths, items, { file, at });
+      return await this.showNativeMenuNow(paths, items, { file, at, waited });
     } finally {
       this.nativeMenuBusy = false;
     }
   },
 
-  async showNativeMenuNow(paths, items, { file, at }) {
+  async showNativeMenuNow(paths, items, { file, at, waited }) {
     const api = window.canvasAPI;
     this.closeMenus();
     const lines = [];
@@ -96,7 +117,7 @@ export const menuMethods = {
     const before = paths.length ? this.snapshot() : null;           // 윈도우 메뉴로 지우면 이 모습으로 되돌림 (history.js)
     let reply = null;
     try {
-      reply = await api.shellMenu(paths, lines);
+      reply = await api.shellMenu(paths, lines, waited);
     } catch (_) {
       return false;
     }
@@ -125,6 +146,7 @@ export const menuMethods = {
         ? { icon: 'add-image.svg', label: t('menu.removePhoto'), action: () => this.removeNotePhoto(note) }
         : { icon: 'add-image.svg', label: t('menu.addPhoto'), action: () => this.pickNotePhoto(note) });
     }
+    if (note.type === 'table') items.push(...this.tableMenuItems(note));   // 표 › 행 · 열 넣고 빼기 (table-note.js)
     const linkView = this.noteLinkMenuItem(note);          // 글에 인터넷 주소가 있으면: 링크 보기 › 영상 · 사진 바로 보기 · 링크만
     if (linkView) items.push(linkView);
     items.push(...this.linkMenuItems(note.id));            // 연결선 잇기 · 지우기 (links.js)
@@ -369,6 +391,7 @@ export const menuMethods = {
     row.classList.add('open');            // 열려 있는 동안 '쪽지 추가' 줄은 호버 배경 유지
     const menu = this.buildPopup('add-menu', [
       { icon: 'add-memo.svg', label: t('menu.addMemo'), onClick: () => { this.closeMenus(); this.addNoteAt(at); } },
+      { icon: 'add-table.svg', label: t('menu.addTable'), onClick: () => { this.closeMenus(); this.addTableNoteAt(at); } },
       { icon: 'add-image.svg', label: t('menu.addImage'), onClick: () => { this.closeMenus(); this.addImageAt(at); } },
       { icon: 'add-video.svg', label: t('menu.addVideo'), onClick: () => { this.closeMenus(); this.addVideoAt(at); } },
       { icon: 'add-file.svg', label: t('menu.addFile'), onClick: () => { this.closeMenus(); this.addFileAt(at); } },

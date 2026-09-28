@@ -448,6 +448,7 @@ export const timelineMethods = {
     const m = div(['sticky-note', 'note-mirror', 'on-board', 'stack-top',
       custom ? 'note-custom' : `note-${note.color}`,
       `type-${note.type}`, `size-${note.size}`, `font-${note.font}`, `ink-${note.ink}`,
+      this.noteAlignClass(note),                        // 글 정렬 (notes.js)
       this.selection.has(note.id) ? 'selected' : '',
       custom && isDarkColor(note.customColor) ? 'note-dark' : '',
     ].filter(Boolean).join(' '));
@@ -475,6 +476,8 @@ export const timelineMethods = {
         list.appendChild(row);
       });
       body.appendChild(list);
+    } else if (note.type === 'table' && note.table) {
+      body.appendChild(this.tableMirror(note));        // 표 (table-note.js)
     } else {
       body.appendChild(div('note-text', note.content));
     }

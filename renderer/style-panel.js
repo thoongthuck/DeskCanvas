@@ -1,11 +1,25 @@
 // 쪽지 스타일 창 — 쪽지 우클릭 메뉴의 '스타일 변경 ›' 옆에 열림 (code/icons/아이콘_가이드.md 8-1)
-//   쪽지 색(6색 + 직접 고르기) · 글자 색(6색 + 직접 고르기) · 글꼴 · 크기 · 기본 스타일로
+//   쪽지 색(6색 + 직접 고르기) · 글자 색(6색 + 직접 고르기) · 글꼴 · 크기 · 글 정렬 · 기본 스타일로
+//   글 정렬은 제목 · 본문 · 할 일 · 마크다운 · 표 칸이 같이 (코드 · 웹 페이지 쪽지는 없음 — styles.css .align-*)
 //   글자 색은 쪽지 글 전체 — 글 일부만 칠하려면 고치는 중에 글자를 골라 색 막대로 (text-color.js)
 //   누르는 즉시 그 쪽지에 적용되고 저장됨
-import { ICON_DIR, NOTE_COLORS, STYLE_COLOR_ORDER, INK_COLORS, NOTE_FONTS } from './constants.js';
+import { ICON_DIR, NOTE_COLORS, STYLE_COLOR_ORDER, INK_COLORS, NOTE_FONTS, NOTE_ALIGNS } from './constants.js';
 import { t } from './i18n.js';
 
 const FONT_LABEL = { default: 'fontDefault', pen: 'fontPen', serif: 'fontSerif', mono: 'fontMono' };
+const ALIGN_LABEL = { left: 'alignLeft', center: 'alignCenter', right: 'alignRight', justify: 'alignJustify' };
+
+// 정렬 단추 그림 — 네 줄의 길이 · 자리로 (글자 색을 따라감)
+const ALIGN_LINES = {
+  left:    [[3, 17], [3, 12], [3, 17], [3, 10]],
+  center:  [[3, 17], [6, 14], [3, 17], [7, 13]],
+  right:   [[3, 17], [8, 17], [3, 17], [10, 17]],
+  justify: [[3, 17], [3, 17], [3, 17], [3, 11]],
+};
+export function alignIcon(key) {
+  const lines = ALIGN_LINES[key].map(([x1, x2], i) => `<path d="M${x1} ${4 + i * 4}H${x2}"/>`).join('');
+  return `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">${lines}</svg>`;
+}
 
 export const stylePanelMethods = {
   openStylePanel(menu, anchor, note) {
@@ -164,7 +178,24 @@ export const stylePanelMethods = {
     });
     section('styleSize').append(ptRow, presets);
 
-    // 기본 스타일로: 글꼴 · 크기 · 글자 색만 처음 값으로 (쪽지 색은 그대로)
+    // 글 정렬: 왼쪽 · 가운데 · 오른쪽 · 양쪽 (코드 · 웹 페이지 쪽지는 없음)
+    if (note.type !== 'code' && note.type !== 'web') {
+      const aligns = document.createElement('div');
+      aligns.className = 'style-aligns';
+      const now = note.align || 'left';
+      NOTE_ALIGNS.forEach(key => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'style-align' + (now === key ? ' current' : '');
+        btn.title = t(ALIGN_LABEL[key]);
+        btn.innerHTML = alignIcon(key);
+        btn.addEventListener('click', () => apply({ align: key }));
+        aligns.appendChild(btn);
+      });
+      section('styleAlign').appendChild(aligns);
+    }
+
+    // 기본 스타일로: 글꼴 · 크기 · 글자 색 · 정렬만 처음 값으로 (쪽지 색은 그대로)
     const sep = document.createElement('div');
     sep.className = 'style-separator';
     const reset = document.createElement('button');
@@ -172,7 +203,7 @@ export const stylePanelMethods = {
     reset.className = 'style-reset';
     reset.innerHTML = `<img src="${ICON_DIR}style-reset.svg" alt="" draggable="false"><span></span>`;
     reset.querySelector('span').textContent = t('styleReset');
-    reset.addEventListener('click', () => apply({ ink: 'default', font: 'default', size: 'm', pt: null }));
+    reset.addEventListener('click', () => apply({ ink: 'default', font: 'default', size: 'm', pt: null, align: 'left' }));
     panel.append(sep, reset);
   },
 

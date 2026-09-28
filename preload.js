@@ -83,7 +83,7 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),
   onApplySetting: (callback) => ipcRenderer.on('apply-setting', (event, key, value) => callback(key, value)),
   // 윈도우 우클릭 메뉴 · 파일 이름 바꾸기
-  shellMenu: (paths, items) => ipcRenderer.invoke('shell-menu', paths, items),
+  shellMenu: (paths, items, waited) => ipcRenderer.invoke('shell-menu', paths, items, waited),   // waited: 메뉴 전에 기다린 ms (기록용)
   menuPrefetch: (paths) => ipcRenderer.send('menu-prefetch', paths),     // 오른쪽 단추를 누르는 순간 — 뗄 때 뜰 메뉴를 미리
   renamePath: (filePath, newName) => ipcRenderer.invoke('rename-path', filePath, newName),
   // 탐색기에서 끌어다 놓기

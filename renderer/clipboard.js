@@ -76,6 +76,7 @@ export const clipboardMethods = {
     if (note.title) parts.push(note.title);
     if (note.content) parts.push(note.content);
     if (note.type === 'web' && note.url) parts.push(note.url);         // 웹 페이지 쪽지는 주소
+    if (note.type === 'table' && note.table) parts.push(this.tableText(note));   // 표는 탭 · 줄로 (엑셀 · 한글에서 표가 됨)
     if (Array.isArray(note.items) && note.items.length) {
       parts.push(note.items.map(it => `${it.done ? '[x]' : '[ ]'} ${it.text || ''}`).join('\n'));
     }
