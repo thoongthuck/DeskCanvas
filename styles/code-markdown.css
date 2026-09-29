@@ -261,6 +261,10 @@
 /* 서식 막대로 넣은 것 (renderer/markdown.js) */
 .md-view mark { background: #FDE68A; color: inherit; border-radius: 2px; }
 .md-view del { opacity: 0.7; }
+.md-view .md-font-default { font-family: 'Segoe UI', 'Apple Color Emoji', Tahoma, Geneva, Verdana, sans-serif; }
+.md-view .md-font-pen { font-family: var(--font-pen); font-size: 1.4em; }
+.md-view .md-font-serif { font-family: var(--font-serif); }
+.md-view .md-font-mono { font-family: var(--font-mono); }
 .note-dark .md-view mark { color: #1F2F45; }
 
 /* 글이 넘칠 때 '자동 확장' */

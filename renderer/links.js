@@ -168,9 +168,9 @@ export const linkMethods = {
       if (e.target.closest && e.target.closest('.link-hit, .link-handle, #context-menu, #style-panel')) return;   // 손잡이 · 메뉴 · 선 색 창을 누르는 동안은 그대로
       this.selectLink(null);
     }, true);
-    // Alt + 끌기: 잡은 것에서 선을 끌어 다른 것 위에 놓으면 이음
+    // Alt + 끌기: 잡은 것에서 선을 끌어 다른 것 위에 놓으면 이음 (Ctrl + Alt 는 맞춰 붙이며 끌기 — align.js)
     document.addEventListener('mousedown', (e) => {
-      if (!e.altKey || e.button !== 0 || this.linking) return;
+      if (!e.altKey || e.ctrlKey || e.button !== 0 || this.linking) return;
       const id = this.linkableAt(e.target);
       if (!id) return;
       e.preventDefault();

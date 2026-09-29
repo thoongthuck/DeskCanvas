@@ -4,7 +4,9 @@
 //     굵게 · 기울임 · 밑줄 · 취소선 · 줄 정렬 / 형광펜 · 서식 지우기 / 글자 색 6가지 · 직접 고르기 · 기본 색으로
 //     (고른 글자가 없으면 우클릭은 쪽지 메뉴 그대로). 막대 밖을 누르면 닫힘. Ctrl+B · I · U 로도 (고른 채)
 //   서식은 글자 위치로 저장 (note.spans · note.titleSpans · item.spans · note.table.spans[행][열]
-//     = [{ s: 시작, e: 끝, c?: 글자 색, h?: 형광펜 색, b?: 굵게, i?: 기울임, u?: 밑줄, x?: 취소선, a?: 줄 정렬 }], 겹치지 않는 조각)
+//     = [{ s: 시작, e: 끝, c?: 글자 색, h?: 형광펜 색, b?: 굵게, i?: 기울임, u?: 밑줄, x?: 취소선, a?: 줄 정렬, z?: 글자 크기 배율 }], 겹치지 않는 조각)
+//     글자 크기(z)는 쪽지 글자 크기의 몇 배, 글꼴(f)은 default · pen · serif · mono — 둘 다 줄 정렬처럼 수정을 마친 뒤(보기)에만 보임
+//       (글자 폭이 달라 글자칸과 겹칠 수 없어서, 그때는 서식 층이 자리를 차지 · .ink-field.rich)
 //     줄 정렬(a)은 고른 글자가 걸친 줄 전체(줄 끝 줄바꿈까지)에 — 줄의 첫 글자에 붙은 정렬이 그 줄의 정렬
 //       글자칸은 한 칸에 정렬이 하나뿐이라 줄마다 다른 정렬은 수정을 마친 뒤(보기)에만 보임 — 고치는 중에는 쪽지 정렬 그대로
 //     글을 고치면 위치가 따라 움직이고, 서식 있는 글 바로 뒤에 이어 쓰거나 바꿔 쓰면 같은 서식 (워드처럼)
@@ -13,13 +15,17 @@
 //     (글자 크기 · 글꼴은 쪽지 전체만 — 스타일 창)
 //   쪽지 전체 글자 색(스타일 창)은 따로 — 칠하지 않은 글이 그 색
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
-import { INK_COLORS, NOTE_ALIGNS } from './constants.js';
+import { INK_COLORS, NOTE_ALIGNS, NOTE_FONTS } from './constants.js';
 import { t } from './i18n.js';
 import { alignIcon } from './style-panel.js';
 
 const HEX = /^#[0-9A-F]{6}$/i;
 const FLAGS = ['b', 'i', 'u', 'x'];                   // 굵게 · 기울임 · 밑줄 · 취소선
-const KEYS = ['c', 'h', 'a', ...FLAGS];
+const KEYS = ['c', 'h', 'a', 'z', 'f', ...FLAGS];
+const FONT_LABEL = { default: 'fontDefault', pen: 'fontPen', serif: 'fontSerif', mono: 'fontMono' };
+const FONT_SCALE = { pen: 1.4 };                      // 손글씨는 같은 크기에서 1.4배로 (styles.css .font-pen 과 같게)
+// 고른 글자 크기 — 쪽지 글자 크기의 몇 배 (작게 · 보통 · 크게 · 더 크게 · 아주 크게)
+export const TEXT_SIZES = [0.8, 1, 1.3, 1.6, 2];
 
 // 형광펜 색 (칠한 글 뒤 바탕)
 export const HIGHLIGHTS = ['#FDE68A', '#BBF7D0', '#FBCFE8', '#BFDBFE', '#FED7AA'];
@@ -30,6 +36,8 @@ function styleOf(sp) {
   if (HEX.test(String(sp.c || ''))) st.c = String(sp.c).toUpperCase();
   if (HEX.test(String(sp.h || ''))) st.h = String(sp.h).toUpperCase();
   if (NOTE_ALIGNS.includes(sp.a)) st.a = sp.a;
+  if (Number.isFinite(sp.z) && sp.z >= 0.5 && sp.z <= 4 && Math.abs(sp.z - 1) > 0.001) st.z = Math.round(sp.z * 100) / 100;
+  if (NOTE_FONTS.includes(sp.f)) st.f = sp.f;
   FLAGS.forEach(k => { if (sp[k]) st[k] = 1; });
   return st;
 }
@@ -134,8 +142,9 @@ export function lineRange(text, s, e) {
   return { s: ls, e: nl < 0 ? text.length : nl + 1 };
 }
 
-// 서식을 입힌 글 (층 · 연대표 그림이 씀) — lines: 줄마다 따로 (줄 정렬을 보일 때, 수정 중이 아닐 때)
-export function inkHtml(text, spans, { lines = false } = {}) {
+// 서식을 입힌 글 (층 · 연대표 그림이 씀) — lines: 줄마다 따로 (줄 정렬을 보일 때), sized: 글자 크기 · 글꼴도 (둘 다 수정 중이 아닐 때만)
+//   noteFont: 쪽지 글꼴 — 손글씨 쪽지 안의 다른 글꼴은 1.4배를 되돌림
+export function inkHtml(text, spans, { lines = false, sized = false, noteFont = 'default' } = {}) {
   if (lines) {
     const out = [];
     let ls = 0;
@@ -144,7 +153,7 @@ export function inkHtml(text, spans, { lines = false } = {}) {
       const align = ls < text.length ? lineAlignAt(spans, text, ls) : null;
       const part = spans.filter(x => x.e > ls && x.s < le)
         .map(x => ({ ...x, s: Math.max(0, x.s - ls), e: Math.min(line.length, x.e - ls) }));
-      const inner = line.length ? inkHtml(line, part).slice(0, -1) : '<br>';   // 끝에 붙는 줄바꿈은 뺌
+      const inner = line.length ? inkHtml(line, part, { sized, noteFont }).slice(0, -1) : '<br>';   // 끝에 붙는 줄바꿈은 뺌
       out.push(`<div class="ink-line"${align ? ` style="text-align:${align}"` : ''}>${inner}</div>`);
       ls = le + 1;
     });
@@ -155,10 +164,14 @@ export function inkHtml(text, spans, { lines = false } = {}) {
   let pos = 0;
   spans.forEach(sp => {
     if (sp.s > pos) html += esc(text.slice(pos, sp.s));
-    const cls = [sp.b ? 'ink-b' : '', sp.i ? 'ink-i' : '', sp.h ? 'ink-hl' : ''].filter(Boolean).join(' ');
+    const cls = [sp.b ? 'ink-b' : '', sp.i ? 'ink-i' : '', sp.h ? 'ink-hl' : '', sized && sp.f ? `ink-f-${sp.f}` : ''].filter(Boolean).join(' ');
     const css = [];
     if (sp.c) css.push(`color:${sp.c}`);
     if (sp.h) css.push(`background-color:${sp.h}`);
+    if (sized && (sp.z || sp.f)) {
+      const scale = (sp.z || 1) * (sp.f ? (FONT_SCALE[sp.f] || 1) / (FONT_SCALE[noteFont] || 1) : 1);
+      if (Math.abs(scale - 1) > 0.001) css.push(`font-size:${Math.round(scale * 1000) / 1000}em`);
+    }
     const deco = [sp.u ? 'underline' : '', sp.x ? 'line-through' : ''].filter(Boolean).join(' ');
     if (deco) css.push(`text-decoration-line:${deco}`);
     html += `<span${cls ? ` class="${cls}"` : ''}${css.length ? ` style="${css.join(';')}"` : ''}>${esc(text.slice(sp.s, sp.e))}</span>`;
@@ -183,8 +196,11 @@ export const textColorMethods = {
       const on = spans.length > 0;
       ta.classList.toggle('inked', on);
       // 줄 정렬은 수정 중이 아닐 때만 (고치는 중에는 글자칸 커서와 맞게 한 줄로 흘려 그림)
-      const lines = on && this.editingId !== note.id && spans.some(sp => sp.a);
-      mirror.innerHTML = on ? inkHtml(ta.value, spans, { lines }) : '';
+      const view = on && this.editingId !== note.id;
+      const lines = view && spans.some(sp => sp.a);
+      const sized = view && spans.some(sp => sp.z || sp.f);
+      wrap.classList.toggle('rich', sized);            // 크기가 다른 글: 서식 층이 자리를 차지하고 글자칸은 숨김 (styles.css)
+      mirror.innerHTML = on ? inkHtml(ta.value, spans, { lines, sized, noteFont: note.font }) : '';
       sync();
     };
     ta.addEventListener('scroll', sync);
@@ -292,6 +308,49 @@ export const textColorMethods = {
     }
     bar.appendChild(styleRow);
 
+    // 크기 — 쪽지 글자 크기의 몇 배 (수정을 마치면 보임)
+    if (ops.size) {
+      const sizeRow = document.createElement('div');
+      sizeRow.className = 'text-style-row';
+      const st = document.createElement('span');
+      st.className = 'text-color-title';
+      st.textContent = t('textStyle.size');
+      sizeRow.appendChild(st);
+      const now = ops.sizeNow();
+      TEXT_SIZES.forEach(z => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'text-size-btn' + (Math.abs(now - z) < 0.01 ? ' current' : '');
+        btn.textContent = t('sampleChar');
+        btn.style.fontSize = `${Math.round(9 + z * 5)}px`;
+        btn.title = t(`textStyle.size_${Math.round(z * 100)}`);
+        btn.addEventListener('click', () => ops.size(z));
+        sizeRow.appendChild(btn);
+      });
+      bar.appendChild(sizeRow);
+    }
+
+    // 글꼴 — 쪽지 글꼴과 같은 것을 고르면 따로 두지 않음 (수정을 마치면 보임)
+    if (ops.font) {
+      const fontRow = document.createElement('div');
+      fontRow.className = 'text-style-row';
+      const ft = document.createElement('span');
+      ft.className = 'text-color-title';
+      ft.textContent = t('textStyle.font');
+      fontRow.appendChild(ft);
+      const now = ops.fontNow();
+      NOTE_FONTS.forEach(key => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `text-size-btn text-font-btn text-font-${key}` + (now === key ? ' current' : '');
+        btn.textContent = t(FONT_LABEL[key]);
+        btn.title = `${t(FONT_LABEL[key])} ${t('textStyle.viewHint')}`;
+        btn.addEventListener('click', () => ops.font(key));
+        fontRow.appendChild(btn);
+      });
+      bar.appendChild(fontRow);
+    }
+
     // 둘째 줄: 형광펜 · 없음 | 서식 지우기
     const hlRow = document.createElement('div');
     hlRow.className = 'text-style-row';
@@ -378,7 +437,47 @@ export const textColorMethods = {
     clear.addEventListener('click', () => ops.color(null));
     colorRow.appendChild(clear);
 
-    // 넷째 줄 (표에서 여러 칸을 골랐을 때): 열 너비 같게 · 행 높이 같게 · 칸 비우기 (table-note.js)
+    // 표에서 여러 칸을 골랐을 때: 칸 색 줄 (table-note.js)
+    if (table && table.fills) {
+      const fills = table.fills;
+      const fillRow = document.createElement('div');
+      fillRow.className = 'text-style-row';
+      const ft = document.createElement('span');
+      ft.className = 'text-color-title';
+      ft.textContent = t('table.cellColor');
+      fillRow.appendChild(ft);
+      fills.colors.forEach(hex => {
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'text-hl-dot text-fill-dot' + (fills.current === hex ? ' current' : '');
+        dot.style.background = hex;
+        dot.title = t('table.cellColor');
+        dot.addEventListener('click', () => fills.set(hex));
+        fillRow.appendChild(dot);
+      });
+      const customFill = this.createCustomColorDot({
+        className: 'text-hl-dot',
+        current: !!fills.current && !fills.colors.includes(fills.current),
+        value: fills.current || '#FEF3C7',
+        onStart: () => { bar.picking = true; },
+        onInput: () => {},
+        onDone: (hex) => {
+          bar.picking = false;
+          fills.set(hex);
+        },
+        onCancel: () => { bar.picking = false; },
+      });
+      fillRow.appendChild(customFill);
+      const noFill = document.createElement('button');
+      noFill.type = 'button';
+      noFill.className = 'text-hl-dot text-hl-none';
+      noFill.title = t('table.noFill');
+      noFill.addEventListener('click', () => fills.set(null));
+      fillRow.appendChild(noFill);
+      bar.appendChild(fillRow);
+    }
+
+    // 표 단추 줄 (표에서 여러 칸을 골랐을 때): 열 너비 같게 · 행 높이 같게 · 칸 비우기 (table-note.js)
     if (table) {
       const tableRow = document.createElement('div');
       tableRow.className = 'text-style-row';
@@ -435,13 +534,25 @@ export const textColorMethods = {
         return (f && lineAlignAt(spansOf(f), f.ta.value, f.s)) || bar.note.align || 'left';
       },
       align: (key) => { if (this.alignInk(bar.note, targets(), key)) this.barDone(bar); },
+      sizeNow: () => {
+        const f = targets()[0];
+        const sp = f && spansOf(f).find(x => x.s <= f.s && x.e > f.s);
+        return (sp && sp.z) || 1;
+      },
+      size: (z) => edit((x, sp) => paintSpans(sp, x.s, x.e, { z: z === 1 ? null : z }, x.ta.value.length)),
+      fontNow: () => {
+        const f = targets()[0];
+        const sp = f && spansOf(f).find(x => x.s <= f.s && x.e > f.s);
+        return (sp && sp.f) || bar.note.font || 'default';
+      },
+      font: (key) => edit((x, sp) => paintSpans(sp, x.s, x.e, { f: key === (bar.note.font || 'default') ? null : key }, x.ta.value.length)),
       hlHas: (hex) => all(x => spansOf(x).some(sp => sp.h === hex && sp.s <= x.s && sp.e >= x.e)),
       highlight: (hex) => edit((x, sp) => paintSpans(sp, x.s, x.e, { h: hex }, x.ta.value.length)),
       color: (hex) => edit((x, sp) => paintSpans(sp, x.s, x.e, { c: hex }, x.ta.value.length)),
       clear: () => edit((x, sp) => {                  // 글자 서식 · 걸친 줄의 정렬까지
         const len = x.ta.value.length;
         const r = lineRange(x.ta.value, x.s, x.e);
-        return paintSpans(paintSpans(sp, x.s, x.e, { c: null, h: null, b: null, i: null, u: null, x: null }, len), r.s, r.e, { a: null }, len);
+        return paintSpans(paintSpans(sp, x.s, x.e, { c: null, h: null, b: null, i: null, u: null, x: null, z: null, f: null }, len), r.s, r.e, { a: null }, len);
       }),
       anchor: () => bar.field || (targets()[0] && targets()[0].ta),
     };
@@ -543,10 +654,22 @@ export const textColorMethods = {
       has: (key) => layers().some(l => l.kind === key) || mdWrapped(ta.value, bar.range.s, bar.range.e, ...MD_MARKS[key]),
       toggle: (key) => this.mdToggle(bar, key),
       align: null,
+      sizeNow: () => {
+        const l = layers().find(x => x.kind === 'z');
+        const m = l && /(\d+)%/.exec(l.open);
+        return m ? Number(m[1]) / 100 : 1;
+      },
+      size: (z) => this.mdKind(bar, ['z'], z === 1 ? null : [`<span style="font-size:${Math.round(z * 100)}%">`, '</span>']),
+      fontNow: () => {
+        const l = layers().find(x => x.kind === 'f');
+        const m = l && /font-(\w+)/.exec(l.open);
+        return m ? m[1] : (bar.note.font || 'default');
+      },
+      font: (key) => this.mdKind(bar, ['f'], key === (bar.note.font || 'default') ? null : [`<span class="font-${key}">`, '</span>']),
       hlHas: (hex) => layers().some(l => l.kind === 'hl' && (l.open.includes(hex) || (hex === HIGHLIGHTS[0] && l.open === '=='))),
       highlight: (hex) => this.mdKind(bar, ['hl'], hex ? (hex === HIGHLIGHTS[0] ? ['==', '=='] : [`<mark style="background:${hex}">`, '</mark>']) : null),
       color: (hex) => this.mdKind(bar, ['c'], hex ? [`<span style="color:${hex}">`, '</span>'] : null),
-      clear: () => this.mdKind(bar, ['b', 'i', 'u', 'x', 'hl', 'c'], null),
+      clear: () => this.mdKind(bar, ['b', 'i', 'u', 'x', 'hl', 'c', 'z', 'f'], null),
       anchor: () => ta,
     };
   },
@@ -582,7 +705,7 @@ export const textColorMethods = {
     let mid = v.slice(s, e);
     kinds.forEach(k => {
       const w = MD_INNER[k];
-      if (w) mid = mid.replace(w, '');
+      if (w) mid = mid.replace(w.re, w.to);
     });
     if (kinds.includes('i')) mid = mid.replace(/^_([\s\S]*)_$/, '$1');   // 기울임 _ 는 글 양 끝에 있을 때만 (낱말 속 _ 는 그대로)
     const opens = kept.slice().reverse().map(l => l.open).join('');
@@ -634,15 +757,19 @@ const MD_WRAPS = [
   { kind: 'u', open: /<u>$/, close: '</u>' },
   { kind: 'hl', open: new RegExp(`<mark style="background:${HEX_ATTR}">$`), close: '</mark>' },
   { kind: 'c', open: new RegExp(`<span style="color:${HEX_ATTR}">$`), close: '</span>' },
+  { kind: 'z', open: /<span style="font-size:\d{2,3}%">$/, close: '</span>' },
+  { kind: 'f', open: /<span class="font-(?:default|pen|serif|mono)">$/, close: '</span>' },
   { kind: 'i', open: /_$/, close: '_' },
 ];
 // 고른 글자 안쪽에서 뺄 기호 (서식 지우기 · 형광펜 · 색을 바꿀 때)
 const MD_INNER = {
-  b: /\*\*/g,
-  x: /~~/g,
-  u: /<\/?u>/g,
-  hl: new RegExp(`==|<mark(?: style="background:${HEX_ATTR}")?>|</mark>`, 'g'),
-  c: new RegExp(`<span style="color:${HEX_ATTR}">|</span>`, 'g'),
+  b: { re: /\*\*/g, to: '' },
+  x: { re: /~~/g, to: '' },
+  u: { re: /<\/?u>/g, to: '' },
+  hl: { re: new RegExp(`==|<mark(?: style="background:${HEX_ATTR}")?>|</mark>`, 'g'), to: '' },
+  c: { re: new RegExp(`<span style="color:${HEX_ATTR}">([\\s\\S]*?)</span>`, 'g'), to: '$1' },
+  z: { re: /<span style="font-size:\d{2,3}%">([\s\S]*?)<\/span>/g, to: '$1' },
+  f: { re: /<span class="font-(?:default|pen|serif|mono)">([\s\S]*?)<\/span>/g, to: '$1' },
 };
 
 // 고른 [s, e) 를 바로 감싼 겹들 — 안쪽부터 [{ kind, open, close, a, b }] ([a, b) = 여는 기호 ~ 닫는 기호 끝)

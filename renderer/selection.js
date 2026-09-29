@@ -25,7 +25,8 @@ export const selectionMethods = {
   //   그 밖: 그것 하나만. eligible = false (고정한 것 등): 더하기 없이 그것 하나만
   pressSelect(e, id, eligible = true) {
     this.narrowTo = null;
-    const adding = e.button === 0 && (e.ctrlKey || e.shiftKey || (IS_MAC && e.metaKey));
+    // Ctrl + Alt 는 맞춰 붙이며 끌기 (align.js) — 여러 개 고르기가 아님
+    const adding = e.button === 0 && ((e.ctrlKey && !e.altKey) || e.shiftKey || (IS_MAC && e.metaKey));
     if (adding && eligible) {
       if (this.selection.has(id)) {
         this.selection.delete(id);
@@ -53,7 +54,7 @@ export const selectionMethods = {
   //   문서 전체의 누르기를 먼저 받아서 (app.js, 잡기 단계) 오브젝트마다 따로 막아 둔 단추 · 칸도 빠짐없이
   //   Ctrl · Shift (여러 개 고르기) · 이미 고른 것 (여러 개 함께 끌기) · 연결선 잇는 중은 원래대로 (pressSelect · links.js)
   selectOnInteract(e) {
-    if (e.ctrlKey || e.shiftKey || (IS_MAC && e.metaKey) || this.linking) return;
+    if ((e.ctrlKey && !e.altKey) || e.shiftKey || (IS_MAC && e.metaKey) || this.linking) return;
     const el = e.target && e.target.closest
       && e.target.closest('#ui-layer .sticky-note, #ui-layer .canvas-photo, #ui-layer .file-icon, #ui-layer .board');
     if (!el || !el.id || this.selection.has(el.id)) return;

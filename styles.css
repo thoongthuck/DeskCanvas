@@ -368,17 +368,28 @@ body.theme-dark #infinite-canvas {
 .sticky-note.type-markdown .ink-note-title,
 .sticky-note.type-web .ink-note-title { display: none; }
 .ink-table-cell > .table-cell { width: 100%; }
-.note-table tr:first-child .ink-mirror { font-weight: 600; }
 
 /* 고른 글자 서식 — 글자 너비가 바뀌지 않는 것만 (뒤의 글자칸 커서 자리와 맞게, renderer/text-color.js)
    굵게: 글자 테두리를 같은 색으로 칠함 · 기울임: 똑바른 글자를 기울여 그림 (아래 'DC Upright' — 따로 그린 기울임 글꼴은 너비가 달라서) */
 .ink-mirror .ink-b { -webkit-text-stroke: 0.045em currentColor; }
 .ink-line { min-height: 1lh; }                      /* 줄 정렬을 보일 때 줄마다 한 칸 (빈 줄도 높이) */
+/* 고른 글자 크기 (보기에서만, renderer/text-color.js) — 크기가 달라 글자칸과 겹칠 수 없어서 서식 층이 자리를 차지하고 글자칸은 숨김 */
+.ink-field.rich > .ink-mirror { position: relative; transform: none; }
+.ink-field.rich > textarea { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+/* 고른 글자 글꼴 (보기에서만) — 크기(손글씨 1.4배)는 renderer/text-color.js 가 font-size 로 */
+.ink-mirror .ink-f-default { font-family: 'Segoe UI', 'Apple Color Emoji', Tahoma, Geneva, Verdana, sans-serif; }
+.ink-mirror .ink-f-pen { font-family: var(--font-pen); }
+.ink-mirror .ink-f-serif { font-family: var(--font-serif); }
+.ink-mirror .ink-f-mono { font-family: var(--font-mono); }
+.text-font-default { font-family: 'Segoe UI', 'Malgun Gothic', sans-serif; }
+.text-font-pen { font-family: var(--font-pen); font-size: 18px; font-weight: 400; }
+.text-font-serif { font-family: var(--font-serif); }
+.text-font-mono { font-family: var(--font-mono); font-size: 12px; }
 /* 수정을 마치면 글자칸의 고른 자리 표시는 숨김 — 줄 정렬로 글이 옮겨져 그려질 때 빈 곳에 남아 보여서 */
 .sticky-note:not(.editing) textarea::selection { background: transparent; }
 .sticky-note:not(.editing) .table-cell { user-select: none; }
 .ink-mirror .ink-i { font-style: italic; }
-.sticky-note:not(.font-pen):not(.font-serif):not(.font-mono) .ink-mirror .ink-i {
+.sticky-note:not(.font-pen):not(.font-serif):not(.font-mono) .ink-field:not(.rich) > .ink-mirror .ink-i {
   font-family: 'DC Upright', 'Apple Color Emoji', Tahoma, Geneva, Verdana, sans-serif;
 }
 .note-dark .ink-mirror .ink-hl { color: #1F2F45; }   /* 어두운 쪽지에서 형광펜 칠한 글은 어둡게 */
@@ -802,6 +813,20 @@ body.theme-dark .file-icon-name {
 .text-style-x { text-decoration: line-through; }
 .text-style-sep { width: 1px; height: 18px; background: #50565F; margin: 0 2px; }
 .text-style-align { display: flex; align-items: center; justify-content: center; }
+.text-size-btn {
+  min-width: 30px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: #2F3338;
+  color: #C9CDD4;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 6px;
+  cursor: pointer;
+}
+.text-size-btn:hover { background: #3A3F46; }
+.text-size-btn.current { background: #5A98FE; color: #FFFFFF; }
 .text-style-clear-all { margin-left: auto; }
 .text-hl-dot {
   width: 20px;

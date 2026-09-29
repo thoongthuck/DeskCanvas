@@ -1,7 +1,7 @@
 // 표 쪽지 — 쪽지 추가 › 표. 칸마다 글을 쓰고, 행 · 열을 넣고 뺌 (styles/table-note.css)
-//   note.table = { rows: [['제목', …], ['', …], …], widths?, heights? } — 첫 행은 머리 행 (굵게). 모든 행의 칸 수는 같음
+//   note.table = { rows: [['제목', …], ['', …], …], widths?, heights? } — 첫 행은 머리 행 (옅은 바탕). 모든 행의 칸 수는 같음
 //     widths: 열 너비 비율 (합 1 — 없으면 똑같이), heights: 행 높이 (월드 px, 0 = 글에 맞게 — 없으면 모두 글에 맞게)
-//     spans: 칸마다 고른 글자 서식 [행][열] (text-color.js — 없으면 서식 없음)
+//     spans: 칸마다 고른 글자 서식 [행][열] (text-color.js — 없으면 서식 없음), fills: 칸 색 [행][열] ('#RRGGBB' | null)
 //   안쪽 선을 끌면 칸 크기: 세로 선은 양옆 열이 너비를 주고받고, 가로 선은 그 위 행 높이 (쪽지도 같이) — startTableBorderDrag
 //   수정 중: Tab / Shift+Tab 옆 칸 (마지막 칸에서 Tab 은 새 행) · Enter 아래 칸 (마지막 행이면 새 행)
 //            ↑ ↓ 위 · 아래 칸 (칸 안 첫 줄 · 마지막 줄에서) · Alt+Enter 칸 안에서 줄 바꾸기 · Shift+Enter 수정 끝내기
@@ -16,9 +16,15 @@ import { NOTE_MIN_WIDTH, NOTE_MIN_HEIGHT } from './constants.js';
 import { cleanSpans } from './text-color.js';
 
 const MAX_ROWS = 60;
+const HEX = /^#[0-9A-F]{6}$/i;
+// 칸 색 — 쪽지 위에서 글이 잘 보이는 옅은 색 (노랑 · 초록 · 파랑 · 분홍 · 보라 · 회색)
+export const CELL_FILLS = ['#FEF3C7', '#DCFCE7', '#DBEAFE', '#FCE7F3', '#EDE9FE', '#E5E7EB'];
 const MAX_COLS = 20;
 const MAX_WIDTH = 2400;          // 열을 넣어 넓어질 수 있는 한계 (fit.js 와 같게)
 const MAX_HEIGHT = 4000;         // 행을 넣어 높아질 수 있는 한계
+// 수정 중에만 보이는 + 단추 자리 (단추 16 + 사이 4, table-note.css) — 그동안 쪽지를 이만큼 오른쪽 · 아래로 늘림
+//   표 크기는 수정 중 · 보기에서 같고, + 가 사라지면 쪽지가 줄어듦 (fit.js · drag.js)
+const EDIT_PAD = 20;
 
 // 붙여 넣은 글 → 칸 (탭 · 줄로 나눔, 따옴표로 감싼 칸 안의 탭 · 줄 · "" 도 — 엑셀에서 복사한 것)
 function parseTsv(text) {
@@ -73,6 +79,11 @@ export const tableNoteMethods = {
         return list.length ? list : null;
       }));
       if (clean.some(r => r.some(Boolean))) out.spans = clean;
+    }
+    const fl = table.fills;
+    if (Array.isArray(fl) && fl.length === out.rows.length && fl.every(r => Array.isArray(r) && r.length === cols)) {
+      const clean = fl.map(r => r.map(v => (HEX.test(String(v || '')) ? String(v).toUpperCase() : null)));
+      if (clean.some(r => r.some(Boolean))) out.fills = clean;
     }
     return out;
   },
@@ -129,6 +140,7 @@ export const tableNoteMethods = {
       });
     });
     this.applyTableSizes(table, note);
+    this.applyTableFills(table, note);
     // 여러 칸 고르기 — 다시 그려도 고른 칸 그대로 (표 크기 안으로)
     const sel = this.tableSelFor(note);
     if (sel) this.setTableSel(note, sel.r0, sel.c0, sel.r1, sel.c1);
@@ -262,6 +274,7 @@ export const tableNoteMethods = {
     rows.splice(at, 0, Array(rows[0].length).fill(''));
     if (note.table.heights) note.table.heights.splice(at, 0, 0);    // 새 행은 글에 맞게
     if (note.table.spans) note.table.spans.splice(at, 0, Array(rows[0].length).fill(null));
+    if (note.table.fills) note.table.fills.splice(at, 0, Array(rows[0].length).fill(null));
     if (grow) this.setTableHeight(note, note.height + grow);
     this.redrawTable(note, at, focusCol);
   },
@@ -274,8 +287,9 @@ export const tableNoteMethods = {
     this.record();
     rows.forEach(r => r.splice(at, 0, ''));
     if (note.table.spans) note.table.spans.forEach(r => r.splice(at, 0, null));
+    if (note.table.fills) note.table.fills.forEach(r => r.splice(at, 0, null));
     if (note.table.widths) this.setTableColPx(note, [...px.slice(0, at), colW, ...px.slice(at)]);   // 다른 열 너비는 그대로
-    this.setTableWidth(note, this.noteSize(note).width + colW);   // 열 너비는 그대로 — 쪽지가 한 열만큼 넓어짐
+    this.setTableWidth(note, this.tableBaseSize(note).width + colW);   // 열 너비는 그대로 — 쪽지가 한 열만큼 넓어짐
     this.redrawTable(note, 0, at);
   },
 
@@ -287,6 +301,7 @@ export const tableNoteMethods = {
     rows.splice(r, 1);
     if (note.table.heights) note.table.heights.splice(r, 1);
     if (note.table.spans) note.table.spans.splice(r, 1);
+    if (note.table.fills) note.table.fills.splice(r, 1);
     if (shrink) this.setTableHeight(note, note.height - shrink);
     this.redrawTable(note, Math.min(r, rows.length - 1), 0);
   },
@@ -299,8 +314,9 @@ export const tableNoteMethods = {
     this.record();
     rows.forEach(r => r.splice(c, 1));
     if (note.table.spans) note.table.spans.forEach(r => r.splice(c, 1));
+    if (note.table.fills) note.table.fills.forEach(r => r.splice(c, 1));
     if (note.table.widths) this.setTableColPx(note, px.filter((_, i) => i !== c));
-    this.setTableWidth(note, this.noteSize(note).width - colW);   // 쪽지도 그 열만큼 좁아짐
+    this.setTableWidth(note, this.tableBaseSize(note).width - colW);   // 쪽지도 그 열만큼 좁아짐
     this.redrawTable(note, 0, Math.min(c, rows[0].length - 1));
   },
 
@@ -309,7 +325,7 @@ export const tableNoteMethods = {
     const el = document.getElementById(note.id);
     const table = el && el.querySelector('.note-table');
     const cols = note.table.rows[0].length;
-    const w = table ? table.getBoundingClientRect().width / this.zoom : this.noteSize(note).width - 40;
+    const w = table ? table.getBoundingClientRect().width / this.zoom : this.tableBaseSize(note).width - 40;
     return Math.max(24, w / cols);
   },
 
@@ -436,7 +452,19 @@ export const tableNoteMethods = {
 
   // 쪽지를 표보다 크게 늘려 둔 것인지 — 그때는 정한 높이가 크기를 정함 (표에 딱 맞은 쪽지는 fit.js 가 늘림)
   tableStretched(note) {
-    return this.noteSize(note).height <= note.height + 0.5;
+    return this.tableBaseSize(note).height <= note.height + 0.5;
+  },
+
+  // 수정 중 + 단추 자리 (월드 좌표) — 표 쪽지를 고치는 동안만
+  noteEditPad(note) {
+    return note.type === 'table' && this.editingId === note.id ? EDIT_PAD : 0;
+  },
+
+  // 보이는 크기에서 + 단추 자리를 뺀 것 — 표 쪽지의 크기 계산은 이것으로 (수정 중에도 보기와 같게)
+  tableBaseSize(note) {
+    const size = this.noteSize(note);
+    const pad = this.noteEditPad(note);
+    return { width: size.width - pad, height: size.height - pad };
   },
 
   // 한 행의 높이 (월드 좌표) — r 이 없으면 가장 낮은 행 (빈 행 하나만큼)
@@ -464,7 +492,7 @@ export const tableNoteMethods = {
     const step = axis === 'row' ? Math.max(12, Math.min(...heights)) : Math.max(24, colW * this.zoom);
     const start = axis === 'row' ? e.clientY : e.clientX;
     const startCount = size();
-    const startWidth = this.noteSize(note).width;
+    const startWidth = this.tableBaseSize(note).width;
     const startBase = note.width;                        // 제자리로 돌아오면 정한 너비 · 높이도 그대로 (되돌리기 단계가 남지 않게)
     const startBaseH = note.height;
     const stretched = axis === 'row' && this.tableStretched(note);   // 늘려 둔 표: 행 높이 그대로 쪽지가 한 행씩
@@ -489,9 +517,11 @@ export const tableNoteMethods = {
           rows.push(Array(rows[0].length).fill(''));
           if (note.table.heights) note.table.heights.push(0);
           if (note.table.spans) note.table.spans.push(Array(rows[0].length).fill(null));
+          if (note.table.fills) note.table.fills.push(Array(rows[0].length).fill(null));
         } else {
           rows.forEach(r => r.push(''));
           if (note.table.spans) note.table.spans.forEach(r => r.push(null));
+          if (note.table.fills) note.table.fills.forEach(r => r.push(null));
         }
         changed = true;
       }
@@ -500,9 +530,11 @@ export const tableNoteMethods = {
           rows.pop();
           if (note.table.heights) note.table.heights.pop();
           if (note.table.spans) note.table.spans.pop();
+          if (note.table.fills) note.table.fills.pop();
         } else {
           rows.forEach(r => r.pop());
           if (note.table.spans) note.table.spans.forEach(r => r.pop());
+          if (note.table.fills) note.table.fills.forEach(r => r.pop());
         }
         changed = true;
       }
@@ -574,6 +606,7 @@ export const tableNoteMethods = {
         { label: t('table.deleteRow'), disabled: rows.length <= 1, action: () => this.deleteTableRow(note, r) },
         { label: t('table.deleteCol'), disabled: rows[0].length <= 1, action: () => this.deleteTableCol(note, c) },
         { separator: true },
+        { label: t('table.cellColorMenu'), action: () => this.openCellColor(note, r, c) },
         { label: t('table.equalColsAll'), disabled: rows[0].length <= 1, action: () => this.equalizeTableCols(note) },
         { label: t('table.equalRowsAll'), disabled: rows.length <= 1, action: () => this.equalizeTableRows(note) },
       ],
@@ -835,14 +868,16 @@ export const tableNoteMethods = {
       t.rows.push(Array(t.rows[0].length).fill(''));
       if (t.heights) t.heights.push(0);
       if (t.spans) t.spans.push(Array(t.rows[0].length).fill(null));
+      if (t.fills) t.fills.push(Array(t.rows[0].length).fill(null));
     }
     for (let k = 0; k < addCols; k++) {
       t.rows.forEach(r => r.push(''));
       if (t.spans) t.spans.forEach(r => r.push(null));
+      if (t.fills) t.fills.forEach(r => r.push(null));
     }
     if (addCols) {
       if (t.widths) this.setTableColPx(note, [...px, ...Array(addCols).fill(colW)]);
-      this.setTableWidth(note, this.noteSize(note).width + addCols * colW);
+      this.setTableWidth(note, this.tableBaseSize(note).width + addCols * colW);
     }
   },
 
@@ -905,6 +940,7 @@ export const tableNoteMethods = {
     const R = sel ? this.tableSelRect(sel) : null;
     return {
       refresh: () => this.tableBarInfo(note),
+      fills: { colors: CELL_FILLS, current: this.tableSelFill(note), set: (hex) => this.setTableFill(note, hex) },
       actions: [
         { label: 'table.equalCols', disabled: !R || R.c0 === R.c1, run: () => this.equalizeTableCols(note, R.c0, R.c1) },
         { label: 'table.equalRows', disabled: !R || R.r0 === R.r1, run: () => this.equalizeTableRows(note, R.r0, R.r1) },
@@ -918,6 +954,56 @@ export const tableNoteMethods = {
     if (bar && bar.cells && bar.note === note && this.tableSelFor(note)) {
       this.showTextColorBar(note, null, 0, 0, null, { cells: bar.cells, table: this.tableBarInfo(note) });
     }
+  },
+
+  // ---- 칸 색 (note.table.fills[행][열] = '#RRGGBB' | null) ----
+  //   여러 칸을 고르고 우클릭 → 서식 막대의 '칸 색' 줄, 한 칸은 우클릭 › 표 › 칸 색 바꾸기 (그 칸을 골라 같은 막대)
+  //   칸 비우기(Delete)는 글만 — 색은 남김 (엑셀처럼). 바탕은 --cell-fill (table-note.css)
+  applyTableFills(table, note) {
+    const fills = note.table.fills;
+    [...table.rows].forEach((tr, r) => [...tr.cells].forEach((td, c) => {
+      const f = fills && fills[r] && fills[r][c];
+      if (f) td.style.setProperty('--cell-fill', f);
+      else td.style.removeProperty('--cell-fill');
+      td.classList.toggle('filled', !!f);
+    }));
+  },
+
+  // 고른 칸의 색 — hex 가 없으면 뺌 (되돌리기 한 단계)
+  setTableFill(note, hex) {
+    const sel = this.tableSelFor(note);
+    if (!sel) return;
+    const R = this.tableSelRect(sel);
+    const t = note.table;
+    this.record();
+    if (!t.fills) t.fills = t.rows.map(row => row.map(() => null));
+    for (let r = R.r0; r <= R.r1; r++) for (let c = R.c0; c <= R.c1; c++) t.fills[r][c] = hex || null;
+    if (!t.fills.some(row => row.some(Boolean))) delete t.fills;
+    this.redrawTableKeepSel(note);
+  },
+
+  // 고른 칸이 모두 같은 색이면 그 색 (막대에 표시)
+  tableSelFill(note) {
+    const sel = this.tableSelFor(note);
+    if (!sel) return null;
+    const R = this.tableSelRect(sel);
+    const f = note.table.fills;
+    const first = f ? f[R.r0][R.c0] : null;
+    for (let r = R.r0; r <= R.r1; r++) for (let c = R.c0; c <= R.c1; c++) {
+      if ((f ? f[r][c] : null) !== first) return null;
+    }
+    return first;
+  },
+
+  // 우클릭 › 표 › 칸 색 바꾸기 — 누른 칸 하나를 골라 서식 막대를 그 칸 옆에
+  openCellColor(note, r, c) {
+    if (this.editingId !== note.id) this.startEditing(note);
+    this.setTableSel(note, r, c, r, c);
+    this.focusTableWrap(note);
+    const el = document.getElementById(note.id);
+    const ta = el && el.querySelector(`.table-cell[data-r="${r}"][data-c="${c}"]`);
+    const box = ta ? ta.closest('td').getBoundingClientRect() : null;
+    this.showTableRangeBar(note, box ? { x: box.right + 4, y: box.top } : null);
   },
 
   // 연대표에 걸린 쪽지의 모습 (timeline.js) — 고칠 수 없는 표
@@ -935,6 +1021,7 @@ export const tableNoteMethods = {
       });
     });
     this.applyTableSizes(table, note);
+    this.applyTableFills(table, note);
     const wrap = document.createElement('div');
     wrap.className = 'note-table-wrap';
     wrap.appendChild(table);

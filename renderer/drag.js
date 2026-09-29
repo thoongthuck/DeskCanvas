@@ -28,11 +28,12 @@ export const dragMethods = {
     // 쪽지는 보이는 크기(글이 넘쳐 늘어난 크기)부터, 사진은 틀을 뺀 사진 크기 · 판은 저장된 크기부터
     const rect = kind === 'note' && el ? el.getBoundingClientRect() : null;
     const groupSize = kind === 'board' && item.kind === 'group' ? this.groupSize(item) : null;   // 파일이 차서 늘어난 높이부터
+    const pad = kind === 'note' ? this.noteEditPad(item) : 0;   // 고치는 중인 표: + 단추 자리는 빼고 (table-note.js)
     this.drag = {
       mode: 'resize', kind, item,
       startX: e.clientX, startY: e.clientY,
-      startW: rect ? rect.width / this.zoom : item.width,
-      startH: rect ? rect.height / this.zoom : groupSize ? groupSize.height : item.height,
+      startW: rect ? rect.width / this.zoom - pad : item.width,
+      startH: rect ? rect.height / this.zoom - pad : groupSize ? groupSize.height : item.height,
       ratio: item.height / Math.max(1, item.width),
       followers: [],
       moved: false,
