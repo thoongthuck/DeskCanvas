@@ -15,7 +15,9 @@
 
 ## 설치
 
-1. 설치 파일 `DeskCanvas Setup <버전>.exe` 을 실행합니다.
+**[최신 버전 받기](https://github.com/thoongthuck/DeskCanvas/releases/latest)**
+
+1. 위 링크에서 설치 파일 `DeskCanvas Setup <버전>.exe` 을 내려받아 실행합니다.
 2. 설치가 끝나면 DeskCanvas 가 바탕화면 자리에 뜹니다. 작업 표시줄 오른쪽 트레이에 아이콘이 생깁니다.
 
 Windows 11 에서 만들고 확인했습니다.
