@@ -1,7 +1,7 @@
 // 설정 창 — 시안(설정창_미리보기.png)과 가이드 7장 그대로
 //   왼쪽 사이드바 + 오른쪽 한 페이지, 누르면 그 자리로 스크롤
 //   닫기: 오른쪽 위 X · Esc · 창 밖 클릭
-import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS, HOLIDAY_REGIONS, ZOOM_SPEEDS } from './constants.js';
+import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS, HOLIDAY_REGIONS, ZOOM_SPEEDS, CALENDAR_BANDS } from './constants.js';
 import { PHOTO_FRAMES } from './photos.js';
 import { t } from './i18n.js';
 
@@ -251,9 +251,12 @@ export const settingsWindowMethods = {
 
     // 판 — 캘린더 · 연대표 · 파일 묶음
     const boards = section('section-boards', 'add-board.svg', 'sec.boards');
-    row(boards, 'row-boardtone', 'row.boardTone', 'row.boardTone.desc',
-      this.buildDropdown(['theme', 'light', 'dark'].map(v => ({ label: t(`boardTone.${v}`), value: v })), s.boardTone,
-        (v) => this.updateSetting('boardTone', v), 'boardtone'));
+    row(boards, 'row-calband', 'row.calendarBand', 'row.calendarBand.desc',
+      this.buildDropdown(Object.keys(CALENDAR_BANDS).map(v => ({ label: t(`band.${v}`), value: v })), s.calendarBand,
+        (v) => this.updateSetting('calendarBand', v), 'calband'));
+    row(boards, 'row-tlscale', 'row.timelineScale', 'row.timelineScale.desc',
+      this.buildDropdown(['year', 'month', 'day'].map(v => ({ label: t(`scale.${v}`), value: v })), s.timelineScale,
+        (v) => this.updateSetting('timelineScale', v), 'tlscale'));
     row(boards, 'row-calview', 'row.calendarView', 'row.calendarView.desc',
       this.buildDropdown([
         { label: t('calView.month'), value: 'month' },

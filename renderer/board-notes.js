@@ -1,13 +1,15 @@
-// 판에 붙은 쪽지 — 캘린더 칸 · 연대표 걸이 공통 (자리 계산 · 끌어서 붙이기 · 떼기)
+// 판에 붙은 쪽지 — 캘린더 칸 · 연대표 막대 공통 (자리 계산 · 끌어서 붙이기 · 떼기)
 //   캘린더:  note.boardId + note.date ('YYYY-MM-DD')
 //   연대표:  캘린더 모드는 note.date, 직접 작성 모드는 note.segmentId + note.ratio (칸 안 위치 0~1)
-//   note.boardAt = 붙인 시각 (한 날짜에 여러 장이면 가장 최근이 맨 위)
+//            note.side = 'up' 이면 막대 위에 얹은 쪽지 (없으면 아래에 건 쪽지)
+//            note.off = 막대에서 더 띄운 만큼 (끌어서 정한 높이 — 없으면 막대 바로 옆)
+//   note.boardAt = 붙인 시각 (한 날짜에 여러 장이면 가장 최근이 맨 위 · 연대표는 먼저 붙인 쪽지가 안쪽 층)
 //   판별 자리 계산은 calendar.js (calendarNoteSlot · calendarDropAt) · timeline.js (timelineNoteSlot · timelineDropAt)
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { parseKey } from './calendar.js';
 
-const BOARD_FIELDS = ['boardId', 'date', 'boardAt', 'segmentId', 'ratio'];
-const FREE = { onBoard: false, hidden: false, buried: false, top: false, fanned: false, rot: 0, dx: 0, dy: 0 };
+const BOARD_FIELDS = ['boardId', 'date', 'boardAt', 'segmentId', 'ratio', 'side', 'off'];
+const FREE = { onBoard: false, hidden: false, buried: false, top: false, fanned: false, rot: 0, dx: 0, dy: 0, perch: 0 };
 
 export const boardNoteMethods = {
   noteBoard(note) {
@@ -54,6 +56,7 @@ export const boardNoteMethods = {
       rot: slot.rot || 0,
       dx: slot.dx || 0,
       dy: slot.dy || 0,
+      perch: slot.perch || 0,                          // 연대표 막대 위에 얹은 층 (timeline.js)
     };
   },
 
@@ -76,6 +79,10 @@ export const boardNoteMethods = {
     el.classList.toggle('stack-top', s.top);
     el.classList.toggle('fanned', s.fanned);
     el.classList.toggle('locked', !note.pinned && this.noteLocked(note));
+    // 막대 위에 얹은 쪽지: 막대(판)보다 뒤, 아래층 쪽지가 앞 (styles/boards.css .perched — --perch 1 ~ 3)
+    el.classList.toggle('perched', s.perch > 0);
+    if (s.perch) el.style.setProperty('--perch', String(Math.min(3, s.perch)));
+    else el.style.removeProperty('--perch');
     this.applyNoteLayer(el, note, s.onBoard);
     if (s.rot || s.dx || s.dy) {
       el.style.setProperty('--stack-rot', `${s.rot}deg`);
@@ -128,7 +135,8 @@ export const boardNoteMethods = {
 
   // 판을 모두 다시 그리고 모든 쪽지 자리를 맞춤 (붙이기 · 떼기 · 달 이동 · 모드 변경 뒤)
   //   passive: 저절로 다시 그릴 때 — 이름 · 칸 이름을 고치는 중인 판은 건드리지 않음 (글자칸이 사라지지 않게)
-  refreshAllBoards({ passive = false } = {}) {
+  //   keepTimelines: 연대표는 그대로 둠 (쪽지를 지운 직후 — 아래 refreshBoardsAfterDelete)
+  refreshAllBoards({ passive = false, keepTimelines = false } = {}) {
     const typing = passive && document.activeElement && document.activeElement.matches('input, textarea') ? document.activeElement : null;
     const render = (b) => {
       const el = document.getElementById(b.id);
@@ -136,7 +144,7 @@ export const boardNoteMethods = {
       this.renderBoard(b, el);
     };
     this.boards.filter(b => b.kind === 'calendar').forEach(render);
-    this.boards.filter(b => b.kind === 'timeline').forEach(render);   // 연대표는 캘린더 쪽지도 함께 걸어서 나중에
+    if (!keepTimelines) this.boards.filter(b => b.kind === 'timeline').forEach(render);   // 연대표는 캘린더 쪽지도 함께 걸어서 나중에
     this.boards.filter(b => b.kind === 'group').forEach(render);
     this.notes.forEach(note => {
       const el = document.getElementById(note.id);
@@ -144,6 +152,20 @@ export const boardNoteMethods = {
     });
     this.fileGroups().forEach(g => this.updateGroupFiles(g));
     this.updateFanOverlay();
+  },
+
+  // 판에 붙은 쪽지를 지운 뒤 — 캘린더는 바로 (장수 · 겹침), 연대표는 쪽지가 떼어지는 모습이 끝난 뒤에 남은 쪽지 자리를 옮김
+  //   (animation/note-animations.js 떼기 0.28초. 바로 옮기면 지워지는 쪽지 밑으로 다른 쪽지가 끼어들었음 — 사용자 요청)
+  //   그동안 연대표는 다시 그리지 않으므로 남은 쪽지 · 걸이 · 줄이 제자리에 있음 (timelineNoteSlot 이 적어 둔 배치를 봄)
+  refreshBoardsAfterDelete(board) {
+    const still = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    if (!board || board.kind !== 'timeline' || still) {
+      this.refreshAllBoards();
+      return;
+    }
+    this.refreshAllBoards({ keepTimelines: true });
+    clearTimeout(this.lateBoardsTimer);
+    this.lateBoardsTimer = setTimeout(() => this.refreshAllBoards(), 300);
   },
 
   // 판을 옮기거나 크기를 바꾸는 동안: 붙은 쪽지 · 펼친 표시가 판을 따라감
@@ -174,10 +196,12 @@ export const boardNoteMethods = {
   updateBoardDropTarget(drag, clientX, clientY) {
     const wx = (clientX - this.panX) / this.zoom;
     const wy = (clientY - this.panY) / this.zoom;
+    const size = drag.carry || this.noteSize(drag.item);
+    const rect = { x: drag.item.x, y: drag.item.y, width: size.width, height: size.height };   // 연대표: 끄는 쪽지가 있는 자리 — 놓은 날짜 · 쪽 · 높이 그대로
     let target = null;
     for (const board of this.boards) {
       if (board.pinned || board.kind === 'group') continue;           // 파일 묶음에는 쪽지를 붙이지 않음
-      const hit = board.kind === 'calendar' ? this.calendarDropAt(board, wx, wy) : this.timelineDropAt(board, wx, wy);
+      const hit = board.kind === 'calendar' ? this.calendarDropAt(board, wx, wy) : this.timelineDropAt(board, wx, wy, rect);
       if (hit) {
         target = { board, ...hit };
         break;

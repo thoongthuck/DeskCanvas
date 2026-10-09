@@ -88,16 +88,12 @@ export const fileMethods = {
       this.openFileContextMenu(file, e.clientX, e.clientY);
     });
 
-    // 누르면 선택 + 끌어서 옮기기 (잠근 묶음에 든 파일은 선택 · 열기만, 끌면 화면 이동). Ctrl · Shift: 여러 개 고르기 (selection.js)
+    // 누르면 선택 + 끌어서 옮기기 (잠근 묶음에 든 파일도 — 잠금은 묶음 자체만). Ctrl · Shift: 여러 개 고르기 (selection.js)
     el.addEventListener('mousedown', (e) => {
-      const canDrag = this.pressSelect(e, file.id, !this.fileLocked(file));
+      const canDrag = this.pressSelect(e, file.id);
       if (e.button === 2 && file.path && !el.classList.contains('renaming')) this.prefetchNativeMenu(this.fileMenuPaths(file));   // 메뉴는 뗄 때 뜸 — 그 전에 만들기 시작
       if (e.button !== 0) return;
       e.preventDefault();
-      if (this.fileLocked(file)) {
-        this.startGrabPan(e);
-        return;
-      }
       if (!canDrag) return;
       this.startItemDrag(e, 'file', file);
     });
@@ -455,7 +451,7 @@ export const fileMethods = {
     } else {
       this.updateSetting('gridSnap', false);
     }
-    this.showToast(on ? t('toast.gridOn') : t('toast.gridOff'));
+    // 켜고 끈 알림은 띄우지 않음 (메뉴의 체크 표시로 — 사용자 요청)
   },
 
   nextDesktopSlot() {

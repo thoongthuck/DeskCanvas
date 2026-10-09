@@ -3,7 +3,10 @@
 //           Ctrl · Shift 를 누른 채 빈 곳을 끌면 네모에 걸친 것 모두 (그냥 끌면 예전처럼 화면 이동) · Ctrl+A 모두
 //   고른 것 가운데 하나를 끌면 모두 함께 옮겨짐 — 판에 붙은 쪽지 · 고정한 것 · 묶음 안 파일(묶음이 옮김)은 제자리
 //   파일을 여럿 끌어 파일 묶음 위에 놓으면 한꺼번에 들어감 (groups.js settleFileInGroup)
-//   고른 것 위에서 우클릭: 새 묶음으로 묶기(Ctrl+G) · 묶음에 넣기 › · 연결선으로 잇기(Ctrl+L) · 지우기 · 선택 해제
+//   고른 것 위에서 우클릭: 새 묶음으로 묶기(Ctrl+G) · 묶음에 넣기 › · 스타일 변경 › (쪽지) · 틀 바꾸기 › (사진) · 고정 · 잠금 걸기 / 풀기
+//     · 연결선으로 잇기(Ctrl+L) · 지우기 · 선택 해제
+//   고정 · 잠근 것도 Ctrl · Shift + 누르기로는 더해 고를 수 있음 (한꺼번에 풀려고) — 네모로 고르기 · Ctrl+A 에는 안 딸려 옴.
+//     여럿 가운데 고정 · 잠근 것은 떠오르지 않고 파란 테두리만 (.picked — styles.css)
 //   Delete: 고른 쪽지 · 사진 지우기, 고른 묶음은 풀기, 바탕화면 파일은 휴지통으로 · 끌어온 파일은 아이콘만 빼기
 //     (되돌리기 한 번에 모두 — 휴지통으로 보낸 파일은 휴지통에서 되살림. 파일이 둘 이상이면 먼저 물어봄). Esc: 선택 풀기
 //   this.selection (Set) 이 고른 것 전부. 예전 코드의 this.selectedId 는 '마지막으로 고른 것' (app.js)
@@ -22,7 +25,7 @@ export const selectionMethods = {
   // 누를 때 (mousedown) — 반환: 이어서 끌기를 시작해도 되는지
   //   Ctrl · Shift + 왼쪽 누르기: 더하거나 빼기 (뺐으면 끌지 않음)
   //   이미 고른 것 중 하나: 그대로 둠 (모두 함께 끌 수 있게) — 끌지 않고 떼면 그것 하나만 고름 (drag.js)
-  //   그 밖: 그것 하나만. eligible = false (고정한 것 등): 더하기 없이 그것 하나만
+  //   그 밖: 그것 하나만. eligible = false: 더하기 없이 그것 하나만
   pressSelect(e, id, eligible = true) {
     this.narrowTo = null;
     // Ctrl + Alt 는 맞춰 붙이며 끌기 (align.js) — 여러 개 고르기가 아님
@@ -187,11 +190,38 @@ export const selectionMethods = {
     this.openContextMenu(this.selectionMenuItems(), x, y);
   },
 
+  // 고른 것 가운데 고정 · 잠글 수 있는 것 — 쪽지 · 사진 · 파일 묶음 · 캘린더 · 연대표 (파일은 아님)
+  lockableSelection() {
+    return [...this.selection].map(id => this.layerEntryById(id)).filter(en => en && en.kind !== 'file');
+  },
+
+  // 고른 것을 한꺼번에 고정 · 잠금 / 풀기 — 되돌리기 한 번에 모두
+  setSelectionPinned(on) {
+    const targets = this.lockableSelection().filter(en => !!en.item.pinned !== on);
+    if (!targets.length) return;
+    this.record();
+    this.batching = true;                                    // 안에서 부르는 record() 는 건너뜀 (history.js)
+    try {
+      targets.forEach(en => {
+        if (en.kind === 'note') this.togglePin(en.item);
+        else if (en.kind === 'photo') this.togglePhotoPin(en.item);
+        else this.toggleBoardLock(en.item);
+      });
+    } finally {
+      this.batching = false;
+    }
+    this.updateSelection();                                  // 고정한 것은 떠오르지 않고 파란 테두리로
+  },
+
   selectionMenuItems() {
     const entries = this.selectedEntries();
-    const files = entries.filter(en => en.kind === 'file' && !this.fileLocked(en.item)).map(en => en.item);
+    const files = entries.filter(en => en.kind === 'file').map(en => en.item);
+    const notes = entries.filter(en => en.kind === 'note').map(en => en.item);
+    const photos = entries.filter(en => en.kind === 'photo').map(en => en.item);
+    const lockable = this.lockableSelection();
+    const unlocked = lockable.filter(en => !en.item.pinned).length;
     const removable = entries.filter(en => (en.kind === 'note' || en.kind === 'photo') && !en.item.pinned);
-    const groups = this.fileGroups().filter(g => !g.pinned);
+    const groups = this.fileGroups();                       // 잠근 묶음에도 넣을 수 있음 (groups.js)
     const items = [];
     if (files.length) {
       items.push({ icon: 'add-group.svg', label: t('menu.groupSelected', { n: files.length }), action: () => this.groupSelectedFiles() });
@@ -202,6 +232,16 @@ export const selectionMethods = {
         });
       }
       items.push(...this.fileMediaMenuItems(files));      // 고른 사진 · 영상 파일을 쪽지로 (file-media.js)
+    }
+    // 한꺼번에 스타일 — 쪽지: 스타일 창 (색 · 글자 색 · 글꼴 · 크기 · 정렬) / 사진 · 영상: 틀 고르는 창. 누르는 즉시 고른 것 모두에
+    if (notes.length) items.push({ icon: 'palette.svg', label: t('menu.styleSelected', { n: notes.length }), styleFor: notes, arrow: true });
+    if (photos.length) {
+      items.push({ icon: 'palette.svg', label: t('menu.frameSelected', { n: photos.length }), arrow: true, panel: (menu, row) => this.openFramePanel(menu, row, photos) });
+    }
+    // 한꺼번에 고정 · 잠금 / 풀기 — 섞여 있으면 두 줄 다
+    if (unlocked) items.push({ icon: 'pin.svg', label: t('menu.pinSelected', { n: unlocked }), action: () => this.setSelectionPinned(true) });
+    if (lockable.length - unlocked) {
+      items.push({ icon: 'pin.svg', label: t('menu.unpinSelected', { n: lockable.length - unlocked }), action: () => this.setSelectionPinned(false) });
     }
     if (entries.length > 1) {                               // 처음 고른 것에 나머지를 잇기 (links.js)
       items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: entries.length }), action: () => this.connectSelection() });
@@ -219,7 +259,7 @@ export const selectionMethods = {
 
   // 고른 파일들로 새 묶음 (Ctrl+G · 여러 개 메뉴)
   groupSelectedFiles() {
-    const files = this.selectedEntries().filter(en => en.kind === 'file' && !this.fileLocked(en.item)).map(en => en.item);
+    const files = this.selectedEntries().filter(en => en.kind === 'file').map(en => en.item);
     if (!files.length) return false;
     this.newGroupWithFiles(files);
     return true;

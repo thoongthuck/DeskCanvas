@@ -145,6 +145,22 @@ export const menuMethods = {
       items.push(note.image
         ? { icon: 'add-image.svg', label: t('menu.removePhoto'), action: () => this.removeNotePhoto(note) }
         : { icon: 'add-image.svg', label: t('menu.addPhoto'), action: () => this.pickNotePhoto(note) });
+      if (note.image) {                                    // 사진 배치 › 왼쪽 · 오른쪽 · 위 · 아래 · 배경 (notes.js)
+        const now = note.imageLayout || 'left';
+        items.push({
+          icon: 'menu-view.svg', label: t('menu.photoLayout'), arrow: true,
+          submenu: ['left', 'right', 'top', 'bottom', 'cover'].map(key => ({
+            label: t(`photoLayout.${key}`), current: now === key, action: () => this.setNoteImageLayout(note, key),
+          })),
+        });
+      }
+    }
+    items.push({ icon: 'chevron-down.svg', label: t(note.folded ? 'note.expand' : 'note.collapse'), action: () => this.toggleNoteFold(note) });
+    const rail = this.noteTimeline(note);
+    if (rail && !this.noteLocked(note)) {                  // 연대표에 붙은 쪽지: 막대 위로 / 아래로 · 세로 막대는 왼쪽으로 / 오른쪽으로 (글자만 — timeline.js)
+      const up = note.side === 'up';
+      const label = this.timelineVertical(rail) ? (up ? 'menu.railRight' : 'menu.railLeft') : (up ? 'menu.railDown' : 'menu.railUp');
+      items.push({ label: t(label), action: () => this.setNoteRailSide(note, up ? 'down' : 'up') });
     }
     if (note.type === 'table') items.push(...this.tableMenuItems(note));   // 표 › 행 · 열 넣고 빼기 (table-note.js)
     const linkView = this.noteLinkMenuItem(note);          // 글에 인터넷 주소가 있으면: 링크 보기 › 영상 · 사진 바로 보기 · 링크만
@@ -252,7 +268,8 @@ export const menuMethods = {
 
       const img = document.createElement('img');
       img.className = 'context-menu-icon';
-      img.src = ICON_DIR + item.icon;
+      if (item.icon) img.src = ICON_DIR + item.icon;
+      else img.style.visibility = 'hidden';               // 아이콘 없는 줄 (막대 위로 · 아래로) — 글자 자리는 다른 줄과 맞춤
       img.alt = '';
       img.draggable = false;
 
@@ -503,6 +520,7 @@ export const menuMethods = {
   },
 
   // 설정 창 드롭다운 — 팝업 메뉴 틀을 그대로 씀 (가이드 7장 권장)
+  //   목록은 창 맨 위(body)에 따로 떠서 설정 창을 스크롤해도 제자리에 남으므로, 스크롤하면 닫음 (사용자 요청)
   openDropdown(anchor, items, onPick) {
     this.closeMenus();
     const menu = this.buildPopup('settings-dropdown', items.map(item => ({
@@ -519,6 +537,12 @@ export const menuMethods = {
     menu.style.left = `${r.left}px`;
     menu.style.top = `${r.bottom + 4}px`;
     this.keepInWindow(menu);
+    const onScroll = (e) => {
+      if (e.target instanceof Node && menu.contains(e.target)) return;   // 목록 안 스크롤은 그대로
+      this.closeMenus();
+    };
+    this.dropdownScroll = onScroll;
+    document.addEventListener('scroll', onScroll, true);  // 스크롤은 위로 올라오지 않아서 잡기 단계로
     this.watchOutsideClick();
   },
 
@@ -529,6 +553,10 @@ export const menuMethods = {
       if (el) el.remove();
     });
     this.closeStylePanel();
+    if (this.dropdownScroll) {
+      document.removeEventListener('scroll', this.dropdownScroll, true);
+      this.dropdownScroll = null;
+    }
     if (this.menuOutsideHandler) {
       document.removeEventListener('mousedown', this.menuOutsideHandler, true);
       this.menuOutsideHandler = null;

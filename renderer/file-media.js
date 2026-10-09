@@ -23,7 +23,7 @@ export const fileMediaMethods = {
 
   // 파일 메뉴 줄 (파일 하나 · 여럿 — menus.js fileMenuItems · selection.js) — 바꿀 것이 없으면 []
   fileMediaMenuItems(files) {
-    const media = files.filter(f => !this.fileLocked(f) && this.fileMediaKind(f));
+    const media = files.filter(f => this.fileMediaKind(f));
     if (!media.length) return [];
     const kinds = new Set(media.map(f => this.fileMediaKind(f)));
     const key = kinds.size > 1 ? 'menu.toMediaNote' : kinds.has('video') ? 'menu.toVideoNote' : 'menu.toImageNote';

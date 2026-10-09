@@ -1,44 +1,36 @@
 /* ===== 판 — 캘린더 · 연대표 (아이콘_가이드.md 12장, 시안_캘린더판.png · 시안_연대표판.png) =====
    renderer/boards.js · calendar.js · timeline.js — 모든 값은 zoom 1 기준 (--zoom 을 곱해 씀)
    쌓임 순서 (뒤에서부터 z-index — #ui-layer 안에서만 견줌, 메뉴 · 창은 따로):
-     0+ 캘린더 · 연대표 판과 붙은 쪽지 → 100 고정한 쪽지 · 사진 → 110+ 고정한 파일 묶음
+     100 고정한 쪽지 · 사진 → 110+ 고정한 파일 묶음 → 500+ 캘린더 · 연대표 판과 붙은 쪽지 (고정한 것들 앞)
      → 1000+ 파일 묶음 → 2000 연결선 → 10000+ 쪽지 · 사진 · 파일 (한 무리로 순서 — renderer/layer-order.js)
      → 50000+ 고른 쪽지 · 사진 · 파일 → 90000+ 고른 판과 붙은 쪽지 → 90100+ 고른 파일 묶음
      → 91000 캘린더에서 펼친 쪽지 바탕 · 91100 펼친 쪽지 · 94000 이름 바꾸는 파일 · 94400 판 크기 손잡이
      · 94500 연결선 손잡이 · 95000 끄는 중
      순서 바꾸기(우클릭 › 순서)는 무리 안에서만: 쪽지 · 사진 · 파일끼리 · 판끼리 · 파일 묶음끼리
-     판은 판마다 자기 층: 판 = 밴드 + 4 × 차례, 붙은 쪽지 = 그 바로 위 +1 · 맨 위 +2 · 고른 쪽지 +3 (renderer/boards.js boardLayer)
+     판은 판마다 자기 층 (8칸): 판 = 밴드 + 8 × 차례 + 4, 붙은 쪽지 = 그 바로 위 +1 · 맨 위 +2 · 고른 쪽지 +3,
+       연대표 막대 위에 얹은 쪽지 = 판 바로 아래 −1(고른 쪽지) · −2 ~ −4(1층 ~ 3층) (renderer/boards.js boardLayer)
      파일 묶음도 묶음마다 자기 층: 묶음 = 밴드 + 2 × 차례, 담긴 파일 = 그 바로 위 (renderer/groups.js groupLayer)
-       → 다른 것이 판과 붙은 쪽지 · 묶음과 담긴 파일 사이에 끼지 않음. 고르면 붙은 것과 함께 맨 앞으로 */
+       → 다른 것이 판과 붙은 쪽지 · 묶음과 담긴 파일 사이에 끼지 않음. 고르면 붙은 것과 함께 맨 앞으로
+   캘린더 · 연대표는 '판 상자'가 없음 (배경 · 테두리 · 그림자 없음) — 벽에 놓인 물건만 그림:
+     캘린더 = 종이 달력 (.cal-paper + .cal-under — 시안의 링은 뺌), 연대표 = 걸이 막대 (.tl-rail — 가로 · 세로). 물건 바깥은 바탕화면이 그대로 */
 .board {
   --z: var(--zoom, 1);
   position: absolute;
-  z-index: 0;
+  z-index: 504;                         /* 판마다 자기 층 (renderer/boards.js boardLayer) — 고정한 것들 앞 */
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   pointer-events: auto;
-  overflow: hidden;
-  background: #FCFBF9;
-  border: 1px solid #E7E4DF;
-  border-radius: calc(16px * var(--z));
-  box-shadow: 0 calc(10px * var(--z)) calc(30px * var(--z)) rgba(31, 47, 69, 0.10),
-              0 calc(2px * var(--z)) calc(6px * var(--z)) rgba(31, 47, 69, 0.06);
   color: #1F2F45;
   font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
   user-select: none;
 }
 
 /* 고른 판 (누르면 고름 → Delete 로 지우기) — 쪽지처럼 그림자가 진해지고 붙은 쪽지와 함께 맨 앞 층으로 (boards.js boardLayer).
-   파란 테두리 없음, 위로 들리지는 않음 (칸에 붙은 쪽지는 따로 그려져서 어긋나므로). 파일 묶음은 styles/groups.css */
-.board { transition: box-shadow 0.2s ease-out, border-color 0.2s ease-out; }
-.board.selected:not(.board-group) {
-  border-color: #D6D1C9;
-  box-shadow: 0 calc(16px * var(--z)) calc(36px * var(--z)) rgba(31, 47, 69, 0.22),
-              0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(31, 47, 69, 0.12);
-}
+   파란 테두리 없음, 위로 들리지는 않음 (칸에 붙은 쪽지는 따로 그려져서 어긋나므로). 캘린더는 종이, 연대표는 막대의 그림자
+   (아래 .cal-paper · .tl-rail). 파일 묶음은 styles/groups.css */
 
-/* 판 머리 — 높이 60, 잡고 끌면 판이 옮겨짐 */
+/* 머리 — 캘린더 색 띠 (.cal-band) · 파일 묶음 머리 (styles/groups.css). 잡고 끌면 옮겨짐 */
 .board-head {
   flex: 0 0 auto;
   display: flex;
@@ -46,7 +38,6 @@
   gap: calc(4px * var(--z));
   height: calc(60px * var(--z));
   padding: 0 calc(14px * var(--z));
-  border-bottom: 1px solid #EFEDE9;
   cursor: grab;
 }
 .board-head:active { cursor: grabbing; }
@@ -73,49 +64,6 @@
   -webkit-user-drag: none;
 }
 .board-btn:hover { background: #F1EEE9; }
-
-/* 글자 버튼 ('오늘') */
-.board-text-btn {
-  flex: 0 0 auto;
-  height: calc(30px * var(--z));
-  margin-left: calc(6px * var(--z));
-  padding: 0 calc(13px * var(--z));
-  border: 1px solid #E3DFD9;
-  border-radius: calc(8px * var(--z));
-  background: none;
-  font: inherit;
-  font-size: calc(13px * var(--z));
-  color: #4A5568;
-  cursor: pointer;
-}
-.board-text-btn:hover { background: #F1EEE9; }
-
-/* 고르개 (세그먼트) — 바탕 #F1EEE9, 고른 칸은 흰 바탕 + 600 + 그림자 */
-.board-seg {
-  flex: 0 0 auto;
-  display: flex;
-  margin-left: calc(8px * var(--z));
-  padding: calc(3px * var(--z));
-  border-radius: calc(8px * var(--z));
-  background: #F1EEE9;
-}
-.board-seg button {
-  height: calc(24px * var(--z));
-  padding: 0 calc(11px * var(--z));
-  border: none;
-  border-radius: calc(6px * var(--z));
-  background: none;
-  font: inherit;
-  font-size: calc(12.5px * var(--z));
-  color: #6B7686;
-  cursor: pointer;
-}
-.board-seg button.current {
-  background: #FFFFFF;
-  font-weight: 600;
-  color: #1F2F45;
-  box-shadow: 0 1px 2px rgba(31, 47, 69, 0.12);
-}
 
 .cal-month,
 .board-name.tl-title {
@@ -153,7 +101,7 @@
   font-size: calc(15px * var(--z));
   color: #1F2F45;
 }
-.board-spacer { flex: 1; }
+.board-spacer { flex: 1; }                     /* 파일 묶음 머리 (groups.js) */
 
 /* 판 크기 조절 — 오른쪽 아래 ⌟ */
 .board-resize {
@@ -165,7 +113,7 @@
   height: max(14px, calc(18px * var(--z)));
   cursor: nwse-resize;
 }
-/* 고른 캘린더 · 연대표의 크기 조절 손잡이 — 고른 판도 고른 파일 묶음보다는 아래라 모서리에 겹치면 판의 손잡이를 못 잡아서
+/* 고른 캘린더의 크기 조절 손잡이 — 고른 판도 고른 파일 묶음보다는 아래라 모서리에 겹치면 판의 손잡이를 못 잡아서
    같은 자리에 모든 것보다 위 층으로 하나 더 (renderer/boards.js updateBoardResizeFloat) */
 .board-resize-float {
   position: absolute;
@@ -184,10 +132,103 @@
   border-bottom: calc(1.8px * var(--z)) solid #CBC7C0;
   border-bottom-right-radius: calc(2px * var(--z));
 }
-.board-timeline .board-resize { cursor: ew-resize; }   /* 연대표는 폭만 (높이는 걸린 쪽지 층 수) */
 .board.pinned .board-resize { display: none; }
 
-/* ---- 캘린더 판 ---- */
+/* ---- 캘린더 — 종이 달력 (calendar.js, 가이드 12-3) ----
+   판 요소 = 종이 자리 (1288 × 848). 겹친 종이 2장은 아래로 7 · 14 나옴
+   시안의 링 7개 · 띠 오른쪽 '오늘' · … 단추는 뺌 (사용자 요청) — 띠에는 ‹ 달 › 만 */
+.board-calendar { display: block; }
+.cal-paper {                                    /* 종이 — 모서리 14, 흰색 */
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: calc(14px * var(--z));
+  background: #FFFFFF;
+  box-shadow: 0 calc(14px * var(--z)) calc(34px * var(--z)) rgba(31, 47, 69, 0.18),
+              0 calc(3px * var(--z)) calc(8px * var(--z)) rgba(31, 47, 69, 0.10);
+  transition: box-shadow 0.2s ease-out;
+}
+.board-calendar.selected .cal-paper {
+  box-shadow: 0 calc(20px * var(--z)) calc(44px * var(--z)) rgba(31, 47, 69, 0.28),
+              0 calc(5px * var(--z)) calc(12px * var(--z)) rgba(31, 47, 69, 0.14);
+}
+/* 겹친 종이 — 종이 밑에 2장 (남은 달 느낌). 각 높이 18, 아래 모서리만 둥글게 */
+.cal-under {
+  position: absolute;
+  z-index: 0;
+  height: calc(18px * var(--z));
+  border-radius: 0 0 calc(10px * var(--z)) calc(10px * var(--z));
+  box-shadow: 0 calc(2px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.10);
+  pointer-events: none;
+}
+.cal-under.u1 { left: calc(7px * var(--z)); right: calc(7px * var(--z)); bottom: calc(-7px * var(--z)); background: #F2F0EC; }
+.cal-under.u2 { left: calc(16px * var(--z)); right: calc(16px * var(--z)); bottom: calc(-14px * var(--z)); background: #E5E2DC; }
+
+/* 색 띠 — 높이 64, 달 · 연도 22px 700. 기본 남색 (판 메뉴 › 띠 색 — .band-red · .band-yellow) */
+.cal-band {
+  height: calc(64px * var(--z));
+  padding: 0 calc(18px * var(--z));
+  gap: calc(6px * var(--z));
+  background: linear-gradient(#2E3D57, #25324A);
+  color: #FFFFFF;
+}
+.board.band-red .cal-band { background: linear-gradient(#FF5A4E, #E8372E); }
+.board.band-yellow .cal-band { background: linear-gradient(#FBD978, #F0C550); color: #6B4E12; }
+.cal-band .cal-month { font-size: calc(22px * var(--z)); padding: 0 calc(6px * var(--z)); }
+.cal-band .board-name { color: rgba(255, 255, 255, 0.72); }
+.board.band-yellow .cal-band .board-name { color: rgba(107, 78, 18, 0.72); }
+/* 띠 안 버튼 (‹ ›) — 32 × 32, 배경 흰색 16%. 아이콘은 새로 만들지 않고 흰색으로 뒤집어 씀 (노랑 띠에서는 검정) */
+.cal-band .board-btn {
+  border: none;
+  background: rgba(255, 255, 255, 0.16);
+  color: inherit;
+}
+.cal-band .board-btn:hover { background: rgba(255, 255, 255, 0.28); }
+.cal-band .board-btn img { filter: brightness(0) invert(1); }
+.board.band-yellow .cal-band .board-btn { background: rgba(107, 78, 18, 0.13); }
+.board.band-yellow .cal-band .board-btn:hover { background: rgba(107, 78, 18, 0.22); }
+.board.band-yellow .cal-band .board-btn img { filter: brightness(0); opacity: 0.72; }
+
+/* 요일 줄 + 날짜 칸 — 달을 넘길 때 이 한 장이 넘어감 */
+.cal-page {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: inherit;
+}
+/* 달 넘기기 (calendar.js flipCalendar, 0.2초) — 앞으로: 예전 종이(.cal-ghost.flip-out)가 위로 넘어가며 사라짐
+   뒤로: 새 종이(.cal-page.flip-in)가 위에서 내려와 예전 종이(.flip-under)를 덮음 */
+.cal-page.cal-ghost {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(64px * var(--z));
+  z-index: 3;
+  flex: none;
+  transform-origin: 50% 0;
+  pointer-events: none;
+}
+.cal-page.cal-ghost.flip-out { animation: cal-flip-out 0.2s ease-in forwards; }
+.cal-page.cal-ghost.flip-under { z-index: 0; }
+.cal-page.flip-in {
+  transform-origin: 50% 0;
+  animation: cal-flip-in 0.2s ease-out;
+}
+@keyframes cal-flip-out {
+  from { transform: perspective(1400px) rotateX(0deg); opacity: 1; }
+  to   { transform: perspective(1400px) rotateX(70deg); opacity: 0; }
+}
+@keyframes cal-flip-in {
+  from { transform: perspective(1400px) rotateX(70deg); opacity: 0; }
+  to   { transform: perspective(1400px) rotateX(0deg); opacity: 1; }
+}
+
 .cal-weekdays {
   flex: 0 0 auto;
   display: grid;
@@ -208,7 +249,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  margin: 0 calc(14px * var(--z)) calc(14px * var(--z));
+  margin: 0 calc(14px * var(--z)) calc(10px * var(--z));
   border-top: 1px solid #EDEBE7;
   border-left: 1px solid #EDEBE7;
 }
@@ -362,8 +403,13 @@
 .sticky-note.on-board.pinned { z-index: calc(var(--layer, 0) + 1); }
 .sticky-note.on-board.stack-top { z-index: calc(var(--layer, 0) + 2); }
 .sticky-note.on-board.selected { z-index: calc(var(--layer, 0) + 3); }
-/* 연대표에 그린 캘린더 쪽지는 판 안의 것 — 판 안의 걸이 · 줄 · 손잡이보다 위 */
+/* 연대표 막대 위에 얹은 쪽지 — 막대(판)보다 뒤라 막대에 끼워 놓은 것처럼 보임. 아래층 쪽지가 앞 (--perch 1 ~ 3 — board-notes.js)
+   고른 쪽지도 막대보다는 뒤, 얹은 쪽지 가운데서는 맨 앞 */
+.sticky-note.on-board.perched { z-index: calc(var(--layer, 0) - 1 - var(--perch, 1)); }
+.sticky-note.on-board.perched.selected { z-index: calc(var(--layer, 0) - 1); }
+/* 연대표에 그린 캘린더 쪽지는 판 안의 것 — 판 안의 걸이 · 줄 · 손잡이보다 위. 얹은 것은 막대(2)보다 뒤 */
 .tl-hangs .note-mirror { --layer: 2298; }
+.tl-hangs .sticky-note.note-mirror.perched { z-index: 1; }
 .sticky-note.board-hidden { display: none; }
 .sticky-note.locked,
 .sticky-note.locked:active { cursor: default; }
@@ -408,19 +454,153 @@
   .fan-overlay.closing { animation: none; }
 }
 
-/* ---- 연대표 판 (timeline.js) ---- */
-/* 걸이 막대 — 높이 26, 모서리 8, 위 #FDFCFA → 아래 #E5E1DA. 캘린더 모드에서는 잡고 끌면 보이는 때가 옮겨감 */
+/* ---- 연대표 — 걸이 막대만 (timeline.js, 가이드 12-4) ----
+   판 요소 = 막대 자리 (상자 없음). 붙은 쪽지 · 오늘 선 · 꼬리표는 막대 밖으로 나옴
+   막대 밖 빈 곳은 바탕화면 그대로라 마우스도 그대로 지나감 (pointer-events: none — 막대 · 꼬리표 · 손잡이만 받음)
+   가로 막대 (기본) · 세로 막대 (.tl-v — 판 메뉴 › 방향). 막대 위에 뜨던 조작 줄은 없앰 (사용자 요청 — 판 메뉴 · 설정에서) */
+.board-timeline {
+  display: block;
+  pointer-events: none;
+}
+/* 걸이 막대 — 높이 26, 모서리 8, 위 #FDFCFA → 아래 #E5E1DA. 잡고 끌면 막대가 옮겨지고, 휠을 돌리면 보이는 때가 옮겨감 */
 .tl-rail {
   position: absolute;
+  inset: 0;
   z-index: 2;
   overflow: hidden;
   border-radius: calc(8px * var(--z));
   background: linear-gradient(#FDFCFA, #F1EEE9 55%, #E5E1DA);
   box-shadow: 0 calc(2px * var(--z)) calc(4px * var(--z)) rgba(31, 47, 69, 0.10), inset 0 1px 0 #FFFFFF;
+  pointer-events: auto;
   cursor: grab;
+  transition: box-shadow 0.2s ease-out;
 }
 .tl-rail:active { cursor: grabbing; }
-.board.tl-direct .tl-rail { cursor: default; }
+.board.pinned .tl-rail { cursor: default; }
+.board-timeline.selected .tl-rail {
+  box-shadow: 0 calc(6px * var(--z)) calc(14px * var(--z)) rgba(31, 47, 69, 0.26), inset 0 1px 0 #FFFFFF;
+}
+
+/* 세로 막대 — 빛이 위에서 오는 것은 그대로, 막대 결만 세로로 */
+.board.tl-v .tl-rail {
+  background: linear-gradient(90deg, #FDFCFA, #F1EEE9 55%, #E5E1DA);
+  box-shadow: 0 calc(2px * var(--z)) calc(4px * var(--z)) rgba(31, 47, 69, 0.10), inset 1px 0 0 #FFFFFF;
+}
+.board-timeline.tl-v.selected .tl-rail {
+  box-shadow: 0 calc(6px * var(--z)) calc(14px * var(--z)) rgba(31, 47, 69, 0.26), inset 1px 0 0 #FFFFFF;
+}
+
+/* 꼬리표 — 막대 밖에 적는 글씨 (이름 · 세로 막대의 눈금 글씨 · 칸 이름). 바탕화면 사진 위에서도 읽히게 작은 종이 딱지로 */
+.tl-tag {
+  box-sizing: border-box;
+  height: calc(18px * var(--z));
+  padding: 0 calc(6px * var(--z));
+  border: 1px solid #E7E4DF;
+  border-radius: calc(5px * var(--z));
+  background: #FCFBF9;
+  font-size: calc(11.5px * var(--z));
+  font-weight: 600;
+  line-height: calc(16px * var(--z));
+  color: #7A8290;
+  white-space: nowrap;
+}
+/* 이름 꼬리표 — 이름이 있을 때만. 가로: 막대 왼쪽 끝 옆 / 세로: 위 끝 위. 잡고 끌면 막대가 옮겨지고 두 번 누르면 이름 바꾸기 */
+.tl-name {
+  position: absolute;
+  right: calc(100% + 10px * var(--z));
+  top: 50%;
+  z-index: 5;
+  display: flex;
+  transform: translateY(-50%);
+  pointer-events: auto;
+  cursor: grab;
+}
+.board.tl-v .tl-name {
+  right: auto;
+  left: 50%;
+  top: auto;
+  bottom: calc(100% + 8px * var(--z));
+  transform: translateX(-50%);
+}
+.board.pinned .tl-name { cursor: default; }
+.tl-name .board-name.tl-tag {
+  max-width: calc(240px * var(--z));
+  height: calc(22px * var(--z));
+  margin: 0;
+  padding: 0 calc(8px * var(--z));
+  font-size: calc(12.5px * var(--z));
+  font-weight: 700;
+  line-height: calc(20px * var(--z));
+  color: #4A5568;
+}
+.tl-name .board-name-input { margin-left: 0; }
+/* 세로 막대의 눈금 글씨 · 칸 이름 — 막대 왼쪽 바깥 (막대와 틈 4). 왼쪽 쪽지로 가는 이음 선은 꼬리표 뒤로 지나감 */
+.tl-vlabel {
+  position: absolute;
+  right: calc(100% + 4px * var(--z));
+  z-index: 3;
+  max-width: calc(76px * var(--z));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.tl-vlabel.mid { transform: translateY(-50%); }
+.tl-vlabel.holiday { color: #C4615F; }
+.tl-vlabel.today {
+  z-index: 4;
+  max-width: none;
+  border-color: #F1C4C1;
+  font-weight: 700;
+  color: #E4746E;
+}
+.tl-vlabel.seg {                                /* 직접 작성 모드의 칸 이름 — 두 번 누르면 고침 */
+  max-width: calc(104px * var(--z));
+  pointer-events: auto;
+  cursor: text;
+}
+.tl-vlabel.seg.empty { color: #B3B9C2; font-weight: 500; }
+.tl-vlabel.seg:has(input) {
+  overflow: visible;
+  padding: 0;
+  border-color: transparent;
+  background: none;
+}
+.tl-vlabel.seg .tl-seg-input { width: calc(104px * var(--z)); height: calc(18px * var(--z)); text-align: right; }
+
+/* 길이 손잡이 — 막대 끝 6 × 16 (가로: 오른쪽 끝 / 세로: 아래 끝. 막대에 마우스를 올렸을 때만). 끌면 막대 길이가 바뀜 */
+.tl-len {
+  position: absolute;
+  right: calc(-3px * var(--z));
+  top: 50%;
+  z-index: 5;
+  width: calc(6px * var(--z));
+  height: calc(16px * var(--z));
+  border-radius: calc(3px * var(--z));
+  background: #A9B2BD;
+  box-shadow: 0 0 0 calc(2px * var(--z)) #FFFFFF;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.board.tl-v .tl-len {
+  right: auto;
+  left: 50%;
+  top: auto;
+  bottom: calc(-3px * var(--z));
+  width: calc(16px * var(--z));
+  height: calc(6px * var(--z));
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+.tl-len::before {                               /* 잡기 쉽게 둘레를 넓힘 */
+  content: '';
+  position: absolute;
+  inset: calc(-8px * var(--z)) calc(-6px * var(--z));
+}
+.tl-rail:hover ~ .tl-len,
+.tl-len:hover { opacity: 1; }
 
 .tl-screw {                                     /* 나사 — 지름 7, 양 끝에서 9 */
   position: absolute;
@@ -435,6 +615,9 @@
 }
 .tl-screw.left { left: calc(9px * var(--z)); }
 .tl-screw.right { left: calc(100% - 9px * var(--z)); }
+.board.tl-v .tl-screw { left: 50%; }            /* 세로 막대: 위 · 아래 끝에서 9 */
+.board.tl-v .tl-screw.left { top: calc(9px * var(--z)); }
+.board.tl-v .tl-screw.right { top: calc(100% - 9px * var(--z)); }
 
 .tl-tick {                                      /* 눈금선 — 해가 바뀌는 자리는 조금 굵게 */
   position: absolute;
@@ -459,26 +642,36 @@
   white-space: nowrap;
   pointer-events: none;
 }
-/* 주말 · 빨간 날 띠 — 막대 아래 절반, 하루 폭 */
+/* 주말 · 빨간 날 띠 — 막대 아래 절반 (위에서 16), 하루 폭. 위 절반은 기간 띠 자리 (가이드 12-4 제안 — 아직 없음) */
 .tl-strip {
   position: absolute;
-  top: calc(13px * var(--z));
-  height: calc(13px * var(--z));
+  top: calc(16px * var(--z));
+  height: calc(10px * var(--z));
 }
-.tl-strip.sat { background: rgba(74, 127, 208, 0.13); }
-.tl-strip.sun { background: rgba(217, 100, 107, 0.13); }
-.tl-strip.holiday { background: rgba(217, 100, 107, 0.34); }
-.tl-holiday-name {                              /* 일 눈금: 막대 위에 빨간 날 이름 */
+.tl-strip.sat { background: rgba(74, 127, 208, 0.11); }
+.tl-strip.sun { background: rgba(217, 100, 107, 0.11); }
+.tl-strip.holiday { background: rgba(217, 100, 107, 0.32); }
+/* 맨 위 줄 (높이 26 — 얹은 쪽지 위. 얹은 쪽지가 없으면 막대 바로 위): '오늘' · 일 눈금의 빨간 날 이름 (자리는 timeline.js) */
+.tl-holiday-name,
+.tl-today-label {
   position: absolute;
-  top: calc(68px * var(--z));
+  display: flex;
+  align-items: center;
   transform: translateX(-50%);
-  font-size: calc(10.5px * var(--z));
-  font-weight: 600;
-  color: #C4615F;
   white-space: nowrap;
   pointer-events: none;
 }
-/* 오늘 — 막대 안 2px 빨간 선 + 아래로 점선(5/5), 막대 위 '오늘' */
+.tl-holiday-name {
+  font-size: calc(10.5px * var(--z));
+  font-weight: 600;
+  color: #C4615F;
+}
+.tl-today-label {
+  font-size: calc(11px * var(--z));
+  font-weight: 700;
+  color: #E4746E;
+}
+/* 오늘 — 막대 안 2px 빨간 선 + 위아래 전체 점선(5/5) */
 .tl-today-line {
   position: absolute;
   top: 0;
@@ -491,23 +684,63 @@
 }
 .tl-today-drop {
   position: absolute;
-  bottom: 0;
   width: calc(1.5px * var(--z));
   background: repeating-linear-gradient(to bottom, #E4746E 0 calc(5px * var(--z)), transparent calc(5px * var(--z)) calc(10px * var(--z)));
   transform: translateX(-50%);
   pointer-events: none;
 }
-.tl-today-label {
-  position: absolute;
-  top: calc(68px * var(--z));
-  transform: translateX(-50%);
-  font-size: calc(11px * var(--z));
-  font-weight: 700;
-  color: #E4746E;
-  pointer-events: none;
-}
 
-/* 걸이 · 줄 — 걸이는 막대 뒤에서 나오고, 줄은 쪽지 가운데 위까지 */
+/* 세로 막대 — 눈금선 · 띠 · 오늘 선이 가로로 눕고 (자리 top · height 는 timeline.js), 띠는 막대 오른쪽 절반 */
+.board.tl-v .tl-tick {
+  left: 0;
+  right: 0;
+  bottom: auto;
+  width: auto;
+  height: 1px;
+}
+.board.tl-v .tl-tick.year { width: auto; height: 1.5px; }
+.board.tl-v .tl-strip {
+  left: calc(16px * var(--z));
+  width: calc(10px * var(--z));
+}
+.board.tl-v .tl-today-line {
+  left: 0;
+  right: 0;
+  bottom: auto;
+  width: auto;
+  height: calc(2px * var(--z));
+  transform: translateY(-50%);
+}
+.board.tl-v .tl-today-drop {
+  height: calc(1.5px * var(--z));
+  background: repeating-linear-gradient(to right, #E4746E 0 calc(5px * var(--z)), transparent calc(5px * var(--z)) calc(10px * var(--z)));
+  transform: translateY(-50%);
+}
+/* 이음 선 — 세로 막대에서 쪽지까지 짧은 가로 선 (가로 막대의 걸이 + 줄 자리). 막대 쪽 끝에 작은 못 */
+.tl-link {
+  position: absolute;
+  height: calc(1.5px * var(--z));
+  background: #C9C4BB;
+  transform: translateY(-50%);
+}
+.tl-link::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: calc(6px * var(--z));
+  height: calc(6px * var(--z));
+  border-radius: 50%;
+  background: #C0BAB0;
+  transform: translateY(-50%);
+}
+.tl-link.r::before { left: 0; }
+.tl-link.l::before { right: 0; }
+/* 끄는 동안 붙을 자리 — 파란 이음 선 */
+.tl-link.target { height: calc(2px * var(--z)); background: #9CC4F8; }
+.tl-link.target::before { background: #5A98FE; box-shadow: 0 0 calc(4px * var(--z)) rgba(90, 152, 254, 0.6); }
+
+/* 걸이 · 줄 (아래에 건 쪽지) — 걸이는 막대 뒤에서 나오고, 줄은 쪽지 가운데 위까지 (쪽지를 끌어 내리면 줄이 그만큼 길어짐)
+   얹은 쪽지는 걸이 · 줄 없음. 위로 띄운 쪽지는 줄과 같은 모양의 받침 선(.tl-stem)으로 막대 · 바로 밑 쪽지에 이음 */
 .tl-hangs {
   position: absolute;
   inset: 0;
@@ -532,6 +765,17 @@
           drop-shadow(0 0 calc(3px * var(--z)) rgba(90, 152, 254, 0.55));
 }
 .tl-string.target { width: calc(2px * var(--z)); background: #9CC4F8; }
+/* 끄는 동안 얹힐 자리 — 막대 위 테두리가 파랗게 (쪽지 너비만큼) */
+.tl-perch-hint {
+  position: absolute;
+  z-index: 4;
+  height: calc(2.4px * var(--z));
+  margin-top: calc(-1.2px * var(--z));
+  border-radius: calc(2px * var(--z));
+  background: #5A98FE;
+  box-shadow: 0 0 calc(4px * var(--z)) rgba(90, 152, 254, 0.6);
+  pointer-events: none;
+}
 
 /* 끄는 쪽지 위 풍선 — 날짜 또는 칸 이름 */
 .tl-balloon {
@@ -614,8 +858,21 @@
   transition: opacity 0.15s;
 }
 .tl-rail:hover .tl-seg-handle { opacity: 1; }
+/* 세로 막대의 칸 — 위에서 아래로 쌓임 (자리 top · height 는 timeline.js). 이름은 막대 밖 꼬리표 (.tl-vlabel.seg) */
+.board.tl-v .tl-seg {
+  left: 0;
+  width: 100%;
+}
+.board.tl-v .tl-seg-handle {
+  left: 50%;
+  width: calc(16px * var(--z));
+  height: calc(5px * var(--z));
+  cursor: ns-resize;
+}
 .tl-add-seg {
   position: absolute;
+  right: 0;                                     /* 가로: 막대 오른쪽 아래 (위는 timeline.js) */
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: calc(4px * var(--z));
@@ -636,51 +893,18 @@
   pointer-events: none;
 }
 .tl-add-seg:hover { background: #F1EEE9; color: #5A6472; }
+.board.tl-v .tl-add-seg {                       /* 세로: 막대 아래 끝 밑, 가운데 */
+  right: auto;
+  left: 50%;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
 
-/* ---- 검은 판 (판 우클릭 › 판 색상 › 검은색 · 설정 › 판 › 기본 판 색상 · 배경 테마가 어두우면 기본) — 쪽지 색은 그대로
-   renderer/boards.js 가 캘린더 · 연대표 판마다 .tone-dark 를 붙임 (파일 묶음은 포스트잇 색이라 빼고) ---- */
-.board.tone-dark {
-  background: #2A3038;
-  border-color: #3A424C;
-  color: #E7EAEE;
-}
-.board.tone-dark.selected:not(.board-group) {
-  border-color: #56606D;
-  box-shadow: 0 calc(16px * var(--z)) calc(36px * var(--z)) rgba(0, 0, 0, 0.45),
-              0 calc(4px * var(--z)) calc(10px * var(--z)) rgba(0, 0, 0, 0.3);
-}
-.board.tone-dark .board-head { border-bottom-color: #3A424C; }
-.board.tone-dark .board-btn:hover,
-.board.tone-dark .board-text-btn:hover,
-.board.tone-dark .cal-add:hover,
-.board.tone-dark .tl-add-seg:hover { background: rgba(255, 255, 255, 0.07); }
-.board.tone-dark .board-text-btn { border-color: #4A5360; color: #C9D1DB; }
-.board.tone-dark .board-seg { background: #353D47; }
-.board.tone-dark .board-seg button { color: #AEB6C2; }
-.board.tone-dark .board-seg button.current { background: #4A5360; color: #FFFFFF; box-shadow: none; }
-.board.tone-dark .board-name { color: #8A94A2; }
-.board.tone-dark .board-name.tl-title { color: inherit; }
-.board.tone-dark .cal-weekdays { color: #8A94A2; }
-.board.tone-dark .cal-wd.sun { color: #D9646B; }
-.board.tone-dark .cal-wd.sat { color: #4A7FD0; }
+/* ---- 어두운 배경일 때 (배경 테마 '어둡게' — renderer/boards.js 가 캘린더 · 연대표에 .tone-dark 를 붙임, 가이드 12-2) ----
+   종이는 진짜 종이라 어두워지지 않고 살짝 덜 흰색으로 (#F7F6F3 · 칸 선 #E4E1DC). 띠 · 링 · 막대 · 나사 · 걸이 · 쪽지 색은 그대로
+   (밝은 회색 막대라 어두운 벽에서도 잘 보임). 예전의 검은 판(판 색상 › 검은색)은 판 상자와 함께 없어짐 */
+.board.tone-dark .cal-paper { background: #F7F6F3; }
 .board.tone-dark .cal-grid,
-.board.tone-dark .cal-cell { border-color: #353D47; }
-.board.tone-dark .cal-cell.other { background: #242A31; }
-.board.tone-dark .cal-cell.other .cal-date { color: #6B7480; }
-.board.tone-dark .cal-cell.holiday .cal-date { color: #D9646B; }
-.board.tone-dark .cal-cell.today { background: rgba(90, 152, 254, 0.12); }
-.board.tone-dark .cal-cell.fan-open { background: rgba(90, 152, 254, 0.16); }
-.board.tone-dark .cal-date { color: #AEB6C2; }
-.board.tone-dark:not(.pinned) .cal-cell:hover { background: rgba(255, 255, 255, 0.04); }
-.board.tone-dark .cal-count { background: #3A424C; color: #C9D1DB; }
-.fan-overlay.tone-dark .fan-halo { fill: rgba(31, 37, 44, 0.82); }
-.board.tone-dark .tl-rail {
-  background: linear-gradient(#434B56, #3A424C 55%, #313840);
-  box-shadow: 0 calc(2px * var(--z)) calc(4px * var(--z)) rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-.board.tone-dark .tl-screw { background: radial-gradient(circle at 35% 35%, #8A94A2, #4A5360); }
-.board.tone-dark .tl-tick { background: #4E5763; }
-.board.tone-dark .tl-tick.year { background: #6B7480; }
-.board.tone-dark .tl-label,
-.board.tone-dark .tl-seg-label { color: #AEB6C2; }
-.board.tone-dark .tl-string { background: #5E6772; }
+.board.tone-dark .cal-cell { border-color: #E4E1DC; }
+.board.tone-dark .cal-under.u1 { background: #EDEBE6; }
+.board.tone-dark .cal-under.u2 { background: #DFDCD5; }

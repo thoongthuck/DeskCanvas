@@ -2,6 +2,7 @@
 //   note.table = { rows: [['제목', …], ['', …], …], widths?, heights? } — 첫 행은 머리 행 (옅은 바탕). 모든 행의 칸 수는 같음
 //     widths: 열 너비 비율 (합 1 — 없으면 똑같이), heights: 행 높이 (월드 px, 0 = 글에 맞게 — 없으면 모두 글에 맞게)
 //     spans: 칸마다 고른 글자 서식 [행][열] (text-color.js — 없으면 서식 없음), fills: 칸 색 [행][열] ('#RRGGBB' | null)
+//     merges: 합친 칸 [{ r, c, rs, cs }] (아래 '칸 합치기')
 //   안쪽 선을 끌면 칸 크기: 세로 선은 양옆 열이 너비를 주고받고, 가로 선은 그 위 행 높이 (쪽지도 같이) — startTableBorderDrag
 //   수정 중: Tab / Shift+Tab 옆 칸 (마지막 칸에서 Tab 은 새 행) · Enter 아래 칸 (마지막 행이면 새 행)
 //            ↑ ↓ 위 · 아래 칸 (칸 안 첫 줄 · 마지막 줄에서) · Alt+Enter 칸 안에서 줄 바꾸기 · Shift+Enter 수정 끝내기
@@ -85,6 +86,21 @@ export const tableNoteMethods = {
       const clean = fl.map(r => r.map(v => (HEX.test(String(v || '')) ? String(v).toUpperCase() : null)));
       if (clean.some(r => r.some(Boolean))) out.fills = clean;
     }
+    // 합친 칸 — 표 안 · 두 칸 이상 · 서로 겹치지 않는 것만
+    if (Array.isArray(table.merges)) {
+      const taken = new Set();
+      const list = [];
+      table.merges.forEach(m => {
+        if (!m || ![m.r, m.c, m.rs, m.cs].every(Number.isInteger)) return;
+        if (m.r < 0 || m.c < 0 || m.rs < 1 || m.cs < 1 || m.rs * m.cs < 2 || m.r + m.rs > out.rows.length || m.c + m.cs > cols) return;
+        const keys = [];
+        for (let r = m.r; r < m.r + m.rs; r++) for (let c = m.c; c < m.c + m.cs; c++) keys.push(r * cols + c);
+        if (keys.some(k => taken.has(k))) return;
+        keys.forEach(k => taken.add(k));
+        list.push({ r: m.r, c: m.c, rs: m.rs, cs: m.cs });
+      });
+      if (list.length) out.merges = list;
+    }
     return out;
   },
 
@@ -117,19 +133,27 @@ export const tableNoteMethods = {
     table.style.setProperty('--cols', rows[0].length);    // 열이 많으면 쪽지보다 넓어짐 (table-note.css)
     // 안쪽 선 끌기 — 칸 글자칸이나 쪽지보다 먼저 받음 (선 가까이에서만)
     table.addEventListener('mousedown', (e) => {
-      const hit = e.button === 0 && !note.pinned ? this.tableBorderAt(table, e) : null;
+      const hit = e.button === 0 && !note.pinned ? this.tableBorderAt(table, e, note) : null;
       if (hit) this.startTableBorderDrag(e, note, hit, table);
     }, true);
     table.addEventListener('mousemove', (e) => {
       if (document.body.classList.contains('table-drag-row') || document.body.classList.contains('table-drag-col')) return;
-      const hit = !note.pinned ? this.tableBorderAt(table, e) : null;
+      const hit = !note.pinned ? this.tableBorderAt(table, e, note) : null;
       table.style.cursor = hit ? (hit.axis === 'col' ? 'col-resize' : 'row-resize') : '';
     });
     table.addEventListener('mouseleave', () => { table.style.cursor = ''; });
     rows.forEach((row, r) => {
       const tr = table.insertRow();
       row.forEach((text, c) => {
+        const m = this.mergeAt(note, r, c);
+        if (m && (m.r !== r || m.c !== c)) return;              // 합친 칸에 덮인 칸은 그리지 않음
         const td = tr.insertCell();
+        td.dataset.r = r;
+        td.dataset.c = c;
+        if (m) {
+          td.rowSpan = m.rs;
+          td.colSpan = m.cs;
+        }
         td.appendChild(this.createTableCell(note, r, c));
         // 늘어난 칸의 빈 곳을 눌러도 그 칸 글자칸으로 (수정 중)
         td.addEventListener('mousedown', (e) => {
@@ -218,6 +242,11 @@ export const tableNoteMethods = {
     const rows = note.table.rows;
     r = Math.max(0, Math.min(rows.length - 1, r));
     c = Math.max(0, Math.min(rows[0].length - 1, c));
+    const m = this.mergeAt(note, r, c);                       // 합친 칸 안이면 그 왼쪽 위 칸
+    if (m) {
+      r = m.r;
+      c = m.c;
+    }
     const cell = el.querySelector(`.table-cell[data-r="${r}"][data-c="${c}"]`);
     if (!cell) return;
     cell.focus();
@@ -229,16 +258,18 @@ export const tableNoteMethods = {
     const ta = e.target;
     if (ta.readOnly || e.isComposing || e.keyCode === 229) return;   // 한글 조합 중에는 무시
     const rows = note.table.rows;
-    const lastRow = r === rows.length - 1, lastCol = c === rows[0].length - 1;
+    const merged = this.mergeAt(note, r, c);                  // 합친 칸이면 그만큼 건너뜀
+    const rs = merged ? merged.rs : 1, cs = merged ? merged.cs : 1;
+    const lastRow = r + rs - 1 === rows.length - 1, lastCol = c + cs - 1 === rows[0].length - 1;
     if (e.key === 'Tab') {
       e.preventDefault();
       if (e.shiftKey) {
         if (c > 0) this.focusTableCell(note, r, c - 1);
         else if (r > 0) this.focusTableCell(note, r - 1, rows[0].length - 1);
       } else if (!lastCol) {
-        this.focusTableCell(note, r, c + 1);
+        this.focusTableCell(note, r, c + cs);
       } else if (!lastRow) {
-        this.focusTableCell(note, r + 1, 0);
+        this.focusTableCell(note, r + rs, 0);
       } else {
         this.insertTableRow(note, rows.length, 0);             // 마지막 칸에서 Tab: 새 행
       }
@@ -253,14 +284,14 @@ export const tableNoteMethods = {
       this.stopEditing();
     } else if (e.key === 'Enter' && !e.ctrlKey) {
       e.preventDefault();
-      if (!lastRow) this.focusTableCell(note, r + 1, c);
+      if (!lastRow) this.focusTableCell(note, r + rs, c);
       else this.insertTableRow(note, rows.length, c);            // 마지막 행에서 Enter: 새 행
     } else if (e.key === 'ArrowUp' && r > 0 && !ta.value.slice(0, ta.selectionStart).includes('\n')) {
       e.preventDefault();
       this.focusTableCell(note, r - 1, c);
     } else if (e.key === 'ArrowDown' && !lastRow && !ta.value.slice(ta.selectionEnd).includes('\n')) {
       e.preventDefault();
-      this.focusTableCell(note, r + 1, c);
+      this.focusTableCell(note, r + rs, c);
     }
   },
 
@@ -275,6 +306,7 @@ export const tableNoteMethods = {
     if (note.table.heights) note.table.heights.splice(at, 0, 0);    // 새 행은 글에 맞게
     if (note.table.spans) note.table.spans.splice(at, 0, Array(rows[0].length).fill(null));
     if (note.table.fills) note.table.fills.splice(at, 0, Array(rows[0].length).fill(null));
+    this.shiftTableMerges(note, 'row', at, 1);
     if (grow) this.setTableHeight(note, note.height + grow);
     this.redrawTable(note, at, focusCol);
   },
@@ -288,6 +320,7 @@ export const tableNoteMethods = {
     rows.forEach(r => r.splice(at, 0, ''));
     if (note.table.spans) note.table.spans.forEach(r => r.splice(at, 0, null));
     if (note.table.fills) note.table.fills.forEach(r => r.splice(at, 0, null));
+    this.shiftTableMerges(note, 'col', at, 1);
     if (note.table.widths) this.setTableColPx(note, [...px.slice(0, at), colW, ...px.slice(at)]);   // 다른 열 너비는 그대로
     this.setTableWidth(note, this.tableBaseSize(note).width + colW);   // 열 너비는 그대로 — 쪽지가 한 열만큼 넓어짐
     this.redrawTable(note, 0, at);
@@ -298,10 +331,12 @@ export const tableNoteMethods = {
     if (rows.length <= 1) return;
     const shrink = this.tableStretched(note) ? this.tableRowHeight(note, r) : 0;   // 늘려 둔 표: 그 행만큼 쪽지도
     this.record();
+    this.moveMergeAnchors(note, 'row', r);
     rows.splice(r, 1);
     if (note.table.heights) note.table.heights.splice(r, 1);
     if (note.table.spans) note.table.spans.splice(r, 1);
     if (note.table.fills) note.table.fills.splice(r, 1);
+    this.shiftTableMerges(note, 'row', r, -1);
     if (shrink) this.setTableHeight(note, note.height - shrink);
     this.redrawTable(note, Math.min(r, rows.length - 1), 0);
   },
@@ -312,9 +347,11 @@ export const tableNoteMethods = {
     const px = this.tableColPx(note);
     const colW = px[c] || this.tableColWidth(note);
     this.record();
+    this.moveMergeAnchors(note, 'col', c);
     rows.forEach(r => r.splice(c, 1));
     if (note.table.spans) note.table.spans.forEach(r => r.splice(c, 1));
     if (note.table.fills) note.table.fills.forEach(r => r.splice(c, 1));
+    this.shiftTableMerges(note, 'col', c, -1);
     if (note.table.widths) this.setTableColPx(note, px.filter((_, i) => i !== c));
     this.setTableWidth(note, this.tableBaseSize(note).width - colW);   // 쪽지도 그 열만큼 좁아짐
     this.redrawTable(note, 0, Math.min(c, rows[0].length - 1));
@@ -329,12 +366,20 @@ export const tableNoteMethods = {
     return Math.max(24, w / cols);
   },
 
-  // 열마다 지금 너비 (월드 좌표) — 화면에 그려진 첫 행에서
+  // 열마다 지금 너비 (월드 좌표) — 그려진 표 너비 × 열 비율 (첫 행에 합친 칸이 있어도 맞게)
   tableColPx(note) {
     const el = document.getElementById(note.id);
-    const tr = el && el.querySelector('.note-table tr');
-    if (!tr) return note.table.rows[0].map(() => this.tableColWidth(note));
-    return [...tr.cells].map(td => td.getBoundingClientRect().width / this.zoom);
+    const table = el && el.querySelector('.note-table');
+    const cols = note.table.rows[0].length;
+    const total = table ? table.getBoundingClientRect().width / this.zoom : Math.max(24 * cols, this.tableBaseSize(note).width - 40);
+    return this.tableColFractions(note).map(f => f * total);
+  },
+
+  // 열 너비 비율 (정한 것 · 없으면 똑같이)
+  tableColFractions(note) {
+    const cols = note.table.rows[0].length;
+    const w = note.table.widths;
+    return w && w.length === cols ? w : Array(cols).fill(1 / cols);
   },
 
   // 열 너비(월드 좌표) 목록 → 비율로 저장
@@ -345,19 +390,17 @@ export const tableNoteMethods = {
 
   // 정한 열 너비 · 행 높이를 그린 표에 (열 = <col> 비율, 행 = 최소 높이 — 글이 더 길면 늘어남)
   applyTableSizes(table, note) {
-    const { widths, heights } = note.table;
+    const { heights } = note.table;
+    // 열은 늘 <col> 로 (합친 칸이 있어도 열 수 · 너비가 맞게) — 정한 비율, 없으면 똑같이
+    const fr = this.tableColFractions(note);
     let group = table.querySelector('colgroup');
-    if (widths) {
-      if (!group) {
-        group = document.createElement('colgroup');
-        table.prepend(group);
-      }
-      while (group.children.length < widths.length) group.appendChild(document.createElement('col'));
-      while (group.children.length > widths.length) group.lastChild.remove();
-      widths.forEach((w, i) => { group.children[i].style.width = `${(w * 100).toFixed(3)}%`; });
-    } else if (group) {
-      group.remove();
+    if (!group) {
+      group = document.createElement('colgroup');
+      table.prepend(group);
     }
+    while (group.children.length < fr.length) group.appendChild(document.createElement('col'));
+    while (group.children.length > fr.length) group.lastChild.remove();
+    fr.forEach((w, i) => { group.children[i].style.width = `${(w * 100).toFixed(3)}%`; });
     [...table.rows].forEach((tr, i) => {
       const h = heights && heights[i];
       tr.style.height = h ? `calc(${h}px * var(--z))` : '';
@@ -366,16 +409,17 @@ export const tableNoteMethods = {
 
   // 누른 자리가 안쪽 선 가까이인지 — { axis: 'col', index: 왼쪽 열 } · { axis: 'row', index: 위 행 } · null
   //   글자칸 위는 아님 (글 고르기 · 커서). 선 양쪽 4px (칸 안 여백 자리)
-  tableBorderAt(table, e) {
+  tableBorderAt(table, e, note) {
     if (e.target.closest && e.target.closest('.table-cell, .ink-field')) return null;
     const near = 4;
-    const first = table.rows[0];
-    if (!first) return null;
+    if (!table.rows[0]) return null;
     const box = table.getBoundingClientRect();
     if (e.clientY >= box.top && e.clientY <= box.bottom) {
-      const cells = [...first.cells];
-      for (let c = 0; c < cells.length - 1; c++) {
-        if (Math.abs(e.clientX - cells[c].getBoundingClientRect().right) <= near) return { axis: 'col', index: c };
+      const fr = this.tableColFractions(note);               // 열 경계 = 표 너비 × 비율 (합친 칸이 있어도)
+      let x = box.left;
+      for (let c = 0; c < fr.length - 1; c++) {
+        x += fr[c] * box.width;
+        if (Math.abs(e.clientX - x) <= near) return { axis: 'col', index: c };
       }
     }
     if (e.clientX >= box.left && e.clientX <= box.right) {
@@ -400,7 +444,7 @@ export const tableNoteMethods = {
     const before = JSON.stringify([t.widths, t.heights, note.height]);
     let move;
     if (hit.axis === 'col') {
-      const px = [...table.rows[0].cells].map(td => td.getBoundingClientRect().width / z);
+      const px = this.tableColPx(note);
       const c = hit.index;
       const pair = px[c] + px[c + 1];
       const min = Math.min(24, pair / 2);
@@ -503,9 +547,10 @@ export const tableNoteMethods = {
     const cursor = axis === 'row' ? 'table-drag-row' : 'table-drag-col';
     document.body.classList.add(cursor);
     this.record();                                   // 끌기 한 번 = 되돌리기 한 단계 (바뀐 게 없으면 끝에서 버림)
+    const merges = note.table.merges || [];
     const lastEmpty = () => (axis === 'row'
-      ? rows[rows.length - 1].every(c => !c.trim())
-      : rows.every(r => !r[r.length - 1].trim()));
+      ? rows[rows.length - 1].every(c => !c.trim()) && !merges.some(m => m.r + m.rs >= rows.length)
+      : rows.every(r => !r[r.length - 1].trim()) && !merges.some(m => m.c + m.cs >= rows[0].length));
     const move = (ev) => {
       const d = (axis === 'row' ? ev.clientY : ev.clientX) - start;
       if (!moved && Math.abs(d) < 4) return;
@@ -595,6 +640,10 @@ export const tableNoteMethods = {
     const r = fresh ? Math.min(hit.r, rows.length - 1) : rows.length - 1;
     const c = fresh ? Math.min(hit.c, rows[0].length - 1) : rows[0].length - 1;
     const full = { rows: rows.length >= MAX_ROWS, cols: rows[0].length >= MAX_COLS };
+    const merged = this.mergeAt(note, r, c);
+    const unmerge = merged
+      ? [{ label: t('table.unmerge'), action: () => this.unmergeTableCells(note, { r0: merged.r, r1: merged.r + merged.rs - 1, c0: merged.c, c1: merged.c + merged.cs - 1 }) }]
+      : [];
     return [{
       icon: 'add-table.svg', label: t('menu.table'), arrow: true,
       submenu: [
@@ -606,6 +655,7 @@ export const tableNoteMethods = {
         { label: t('table.deleteRow'), disabled: rows.length <= 1, action: () => this.deleteTableRow(note, r) },
         { label: t('table.deleteCol'), disabled: rows[0].length <= 1, action: () => this.deleteTableCol(note, c) },
         { separator: true },
+        ...unmerge,
         { label: t('table.cellColorMenu'), action: () => this.openCellColor(note, r, c) },
         { label: t('table.equalColsAll'), disabled: rows[0].length <= 1, action: () => this.equalizeTableCols(note) },
         { label: t('table.equalRowsAll'), disabled: rows.length <= 1, action: () => this.equalizeTableRows(note) },
@@ -625,7 +675,9 @@ export const tableNoteMethods = {
   },
 
   tableSelRect(sel) {
-    return { r0: Math.min(sel.r0, sel.r1), r1: Math.max(sel.r0, sel.r1), c0: Math.min(sel.c0, sel.c1), c1: Math.max(sel.c0, sel.c1) };
+    const R = { r0: Math.min(sel.r0, sel.r1), r1: Math.max(sel.r0, sel.r1), c0: Math.min(sel.c0, sel.c1), c1: Math.max(sel.c0, sel.c1) };
+    const note = this.notes.find(n => n.id === sel.id);
+    return note ? this.expandToMerges(note, R) : R;          // 합친 칸에 걸치면 합친 칸 전체
   },
 
   // 고르기 (r0, c0) 시작 칸 → (r1, c1) 끝 칸 — 표 안으로 맞춤
@@ -647,9 +699,10 @@ export const tableNoteMethods = {
     const sel = this.tableSelFor(note);
     const R = sel ? this.tableSelRect(sel) : null;
     table.classList.toggle('cell-range', !!sel);
-    [...table.rows].forEach((tr, r) => [...tr.cells].forEach((td, c) => {
+    table.querySelectorAll('td').forEach(td => {
+      const { r, c } = this.tableCellOf(td);
       td.classList.toggle('cell-selected', !!R && r >= R.r0 && r <= R.r1 && c >= R.c0 && c <= R.c1);
-    }));
+    });
   },
 
   // 고르기를 풂 — focusCell: 끝 칸에 커서
@@ -677,9 +730,9 @@ export const tableNoteMethods = {
     return out;
   },
 
-  // 표 칸 자리 (그려진 td → 행 · 열)
+  // 표 칸 자리 (그려진 td → 행 · 열 — 합친 칸은 왼쪽 위 칸)
   tableCellOf(td) {
-    return { r: td.parentNode.rowIndex, c: td.cellIndex };
+    return { r: Number(td.dataset.r), c: Number(td.dataset.c) };
   },
 
   focusTableWrap(note) {
@@ -854,6 +907,8 @@ export const tableNoteMethods = {
   },
 
   setTableCellText(note, r, c, text) {
+    const m = this.mergeAt(note, r, c);
+    if (m && (m.r !== r || m.c !== c)) return;                  // 합친 칸에 덮인 칸은 건너뜀
     note.table.rows[r][c] = String(text);
     if (note.table.spans) note.table.spans[r][c] = null;           // 붙여 넣은 칸은 서식 없이
   },
@@ -900,7 +955,7 @@ export const tableNoteMethods = {
     const z = this.zoom;
     const trs = [...table.rows];
     const hs = trs.map(tr => tr.getBoundingClientRect().height / z);
-    const need = trs.map(tr => Math.max(...[...tr.cells].map(td => {
+    const need = trs.map(tr => Math.max(0, ...[...tr.cells].filter(td => td.rowSpan === 1).map(td => {
       const cs = getComputedStyle(td);
       const inner = td.firstElementChild ? td.firstElementChild.getBoundingClientRect().height : 0;
       return (inner + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)) / z;
@@ -942,6 +997,8 @@ export const tableNoteMethods = {
       refresh: () => this.tableBarInfo(note),
       fills: { colors: CELL_FILLS, current: this.tableSelFill(note), set: (hex) => this.setTableFill(note, hex) },
       actions: [
+        { label: 'table.merge', disabled: !R || !this.canMergeTable(note, R), run: () => this.mergeTableCells(note) },
+        { label: 'table.unmerge', disabled: !R || !this.rangeHasMerge(note, R), run: () => this.unmergeTableCells(note) },
         { label: 'table.equalCols', disabled: !R || R.c0 === R.c1, run: () => this.equalizeTableCols(note, R.c0, R.c1) },
         { label: 'table.equalRows', disabled: !R || R.r0 === R.r1, run: () => this.equalizeTableRows(note, R.r0, R.r1) },
         { label: 'table.clearCells', disabled: !R, run: () => this.clearTableCells(note) },
@@ -961,12 +1018,13 @@ export const tableNoteMethods = {
   //   칸 비우기(Delete)는 글만 — 색은 남김 (엑셀처럼). 바탕은 --cell-fill (table-note.css)
   applyTableFills(table, note) {
     const fills = note.table.fills;
-    [...table.rows].forEach((tr, r) => [...tr.cells].forEach((td, c) => {
+    table.querySelectorAll('td').forEach(td => {
+      const { r, c } = this.tableCellOf(td);
       const f = fills && fills[r] && fills[r][c];
       if (f) td.style.setProperty('--cell-fill', f);
       else td.style.removeProperty('--cell-fill');
       td.classList.toggle('filled', !!f);
-    }));
+    });
   },
 
   // 고른 칸의 색 — hex 가 없으면 뺌 (되돌리기 한 단계)
@@ -1006,18 +1064,137 @@ export const tableNoteMethods = {
     this.showTableRangeBar(note, box ? { x: box.right + 4, y: box.top } : null);
   },
 
+  // ---- 칸 합치기 (note.table.merges = [{ r, c, rs, cs }] — 왼쪽 위 칸 + 행 · 열 수) ----
+  //   여러 칸을 고르고 우클릭 › 표 줄의 '칸 합치기' — 글은 지우지 않고 왼쪽 위 칸에 줄을 바꿔 모음 (서식 · 칸 색은 왼쪽 위 것)
+  //   '칸 나누기': 고른 칸의 합친 칸을 풂, 또는 합친 칸 우클릭 › 표 › 칸 나누기
+  //   덮인 칸은 그리지 않음 (데이터에는 빈 칸으로 남음). 고르기는 합친 칸에 걸치면 합친 칸 전체로
+  mergeAt(note, r, c) {
+    const ms = note.table.merges;
+    return ms ? ms.find(m => r >= m.r && r < m.r + m.rs && c >= m.c && c < m.c + m.cs) || null : null;
+  },
+
+  // 네모가 걸친 합친 칸까지 모두 들어가게 늘림
+  expandToMerges(note, R) {
+    const ms = note.table.merges || [];
+    let grown = true;
+    while (grown) {
+      grown = false;
+      ms.forEach(m => {
+        if (m.r > R.r1 || m.r + m.rs - 1 < R.r0 || m.c > R.c1 || m.c + m.cs - 1 < R.c0) return;
+        const next = {
+          r0: Math.min(R.r0, m.r), r1: Math.max(R.r1, m.r + m.rs - 1),
+          c0: Math.min(R.c0, m.c), c1: Math.max(R.c1, m.c + m.cs - 1),
+        };
+        if (next.r0 !== R.r0 || next.r1 !== R.r1 || next.c0 !== R.c0 || next.c1 !== R.c1) {
+          R = next;
+          grown = true;
+        }
+      });
+    }
+    return R;
+  },
+
+  rangeHasMerge(note, R) {
+    return (note.table.merges || []).some(m => !(m.r > R.r1 || m.r + m.rs - 1 < R.r0 || m.c > R.c1 || m.c + m.cs - 1 < R.c0));
+  },
+
+  // 합칠 수 있는지 — 두 칸 이상이고, 이미 그대로 합친 칸 하나가 아닐 때
+  canMergeTable(note, R) {
+    if (R.r0 === R.r1 && R.c0 === R.c1) return false;
+    const m = this.mergeAt(note, R.r0, R.c0);
+    return !(m && m.r === R.r0 && m.c === R.c0 && m.rs === R.r1 - R.r0 + 1 && m.cs === R.c1 - R.c0 + 1);
+  },
+
+  mergeTableCells(note) {
+    const sel = this.tableSelFor(note);
+    if (!sel) return;
+    const R = this.tableSelRect(sel);
+    if (!this.canMergeTable(note, R)) return;
+    const t = note.table;
+    this.record();
+    const texts = [];
+    for (let r = R.r0; r <= R.r1; r++) for (let c = R.c0; c <= R.c1; c++) if (t.rows[r][c].trim()) texts.push(t.rows[r][c]);
+    const anchorText = t.rows[R.r0][R.c0];
+    const joined = texts.join('\n');
+    for (let r = R.r0; r <= R.r1; r++) for (let c = R.c0; c <= R.c1; c++) {
+      if (r === R.r0 && c === R.c0) continue;
+      t.rows[r][c] = '';
+      if (t.spans) t.spans[r][c] = null;
+      if (t.fills) t.fills[r][c] = null;
+    }
+    t.rows[R.r0][R.c0] = joined;
+    if (t.spans && !joined.startsWith(anchorText)) t.spans[R.r0][R.c0] = null;   // 글 자리가 달라졌으면 서식은 버림
+    if (t.spans && !t.spans.some(row => row.some(Boolean))) delete t.spans;
+    if (t.fills && !t.fills.some(row => row.some(Boolean))) delete t.fills;
+    const inside = (m) => m.r >= R.r0 && m.r + m.rs - 1 <= R.r1 && m.c >= R.c0 && m.c + m.cs - 1 <= R.c1;
+    t.merges = (t.merges || []).filter(m => !inside(m)).concat([{ r: R.r0, c: R.c0, rs: R.r1 - R.r0 + 1, cs: R.c1 - R.c0 + 1 }]);
+    this.redrawTableKeepSel(note);
+  },
+
+  // 네모에 걸친 합친 칸을 모두 풂 (R 이 없으면 고른 칸)
+  unmergeTableCells(note, R = null) {
+    if (!R) {
+      const sel = this.tableSelFor(note);
+      if (!sel) return;
+      R = this.tableSelRect(sel);
+    }
+    const t = note.table;
+    if (!this.rangeHasMerge(note, R)) return;
+    this.record();
+    t.merges = t.merges.filter(m => m.r > R.r1 || m.r + m.rs - 1 < R.r0 || m.c > R.c1 || m.c + m.cs - 1 < R.c0);
+    if (!t.merges.length) delete t.merges;
+    this.redrawTableKeepSel(note);
+  },
+
+  // 행 · 열을 넣거나 뺄 때 합친 칸도 — 넣으면 뒤로 밀거나 (합친 칸 안이면) 늘리고, 빼면 당기거나 줄임
+  shiftTableMerges(note, axis, at, delta) {
+    const t = note.table;
+    if (!t.merges) return;
+    const [pos, len] = axis === 'row' ? ['r', 'rs'] : ['c', 'cs'];
+    t.merges.forEach(m => {
+      if (delta > 0) {
+        if (at <= m[pos]) m[pos] += 1;
+        else if (at < m[pos] + m[len]) m[len] += 1;
+      } else if (at < m[pos]) m[pos] -= 1;
+      else if (at < m[pos] + m[len]) m[len] -= 1;
+    });
+    t.merges = t.merges.filter(m => m.rs >= 1 && m.cs >= 1 && m.rs * m.cs >= 2);
+    if (!t.merges.length) delete t.merges;
+  },
+
+  // 합친 칸의 왼쪽 위 행 · 열을 지우기 전 — 그 칸 글 · 서식 · 색을 다음 행 · 열로 옮김 (합친 칸 글이 사라지지 않게)
+  moveMergeAnchors(note, axis, idx) {
+    const t = note.table;
+    (t.merges || []).forEach(m => {
+      if (axis === 'row' ? !(m.r === idx && m.rs > 1) : !(m.c === idx && m.cs > 1)) return;
+      const [r2, c2] = axis === 'row' ? [m.r + 1, m.c] : [m.r, m.c + 1];
+      t.rows[r2][c2] = t.rows[m.r][m.c];
+      if (t.spans) t.spans[r2][c2] = t.spans[m.r][m.c];
+      if (t.fills) t.fills[r2][c2] = t.fills[m.r][m.c];
+    });
+  },
+
   // 연대표에 걸린 쪽지의 모습 (timeline.js) — 고칠 수 없는 표
   tableMirror(note) {
     const table = document.createElement('table');
     table.className = 'note-table';
     table.style.setProperty('--cols', note.table.rows[0].length);
-    note.table.rows.forEach(row => {
+    note.table.rows.forEach((row, r) => {
       const tr = table.insertRow();
-      row.forEach(text => {
+      row.forEach((text, c) => {
+        const m = this.mergeAt(note, r, c);
+        if (m && (m.r !== r || m.c !== c)) return;
+        const td = tr.insertCell();
+        td.dataset.r = r;
+        td.dataset.c = c;
+        if (m) {
+          td.rowSpan = m.rs;
+          td.colSpan = m.cs;
+        }
         const cell = document.createElement('div');
         cell.className = 'table-cell';
         cell.textContent = text;
-        tr.insertCell().appendChild(cell);
+        td.appendChild(cell);
       });
     });
     this.applyTableSizes(table, note);

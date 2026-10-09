@@ -1,18 +1,26 @@
-// 캘린더 판 — 한 달판 (code/icons/아이콘_가이드.md 12-3, 시안_캘린더판.png) · 한 주 보기
+// 캘린더 — 링으로 건 종이 달력 (code/icons/아이콘_가이드.md 12-3, 시안_캘린더판.png) · 한 주 보기
+//   판 상자 없이 벽에 건 물건: 색 띠(‹ 달 · 연도 ›) · 흰 종이(요일 줄 + 날짜 칸) · 밑에 겹친 종이 2장
+//     시안의 링 7개 · 띠 오른쪽의 '오늘' · … 단추는 뺌 (사용자 요청) — 오늘로 이동 · 그 밖의 것은 우클릭 메뉴에서
+//   판의 자리(board.x · y · width · height) = 종이. 겹친 종이는 아래로 14 나옴
+//   색 띠를 잡고 끌면 옮겨지고, ‹ › 로 달을 넘기면 종이가 위로 한 장 넘어감 (0.2초)
 //   쪽지를 칸 위로 끌어다 놓으면 그 날짜에 붙고 칸 크기(164 × 120)로 맞춰짐 → 판 밖으로 꺼내면 원래 크기로
 //   한 칸에 여러 장이면 겹쳐 쌓이고, 그 날짜를 누르면 쪽지들이 날짜를 가운데 두고 둥글게 펼쳐짐 (다시 누르면 접힘)
 //   한 주 보기 (판 메뉴 › 보기): 7일을 한 줄로 (칸 크기는 한 달판과 같음). 여러 장이면 똑같이 겹쳐 쌓이고,
 //     그 날짜를 누르면 맨 위 쪽지는 제자리에 두고 나머지가 칸 아래로 줄지어 펼쳐짐 (다시 누르거나 밖을 누르면 접힘)
 //   빨간 날은 holidays.js (구글 캘린더 공휴일). 붙이기 · 떼기 공통 부분은 board-notes.js
-//   보고 있는 달 · 주는 저장하지 않음 (앱을 켜면 오늘이 든 달 · 주, 날짜가 바뀌면 따라감). 보기(한 달 · 한 주)는 저장
+//   보고 있는 달 · 주는 저장하지 않음 (앱을 켜면 오늘이 든 달 · 주, 날짜가 바뀌면 따라감). 보기(한 달 · 한 주) · 띠 색은 저장
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
-import { ICON_DIR } from './constants.js';
+import { ICON_DIR, CALENDAR_BANDS } from './constants.js';
 import { t, getLanguage } from './i18n.js';
-import { BOARD_HEAD, BOARD_PAD, BOARD_DAYS_ROW } from './boards.js';
 import { cleanMarks } from './day-marks.js';
 
-const CAL_WIDTH = 1288;           // 칸 180 × 7 + 여백
-const CAL_HEIGHT = 848;           // 5줄일 때 (6줄이면 한 줄만큼 더)
+const CAL_WIDTH = 1288;           // 칸 180 × 7 + 좌우 여백 14
+const CAL_HEIGHT = 848;           // 5줄일 때 — 색 띠 64 + 요일 줄 34 + 칸 148 × 5 + 아래 여백 10 (6줄이면 한 줄만큼 더)
+const BAND = 64;                  // 색 띠 높이
+const DAYS_ROW = 34;              // 요일 줄 높이
+const PAD = 14;                   // 종이 안쪽 좌우 여백
+const BOTTOM = 10;                // 종이 안쪽 아래 여백
+const FLIP_MS = 200;              // 달 넘기기 (styles/boards.css cal-flip-out · cal-flip-in)
 const MIN_CELL = { width: 100, height: 90 };
 const SLOT = { left: 8, right: 8, top: 23, bottom: 5 };   // 칸 속 쪽지 자리 (180 × 148 칸 → 164 × 120)
 const MAX_SHOWN_STACK = 3;        // 한 칸에 겹쳐 보이는 장수 (나머지는 맨 아래에 숨음)
@@ -39,10 +47,13 @@ const sameMonth = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() 
 const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 export const calendarMethods = {
-  // 새 캘린더 판 — 보기 · 주 시작 요일은 설정 › 판
+  // 새 캘린더 — 보기 · 주 시작 요일 · 띠 색은 설정 › 판
   newCalendarData() {
     const s = this.settings || {};
-    return { width: CAL_WIDTH, height: CAL_HEIGHT, weekStart: s.weekStart === 1 ? 1 : 0, view: s.calendarView === 'week' ? 'week' : 'month' };
+    return {
+      width: CAL_WIDTH, height: CAL_HEIGHT, weekStart: s.weekStart === 1 ? 1 : 0, view: s.calendarView === 'week' ? 'week' : 'month',
+      bandColor: CALENDAR_BANDS[s.calendarBand] ? s.calendarBand : 'navy',
+    };
   },
 
   normalizeCalendar(board) {
@@ -51,6 +62,7 @@ export const calendarMethods = {
     if (typeof board.height !== 'number' || board.height < min.height) board.height = CAL_HEIGHT;
     board.weekStart = board.weekStart === 1 ? 1 : 0;
     board.view = board.view === 'week' ? 'week' : 'month';
+    if (!CALENDAR_BANDS[board.bandColor]) board.bandColor = 'navy';   // 띠 색 — 남색(기본) · 빨강 · 노랑
     const marks = cleanMarks(board.marks);                   // 날짜 표시 (day-marks.js)
     if (marks) board.marks = marks;
     else delete board.marks;
@@ -59,8 +71,8 @@ export const calendarMethods = {
 
   calendarMinSize() {
     return {
-      width: BOARD_PAD * 2 + MIN_CELL.width * 7,
-      height: BOARD_HEAD + BOARD_DAYS_ROW + BOARD_PAD + MIN_CELL.height * 5,
+      width: PAD * 2 + MIN_CELL.width * 7,
+      height: BAND + DAYS_ROW + BOTTOM + MIN_CELL.height * 5,
     };
   },
 
@@ -99,8 +111,8 @@ export const calendarMethods = {
     const cached = this.calendarCache.get(board.id);
     if (cached && cached.sig === sig) return cached.grid;
 
-    const cellW = (board.width - BOARD_PAD * 2) / 7;
-    const monthCellH = (board.height - BOARD_HEAD - BOARD_DAYS_ROW - BOARD_PAD) / 5;
+    const cellW = (board.width - PAD * 2) / 7;
+    const monthCellH = (board.height - BAND - DAYS_ROW - BOTTOM) / 5;
     const noteH = monthCellH - SLOT.top - SLOT.bottom;          // 칸 속 쪽지 높이 — 한 주 보기도 같은 크기
     let rows;
     const cellH = monthCellH;
@@ -117,16 +129,23 @@ export const calendarMethods = {
     const grid = {
       week, year: view.year, month: view.month, rows, cellW, cellH, noteH, dates, keys,
       index: new Map(keys.map((k, i) => [k, i])),
-      height: BOARD_HEAD + BOARD_DAYS_ROW + rows * cellH + BOARD_PAD,
+      height: BAND + DAYS_ROW + rows * cellH + BOTTOM,
     };
     this.calendarCache.set(board.id, { sig, grid });
     return grid;
   },
 
+  // 크기 조절: 보이는 종이 높이 → 저장하는 높이 (5줄 기준 — board.height)
+  //   6줄인 달 · 한 주 보기(1줄)는 보이는 높이가 달라서, 그대로 넣으면 세로만 마우스보다 빨리(6/5) · 느리게(1/5) 움직였음
+  calendarStoredHeight(board, shown) {
+    const fixed = BAND + DAYS_ROW + BOTTOM;
+    return fixed + ((shown - fixed) * 5) / this.calendarGrid(board).rows;
+  },
+
   // i 번째 칸 속 (맨 위) 쪽지 자리 (월드 좌표)
   calendarSlot(board, grid, i) {
-    const x = board.x + BOARD_PAD + (i % 7) * grid.cellW;
-    const y = board.y + BOARD_HEAD + BOARD_DAYS_ROW + Math.floor(i / 7) * grid.cellH;
+    const x = board.x + PAD + (i % 7) * grid.cellW;
+    const y = board.y + BAND + DAYS_ROW + Math.floor(i / 7) * grid.cellH;
     return {
       x: x + SLOT.left,
       y: y + SLOT.top,
@@ -160,28 +179,19 @@ export const calendarMethods = {
     const today = this.todayKey();
     const fan = this.calendarFan && this.calendarFan.boardId === board.id ? this.calendarFan.date : null;
     el.classList.toggle('cal-week', week);
+    Object.keys(CALENDAR_BANDS).forEach(key => el.classList.toggle(`band-${key}`, board.bandColor === key));
 
-    // 판 머리: ‹ 2026년 9월 › [오늘] 이름 … [⋯]   (한 주 보기: ‹ 2026년 9월 21일 – 27일 ›)
+    // 색 띠: ‹ 2026년 9월 › 이름   (한 주 보기: ‹ 2026년 9월 21일 – 27일 ›) — 잡고 끌면 달력이 옮겨짐
     const head = document.createElement('div');
-    head.className = 'board-head';
+    head.className = 'board-head cal-band';
     const title = document.createElement('div');
     title.className = 'cal-month';
     title.textContent = week ? this.weekTitle(grid.dates[0], grid.dates[6]) : this.monthTitle(grid.year, grid.month);
-    const todayBtn = document.createElement('button');
-    todayBtn.type = 'button';
-    todayBtn.className = 'board-text-btn';
-    todayBtn.textContent = t('board.today');
-    todayBtn.addEventListener('click', () => this.calendarGoToday(board));
-    const spacer = document.createElement('div');
-    spacer.className = 'board-spacer';
     head.append(
       this.boardButton('arrow-left.svg', t(week ? 'board.prevWeek' : 'board.prevMonth'), () => this.shiftCalendar(board, -1)),
       title,
       this.boardButton('arrow-right.svg', t(week ? 'board.nextWeek' : 'board.nextMonth'), () => this.shiftCalendar(board, 1)),
-      todayBtn,
       this.boardNameElement(board, ''),
-      spacer,
-      this.boardMoreButton(board),
     );
 
     // 요일 줄
@@ -269,23 +279,67 @@ export const calendarMethods = {
       cells.appendChild(cell);
     });
 
-    el.append(head, weekdays, cells);
+    // 종이 (색 띠 + 요일 줄 · 날짜 칸) — 밑에 겹친 종이 2장
+    const page = document.createElement('div');
+    page.className = 'cal-page';
+    page.append(weekdays, cells);
+    const paper = document.createElement('div');
+    paper.className = 'cal-paper';
+    paper.append(head, page);
+    const under = [2, 1].map(n => {
+      const sheet = document.createElement('div');
+      sheet.className = `cal-under u${n}`;
+      return sheet;
+    });
+    el.append(...under, paper);
   },
 
   // ‹ › — 한 달 보기는 한 달씩, 한 주 보기는 한 주씩
   shiftCalendar(board, delta) {
     const view = this.calendarView(board);
     if (board.view === 'week') {
-      this.setCalendarView(board, addDays(parseKey(view.focus), 7 * delta));
+      this.flipCalendar(board, delta, () => this.setCalendarView(board, addDays(parseKey(view.focus), 7 * delta)));
       return;
     }
     const first = new Date(view.year, view.month + delta, 1);
     const now = new Date();
-    this.setCalendarView(board, sameMonth(first, now) ? now : first);   // 이번 달로 돌아오면 오늘을 기준으로
+    this.flipCalendar(board, delta, () => this.setCalendarView(board, sameMonth(first, now) ? now : first));   // 이번 달로 돌아오면 오늘을 기준으로
   },
 
   calendarGoToday(board) {
-    this.setCalendarView(board, new Date());
+    const before = this.calendarGrid(board).keys[0];
+    const now = new Date();
+    const dir = Math.sign(parseKey(this.calendarView(board).focus) - now) * -1;
+    this.flipCalendar(board, dir, () => this.setCalendarView(board, now), before);
+  },
+
+  // 달 · 주를 넘길 때: 종이가 위로 한 장 넘어가는 느낌 (0.2초) — 넘기기 전 종이를 그대로 떠 두고
+  //   앞으로(dir > 0): 예전 종이가 위로 넘어가며 사라짐 / 뒤로(dir < 0): 새 종이가 위에서 내려와 덮음
+  //   before: 넘기기 전 첫 칸 날짜 — 넘겨도 같은 달 · 주면 움직이지 않음 (오늘로 이동)
+  flipCalendar(board, dir, change, before = null) {
+    const el = document.getElementById(board.id);
+    const old = el && dir && !reducedMotion() ? el.querySelector('.cal-page') : null;
+    const ghost = old ? old.cloneNode(true) : null;
+    const height = old ? old.offsetHeight : 0;
+    change();
+    if (!ghost || !el.isConnected || (before && this.calendarGrid(board).keys[0] === before)) return;
+    const paper = el.querySelector('.cal-paper');
+    const page = paper && paper.querySelector('.cal-page');
+    if (!page) return;
+    ghost.classList.add('cal-ghost', dir > 0 ? 'flip-out' : 'flip-under');
+    ghost.style.height = `${height}px`;
+    if (dir < 0) page.classList.add('flip-in');
+    paper.appendChild(ghost);
+    setTimeout(() => ghost.remove(), FLIP_MS + 20);
+  },
+
+  setCalendarBand(board, color) {
+    if (board.bandColor === color || !CALENDAR_BANDS[color]) return;
+    this.record();
+    board.bandColor = color;
+    board.updatedAt = Date.now();
+    this.renderBoard(board);
+    this.scheduleSave();
   },
 
   setCalendarWeekStart(board, day) {
@@ -372,8 +426,8 @@ export const calendarMethods = {
   // 끄는 동안: 마우스 아래 날짜 칸
   calendarDropAt(board, wx, wy) {
     const grid = this.calendarGrid(board);
-    const gx = wx - board.x - BOARD_PAD;
-    const gy = wy - board.y - BOARD_HEAD - BOARD_DAYS_ROW;
+    const gx = wx - board.x - PAD;
+    const gy = wy - board.y - BAND - DAYS_ROW;
     if (gx < 0 || gy < 0 || gx >= grid.cellW * 7 || gy >= grid.cellH * grid.rows) return null;
     const date = grid.keys[Math.floor(gy / grid.cellH) * 7 + Math.floor(gx / grid.cellW)];
     return { key: date, date };
@@ -388,8 +442,8 @@ export const calendarMethods = {
   // 날짜 가운데를 두고 둘레에 고르게 — 가장 최근 쪽지가 오른쪽(위)부터 시계 방향으로
   calendarFanPlacement(board, grid, i, stack, slot) {
     const n = stack.length;
-    const cx = board.x + BOARD_PAD + ((i % 7) + 0.5) * grid.cellW;
-    const cy = board.y + BOARD_HEAD + BOARD_DAYS_ROW + (Math.floor(i / 7) + 0.5) * grid.cellH;
+    const cx = board.x + PAD + ((i % 7) + 0.5) * grid.cellW;
+    const cy = board.y + BAND + DAYS_ROW + (Math.floor(i / 7) + 0.5) * grid.cellH;
     const r = Math.max(FAN_MIN_RADIUS, (slot.width + 24) / (2 * Math.sin(Math.PI / n)));
     const spots = stack.map((note, pos) => {
       const k = n - 1 - pos;
@@ -524,7 +578,6 @@ export const calendarMethods = {
         overlay.className = 'fan-overlay';
         this.uiLayer.appendChild(overlay);
       }
-      overlay.classList.toggle('tone-dark', this.boardTone(board) === 'dark');   // 검은 판이면 어두운 바탕
       const x = slot.x - SLOT.left + 3;                       // 날짜 줄은 가리지 않게 첫 쪽지 바로 위부터
       const y = slot.y - 6;
       const w = grid.cellW - 6;
@@ -546,7 +599,6 @@ export const calendarMethods = {
       overlay.className = 'fan-overlay';
       this.uiLayer.appendChild(overlay);
     }
-    overlay.classList.toggle('tone-dark', this.boardTone(board) === 'dark');
     overlay.style.left = `${(place.cx - reach) * z + this.panX}px`;
     overlay.style.top = `${(place.cy - reach) * z + this.panY}px`;
     overlay.style.width = overlay.style.height = `${c * 2}px`;

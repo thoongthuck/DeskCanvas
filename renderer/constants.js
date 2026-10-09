@@ -76,6 +76,8 @@ export const ICON_GRID = { left: 16, top: 16, width: 92, height: 108 };
 
 // 글 정렬 (스타일 창) — 왼쪽(기본) · 가운데 · 오른쪽 · 양쪽
 export const NOTE_ALIGNS = ['left', 'center', 'right', 'justify'];
+// 캘린더 색 띠 (가이드 12-3) — 이름 → 메뉴 · 설정에 보여 줄 색. 띠 그림은 styles/boards.css .band-<이름>
+export const CALENDAR_BANDS = { navy: '#2E3D57', red: '#F0483E', yellow: '#F6CF64' };
 export const NOTE_MIN_WIDTH = 160;
 export const NOTE_MIN_HEIGHT = 120;
 export const NOTE_MAX_AUTO_WIDTH = 720;   // '자동 확장'으로 넓어질 수 있는 한계 (zoom 1 기준)
@@ -96,7 +98,8 @@ export const DEFAULT_SETTINGS = {
   alignGuides: true,         // 자 — 끌 때 다른 것의 가장자리 · 가운데에 맞춰 붙음 (align.js)
   calendarView: 'month',     // 새 캘린더 판 보기 — 'month' | 'week' (calendar.js)
   noteLinkView: 'embed',     // 쪽지 속 인터넷 주소 — 'embed'(영상 · 사진 바로 보기) | 'link'(링크만) (note-links.js)
-  boardTone: 'theme',        // 새 캘린더 · 연대표 판 색 — 'theme'(배경 테마 따라) | 'light'(흰색) | 'dark'(검은색) (boards.js)
+  calendarBand: 'navy',      // 새 캘린더 띠 색 — CALENDAR_BANDS 의 이름 (calendar.js)
+  timelineScale: 'month',    // 연대표 눈금 단위 — 'year' | 'month' | 'day'. 모든 연대표에 함께 (timeline.js)
   weekStart: 0,              // 새 캘린더 판 주 시작 요일 — 0 일요일 | 1 월요일
   groupColor: 'yellow',      // 새 파일 묶음 색 (groups.js) — 색 이름 | 'custom'
   groupCustomColor: '#F5D6A8',
@@ -119,11 +122,11 @@ export const HOLIDAY_REGIONS = ['south_korea', 'usa', 'japanese', 'china', 'uk']
 // 켤 때 미리 읽어 두는 아이콘 — 메뉴 · 판 · 사진 틀 (처음 여는 메뉴에서 늦게 뜨지 않게)
 export const PRELOAD_ICONS = [
   'add-note.svg', 'add-board.svg', 'add-memo.svg', 'add-image.svg', 'add-file.svg', 'add-template.svg',
-  'add-code.svg', 'add-markdown.svg', 'add-meeting.svg', 'add-calendar.svg', 'add-timeline.svg', 'add-table.svg', 'note-table.svg',
+  'add-code.svg', 'add-markdown.svg', 'add-meeting.svg', 'add-calendar.svg', 'add-timeline.svg', 'add-table.svg', 'note-table.svg', 'note-fold.svg',
   'checkbox.svg', 'checkbox-checked.svg', 'style-reset.svg', 'settings.svg', 'power.svg', 'chevron.svg',
   'edit.svg', 'copy.svg', 'pin.svg', 'palette.svg', 'trash.svg',
   'menu-axis.svg', 'menu-scale.svg', 'menu-link.svg', 'menu-today.svg', 'menu-weekstart.svg', 'menu-view.svg',
-  'add-group.svg', 'menu-ungroup.svg', 'note-group.svg', 'note-more.svg', 'note-selected.svg', 'chevron-down.svg',
+  'add-group.svg', 'menu-ungroup.svg', 'note-group.svg', 'note-selected.svg', 'chevron-down.svg',
   'menu-connect.svg', 'menu-disconnect.svg', 'menu-align.svg', 'menu-straight.svg', 'note-link.svg',
   'add-video.svg', 'video-play.svg', 'video-pause.svg', 'video-sound.svg', 'video-mute.svg',
   'arrow-left.svg', 'arrow-right.svg', 'board-more.svg', 'plus.svg', 'rail-hook.svg',

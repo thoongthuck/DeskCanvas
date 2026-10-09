@@ -29,6 +29,11 @@ export const fitMethods = {
     this.fitSizes.delete(note.id);
     this.updateNotePosition(el, note);           // 자리·크기를 화면 배율에 맞춤 (확대·축소·화면 이동도 여기로 옴)
     const onTimeline = this.isNoteOnTimeline(note);
+    if (note.folded && (onTimeline || !this.isNoteOnBoard(note))) {   // 접은 쪽지: 제목 줄 높이만 (notes.js toggleNoteFold)
+      this.fitFolded(note, el);
+      if (onTimeline) this.requestBoardsRefresh();
+      return;
+    }
     if (note.type === 'code' || note.type === 'web') return;   // 코드 · 웹 페이지 쪽지는 늘어나지 않고 안에서 스크롤
     if (!onTimeline && this.isNoteOnBoard(note)) return;   // 캘린더 칸에 붙은 쪽지 · 끄는 중인 쪽지는 크기 그대로
     this.fitNoteSize(note, el);
@@ -64,7 +69,9 @@ export const fitMethods = {
     //   — 둘은 따로라 더하고, 늘린 뒤 긴 주소의 줄바꿈이 달라질 수 있어 넘치지 않을 때까지 몇 번 더 잼
     //   표도 같게 — 정한 높이가 작으면 머리 · 제목이 넘친 만큼과 표가 눌린 만큼이 따로라서
     const withLinks = !!el.querySelector('.note-links');
-    const addUp = withLinks || table;
+    // 사진이 위 · 아래인 쪽지도 (사진이 넘친 만큼 + 글칸이 눌린 만큼 — notes.js 사진 배치)
+    const photoStacked = !!note.image && (note.imageLayout === 'top' || note.imageLayout === 'bottom');
+    const addUp = withLinks || table || photoStacked;
     for (let pass = 0; pass < (addUp ? 3 : 1); pass++) {
       const boxY = Math.max(0, el.scrollHeight - el.clientHeight);
       let fieldY = 0;
@@ -75,6 +82,18 @@ export const fitMethods = {
       this.fitSizes.set(note.id, { width, height });
       this.updateNotePosition(el, note);
     }
+  },
+
+  // 접은 쪽지 — 너비는 그대로, 높이는 머리 · 제목(또는 첫 줄)의 아래 끝 + 아래 여백
+  fitFolded(note, el) {
+    const z = this.zoom;
+    const last = el.querySelector(el.classList.contains('no-title') ? '.note-fold-preview' : '.ink-note-title')
+      || el.querySelector('.note-header');
+    const bottom = last.getBoundingClientRect().bottom - el.getBoundingClientRect().top;
+    const pad = parseFloat(getComputedStyle(el).paddingBottom) || 0;
+    const height = Math.max(40, (bottom + pad) / z);
+    this.fitSizes.set(note.id, { width: note.width, height });
+    this.updateNotePosition(el, note);
   },
 
   // fitZoom: 이 배율에서 맞춤 — 화면을 옮기기만 할 때는 다시 재지 않음 (view.js updateUIPositions)

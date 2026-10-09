@@ -3,6 +3,7 @@
 //   글 정렬은 제목 · 본문 · 할 일 · 마크다운 · 표 칸이 같이 (코드 · 웹 페이지 쪽지는 없음 — styles.css .align-*)
 //   글자 색은 쪽지 글 전체 — 글 일부만 칠하려면 고치는 중에 글자를 골라 색 막대로 (text-color.js)
 //   누르는 즉시 그 쪽지에 적용되고 저장됨
+//   쪽지를 여럿 골랐으면 (여러 개 메뉴 — selection.js) 고른 쪽지 모두에 한꺼번에. 고른 표시(●)는 모두 같은 값일 때만
 import { ICON_DIR, NOTE_COLORS, STYLE_COLOR_ORDER, INK_COLORS, NOTE_FONTS, NOTE_ALIGNS } from './constants.js';
 import { t } from './i18n.js';
 
@@ -22,15 +23,18 @@ export function alignIcon(key) {
 }
 
 export const stylePanelMethods = {
-  openStylePanel(menu, anchor, note) {
-    if (this.stylePanel && this.stylePanel.dataset.note === note.id) return;
+  // target: 쪽지 하나, 또는 여럿 (배열)
+  openStylePanel(menu, anchor, target) {
+    const notes = Array.isArray(target) ? target : [target];
+    const key = notes.map(n => n.id).join(',');
+    if (this.stylePanel && this.stylePanel.dataset.note === key) return;
     this.closeStylePanel();
     const panel = document.createElement('div');
     panel.id = 'style-panel';
-    panel.dataset.note = note.id;
+    panel.dataset.note = key;
     document.body.appendChild(panel);
     this.stylePanel = panel;
-    this.renderStylePanel(note);
+    this.renderStylePanel(notes);
 
     // 메뉴 오른쪽에 붙이고, 자리가 없으면 왼쪽에
     const m = menu.getBoundingClientRect();
@@ -51,10 +55,18 @@ export const stylePanelMethods = {
     document.querySelectorAll('#context-menu .context-menu-item.open').forEach(r => r.classList.remove('open'));
   },
 
-  // 창 안을 지금 쪽지 값으로 다시 그림
-  renderStylePanel(note) {
+  // 창 안을 지금 쪽지 값으로 다시 그림 (여럿이면 모두 같은 값일 때만 고른 표시)
+  renderStylePanel(target) {
     const panel = this.stylePanel;
     if (!panel) return;
+    const notes = Array.isArray(target) ? target : [target];
+    const first = notes[0];
+    const shared = (key, fallback) => {                    // 모두 같으면 그 값, 섞였으면 undefined
+      const value = first[key] ?? fallback;
+      return notes.every(n => (n[key] ?? fallback) === value) ? value : undefined;
+    };
+    // 고른 표시에 쓰는 값 (쪽지 하나면 그 쪽지 그대로)
+    const note = { color: shared('color'), ink: shared('ink'), font: shared('font'), customColor: first.customColor, inkCustom: first.inkCustom };
     panel.innerHTML = '';
     const section = (titleKey) => {
       const wrap = document.createElement('div');
@@ -67,8 +79,8 @@ export const stylePanelMethods = {
       return wrap;
     };
     const apply = (changes) => {
-      this.setNoteStyle(note, changes);
-      this.renderStylePanel(note);
+      this.setNotesStyle(notes, changes);
+      this.renderStylePanel(notes);
     };
 
     // 쪽지 색: 6색 + 직접 고르기(RGB)
@@ -88,8 +100,8 @@ export const stylePanelMethods = {
       current: note.color === 'custom',
       value: note.customColor || this.settings.noteCustomColor,
       onStart: () => this.recordHistory(),
-      onInput: (hex) => this.setNoteStyle(note, { color: 'custom', customColor: hex }, { record: false }),
-      onDone: () => { this.dropHistoryIfUnchanged(); this.renderStylePanel(note); },
+      onInput: (hex) => this.setNotesStyle(notes, { color: 'custom', customColor: hex }, { record: false }),
+      onDone: () => { this.dropHistoryIfUnchanged(); this.renderStylePanel(notes); },
     }));
     section('styleNoteColor').appendChild(colors);
 
@@ -111,8 +123,8 @@ export const stylePanelMethods = {
       current: note.ink === 'custom',
       value: note.inkCustom || '#E11D48',
       onStart: () => this.recordHistory(),
-      onInput: (hex) => this.setNoteStyle(note, { ink: 'custom', inkCustom: hex }, { record: false }),
-      onDone: () => { this.dropHistoryIfUnchanged(); this.renderStylePanel(note); },
+      onInput: (hex) => this.setNotesStyle(notes, { ink: 'custom', inkCustom: hex }, { record: false }),
+      onDone: () => { this.dropHistoryIfUnchanged(); this.renderStylePanel(notes); },
     }));
     section('styleInk').appendChild(inks);
 
@@ -133,11 +145,12 @@ export const stylePanelMethods = {
 
     // 크기: 본문 글자 크기를 pt 로 (제목은 알맞게 조금 크게) — − · 칸 · + (1pt 씩, 칸에는 0.5pt 까지), 6 ~ 72
     //   아래 줄은 자주 쓰는 크기 바로 고르기
-    const pt = Math.round(this.notePt(note) * 100) / 100;
+    const pt = Math.round(this.notePt(first) * 100) / 100;   // 여럿이면 첫 쪽지 크기에서 시작
+    const samePt = notes.every(n => Math.abs(this.notePt(n) - this.notePt(first)) < 0.01);
     const setPt = (value) => {
       const n = Math.round(Math.min(72, Math.max(6, Number(value))) * 2) / 2;
       if (Number.isFinite(n)) apply({ pt: n });
-      else this.renderStylePanel(note);
+      else this.renderStylePanel(notes);
     };
     const ptRow = document.createElement('div');
     ptRow.className = 'style-pt';
@@ -171,7 +184,7 @@ export const stylePanelMethods = {
     [9, 10, 12, 14, 18, 24].forEach(value => {
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'style-pt-preset' + (Math.abs(pt - value) < 0.01 ? ' current' : '');
+      chip.className = 'style-pt-preset' + (samePt && Math.abs(pt - value) < 0.01 ? ' current' : '');
       chip.textContent = String(value);
       chip.addEventListener('click', () => setPt(value));
       presets.appendChild(chip);
@@ -179,10 +192,10 @@ export const stylePanelMethods = {
     section('styleSize').append(ptRow, presets);
 
     // 글 정렬: 왼쪽 · 가운데 · 오른쪽 · 양쪽 (코드 · 웹 페이지 쪽지는 없음)
-    if (note.type !== 'code' && note.type !== 'web') {
+    if (notes.some(n => n.type !== 'code' && n.type !== 'web')) {
       const aligns = document.createElement('div');
       aligns.className = 'style-aligns';
-      const now = note.align || 'left';
+      const now = shared('align', 'left');
       NOTE_ALIGNS.forEach(key => {
         const btn = document.createElement('button');
         btn.type = 'button';

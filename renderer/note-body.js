@@ -21,9 +21,9 @@ export const noteBodyMethods = {
 
     const content = this.buildNoteContent(note);
     if (note.image) {
-      // 사진을 넣은 쪽지: 왼쪽 사진 + 오른쪽 내용
+      // 사진을 넣은 쪽지: 사진 + 내용 — 배치는 왼쪽(기본) · 오른쪽 · 위 · 아래 · 배경 (note.imageLayout, styles.css)
       const wrap = document.createElement('div');
-      wrap.className = 'note-photo-body';
+      wrap.className = `note-photo-body layout-${note.imageLayout || 'left'}`;
       const photo = document.createElement('img');
       photo.className = 'note-photo';
       photo.src = note.image;

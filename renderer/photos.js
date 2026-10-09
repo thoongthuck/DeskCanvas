@@ -200,7 +200,7 @@ export const photoMethods = {
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('.photo-caption-input')) return;           // 캡션을 쓰는 중: 글자 고르기
       if (e.target.closest('.video-btn')) return;                     // 영상 재생 · 소리 단추
-      const canDrag = this.pressSelect(e, photo.id, !photo.pinned);  // Ctrl · Shift: 여러 개 고르기 (selection.js)
+      const canDrag = this.pressSelect(e, photo.id);                 // Ctrl · Shift: 여러 개 고르기 — 고정한 사진도 (selection.js)
       if (e.button !== 0) return;
       if (e.target.closest('.photo-resize')) return;
       e.preventDefault();
@@ -274,6 +274,7 @@ export const photoMethods = {
     if (!el) return;
     el.classList.toggle('pinned', !!photo.pinned);
     el.classList.toggle('selected', this.selection.has(photo.id) && !photo.pinned);
+    el.classList.toggle('picked', !!photo.pinned && this.multiSelected(photo.id));   // 고정한 것을 여럿 가운데 고름 — 파란 테두리만
   },
 
   updatePhotoPosition(el, photo) {
@@ -302,6 +303,17 @@ export const photoMethods = {
     el.style.setProperty('--tape-len', `${Math.min(TAPE_LENGTH, size.width * TAPE_SHARE) * z}px`);
     el.style.setProperty('--tilt', `${photo.tilt || 0}deg`);
     this.requestLinks();                            // 연결선도 따라감 (links.js)
+  },
+
+  // 여러 사진 · 영상의 틀을 한꺼번에 (여러 개 메뉴 › 틀 바꾸기 — photo-frame.js) — 되돌리기 한 번에 모두
+  setPhotosFrame(photos, patch) {
+    this.record();
+    this.batching = true;                                    // 안에서 부르는 record() 는 건너뜀 (history.js)
+    try {
+      photos.forEach(photo => this.setPhotoFrame(photo, patch));
+    } finally {
+      this.batching = false;
+    }
   },
 
   // 틀 바꾸기 (틀 · 테이프/압정의 색과 자리 · 기울임)

@@ -2,7 +2,7 @@
    renderer.js를 고치지 않고, 화면(#ui-layer)에 노트가 생기고 지워지는 것만 지켜보다가 재생합니다.
    - 새 노트가 생기면 → 붙이기 (note-animations.css의 note-stick)
    - 노트가 지워지면 → 지워진 노트를 잠깐 화면에 되살려 떼기(note-peel)를 보여준 뒤 없앰
-     (웹 페이지 쪽지는 떼기 대신 사진처럼 사라짐 — group-animations.js)
+     (웹 페이지 쪽지는 떼기 대신 사진처럼, 표 쪽지는 파일 묶음 풀기처럼 사라짐 — group-animations.js)
      (데이터 삭제와 저장은 renderer.js가 이미 끝낸 뒤라 영향 없음)
 
    재생하지 않는 경우
@@ -38,7 +38,8 @@
   }
 
   const isNote = (node) => node.nodeType === 1 && node.classList.contains('sticky-note');
-  const isWebNote = (node) => isNote(node) && node.classList.contains('type-web');
+  // 떼기 말고 다르게 사라지는 쪽지 — 웹 페이지 · 표 (group-animations.js 가 맡음)
+  const isWebNote = (node) => isNote(node) && (node.classList.contains('type-web') || node.classList.contains('type-table'));
 
   // 인라인 style로 재생 → renderer.js가 className을 다시 써도 끊기지 않음
   function run(el, anim, delayMs = 0) {

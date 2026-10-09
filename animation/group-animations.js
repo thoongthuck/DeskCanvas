@@ -5,6 +5,7 @@
    - 같은 때에 묶음에서 풀려난 파일(.file-icon에서 in-group이 떨어진 것)은 → 내려앉기(file-settle)
    - 사진 · 영상(.canvas-photo)과 캘린더 · 연대표 판(.board)이 지워질 때도 같은 풀기로 사라짐
    - 웹 페이지 쪽지(.sticky-note.type-web)도 지울 때는 사진과 같게 (접힌 모서리는 그대로 — item-vanish).
+   - 표 쪽지(.sticky-note.type-table)는 지울 때 파일 묶음 풀기와 똑같이 (접힌 모서리가 펴지며 사라짐 — group-unwrap, 사용자 요청).
      나타날 때는 다른 쪽지처럼 note-animations.js 의 붙이기
    - 묶음 · 사진 · 영상 · 판이 새로 생기면 → 풀기를 거꾸로 한 묶기(group-wrap)로 나타남
      (renderer/photos.js · boards.js 도 고치지 않음. 쪽지는 note-animations.js의 붙이기 · 떼기)
@@ -54,6 +55,8 @@
     && (node.classList.contains('board') || node.classList.contains('canvas-photo'));
   const isWebNote = (node) => node.nodeType === 1 && node.classList
     && node.classList.contains('sticky-note') && node.classList.contains('type-web');
+  const isTableNote = (node) => node.nodeType === 1 && node.classList
+    && node.classList.contains('sticky-note') && node.classList.contains('type-table');
   const isFile = (node) => node.nodeType === 1 && node.classList && node.classList.contains('file-icon');
   const hadInGroup = (value) => typeof value === 'string' && value.split(/\s+/).includes('in-group');
 
@@ -69,7 +72,7 @@
   function unwrap(el, parent, next) {
     ghosts.add(el);
     el.removeAttribute('id');                    // groups.js가 이 묶음을 다시 찾지 않도록
-    el.classList.remove('selected', 'drop-target', 'dragging');
+    el.classList.remove('selected', 'drop-target', 'dragging', 'editing');
     el.querySelectorAll('video').forEach(v => v.pause());   // 지운 영상은 멈춘 장면으로 사라짐
     const web = isWebNote(el);
     if (web) {
@@ -117,7 +120,7 @@
     for (const r of records) {
       if (r.type === 'childList') {
         for (const n of r.removedNodes) {
-          if ((vanishes(n) || isWebNote(n)) && !ghosts.has(n)) removed.push({ el: n, parent: r.target, next: r.nextSibling });
+          if ((vanishes(n) || isWebNote(n) || isTableNote(n)) && !ghosts.has(n)) removed.push({ el: n, parent: r.target, next: r.nextSibling });
         }
         for (const n of r.addedNodes) {
           if (vanishes(n) && !ghosts.has(n) && !n.dataset.leaving) added.push(n);

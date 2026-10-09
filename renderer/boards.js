@@ -1,15 +1,14 @@
-// 판 — 캔버스 위에 놓이는 큰 틀: 캘린더(calendar.js) · 연대표(timeline.js) (code/icons/아이콘_가이드.md 12장)
+// 판 — 캔버스(벽)에 놓이는 물건: 캘린더(calendar.js — 링으로 건 종이 달력) · 연대표(timeline.js — 걸이 막대)
+//   (code/icons/아이콘_가이드.md 12장 — 둘 다 '판 상자'가 없음. 물건 바깥은 바탕화면이 그대로 보임)
 //   · 파일 묶음(groups.js — 파일 아이콘을 담는 큰 포스트잇)
 //   판은 CSS 로 그리고, 자리·크기는 쪽지처럼 zoom 1 기준 값에 배율을 곱해 씀 (styles/boards.css · groups.css)
-//   판 머리를 잡고 끌면 판이 옮겨지고(붙은 쪽지 · 담긴 파일도 함께), 칸 · 빈 곳을 잡고 끌면 화면이 움직임
+//   캘린더는 색 띠, 연대표는 막대를 잡고 끌면 옮겨지고(붙은 쪽지 · 담긴 파일도 함께), 종이 안 칸 · 빈 곳을 끌면 화면이 움직임
+//   판 메뉴는 우클릭으로만 (캘린더의 오늘 · … 단추, 연대표 조작 줄은 없앰 — 사용자 요청)
 //   판은 쪽지·사진·파일보다 아래에 깔림 (판끼리는 나중에 만든 판이 위). 쪽지 붙이기 · 떼기는 board-notes.js
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
-import { ICON_DIR } from './constants.js';
+import { ICON_DIR, CALENDAR_BANDS } from './constants.js';
 import { t } from './i18n.js';
 
-export const BOARD_HEAD = 60;        // 판 머리 높이
-export const BOARD_PAD = 14;         // 판 안쪽 좌우 · 아래 여백
-export const BOARD_DAYS_ROW = 34;    // 요일 줄 높이
 export const BOARD_KINDS = ['calendar', 'timeline', 'group'];
 
 export const boardMethods = {
@@ -24,8 +23,6 @@ export const boardMethods = {
     };
     Object.assign(board, kind === 'timeline' ? this.newTimelineData()
       : kind === 'group' ? this.newGroupData() : this.newCalendarData());
-    const tone = this.settings && this.settings.boardTone;          // 설정 › 판 › 기본 판 색상 (배경 테마 따라면 적지 않음)
-    if (kind !== 'group' && (tone === 'light' || tone === 'dark')) board.tone = tone;
     return Object.assign(board, extra);
   },
 
@@ -39,7 +36,7 @@ export const boardMethods = {
     if (typeof board.title !== 'string') board.title = '';
     board.pinned = !!board.pinned;
     if (typeof board.updatedAt !== 'number') board.updatedAt = Date.now();
-    if (board.tone !== 'light' && board.tone !== 'dark') delete board.tone;     // 판 색 — 없으면 배경 테마 따라
+    delete board.tone;                                    // 예전 판 색 (흰색 · 검은색) — 판 상자가 없어져서 안 씀
     if (board.kind === 'group') return this.normalizeGroup(board);
     return board.kind === 'timeline' ? this.normalizeTimeline(board) : this.normalizeCalendar(board);
   },
@@ -58,10 +55,10 @@ export const boardMethods = {
     return this.boards.find(b => b.id === id) || null;
   },
 
-  // 화면에 차지하는 크기 — 캘린더는 6주에 걸친 달이면 한 줄만큼, 연대표는 걸린 쪽지 층만큼,
-  //   파일 묶음은 담긴 파일 줄 수만큼 길어짐
+  // 화면에 차지하는 크기 — 캘린더는 종이 (6주에 걸친 달이면 한 줄만큼 길어짐. 링 · 겹친 종이는 그 밖),
+  //   연대표는 걸이 막대 (얹히고 걸린 쪽지는 그 밖), 파일 묶음은 담긴 파일 줄 수만큼 길어짐
   boardSize(board) {
-    if (board.kind === 'timeline') return { width: board.width, height: this.timelineHeight(board) };
+    if (board.kind === 'timeline') return this.timelineSize(board);
     if (board.kind === 'group') return this.groupSize(board);
     return { width: board.width, height: this.calendarGrid(board).height };
   },
@@ -74,9 +71,9 @@ export const boardMethods = {
     el.addEventListener('mousedown', (e) => {
       if (e.target.closest('input, textarea, button')) return;       // 버튼 · 글자칸은 각자 처리
       const group = board.kind === 'group';
-      const canDrag = this.pressSelect(e, board.id, !board.pinned);  // 누르면 판을 고름 (쪽지처럼, Ctrl · Shift 는 여러 개) → Delete 로 지우기
+      const canDrag = this.pressSelect(e, board.id);                 // 누르면 판을 고름 (쪽지처럼, Ctrl · Shift 는 여러 개 — 잠근 판도) → Delete 로 지우기
       if (e.button !== 0) return;
-      if (e.target.closest('.board-resize')) {
+      if (e.target.closest('.board-resize, .tl-len')) {              // 크기 조절 — 연대표는 막대 끝 길이 손잡이
         if (board.pinned) return;
         e.preventDefault();
         e.stopPropagation();
@@ -89,7 +86,8 @@ export const boardMethods = {
         else if (canDrag) this.startItemDrag(e, 'board', board);
         return;
       }
-      if (e.target.closest('.board-head') && !board.pinned) {
+      // 캘린더: 색 띠 / 연대표: 걸이 막대 · 이름 꼬리표 — 잡고 끌면 옮겨짐
+      if (e.target.closest('.board-head, .tl-rail, .tl-name') && !board.pinned) {
         e.preventDefault();
         if (canDrag) this.startItemDrag(e, 'board', board);
         return;
@@ -98,20 +96,21 @@ export const boardMethods = {
       this.startGrabPan(e);                                          // 칸 · 빈 곳 · 잠긴 판: 화면 이동 (판은 고른 채)
     });
 
-    // 연대표: 막대 아래 빈 곳을 두 번 누르면 그 자리에 새 쪽지
+    // 연대표: 막대를 두 번 누르면 그 자리에 새 쪽지를 검 (직접 작성 모드의 칸은 이름 고치기 — timeline.js)
     el.addEventListener('dblclick', (e) => {
-      if (board.kind !== 'timeline' || board.pinned) return;
-      if (e.target.closest('.board-head, .tl-rail, .note-mirror, input, button')) return;
+      if (board.kind !== 'timeline' || board.pinned || !e.target.closest('.tl-rail')) return;
       const wx = (e.clientX - this.panX) / this.zoom;
       const wy = (e.clientY - this.panY) / this.zoom;
-      this.addNoteOnTimeline(board, this.timelineDropAt(board, wx, wy));
+      // 가로 막대: 그 날짜 아래쪽에 걸기 / 세로 막대: 오른쪽에 붙이기
+      this.addNoteOnTimeline(board, this.timelineVertical(board)
+        ? this.timelineDropAt(board, board.x + 20, wy) : this.timelineDropAt(board, wx, board.y + 20));
     });
 
     el.addEventListener('contextmenu', (e) => {
       if (e.target.closest('input, textarea')) return;
       e.preventDefault();
       e.stopPropagation();
-      if (board.kind === 'group' && this.multiSelected(board.id)) this.openSelectionMenu(e.clientX, e.clientY);
+      if (this.multiSelected(board.id)) this.openSelectionMenu(e.clientX, e.clientY);   // 여럿 고른 것 가운데 하나 — 여러 개 메뉴 (한꺼번에 잠금 · 풀기 등. 캘린더 · 연대표도)
       else {
         const cell = e.target.closest('.cal-cell');                  // 캘린더 날짜 칸이면 그 날짜 표시 줄도 (day-marks.js)
         this.openBoardMenu(board, e.clientX, e.clientY, cell ? cell.dataset.date : null);
@@ -132,14 +131,17 @@ export const boardMethods = {
     el.innerHTML = '';
     el.classList.toggle('pinned', !!board.pinned);
     if (board.kind !== 'group') el.classList.toggle('selected', this.boardSelected(board));   // 잠그면 선택 표시도 없앰
-    if (board.kind !== 'group') el.classList.toggle('tone-dark', this.boardTone(board) === 'dark');   // 검은 판 (styles/boards.css)
+    el.classList.toggle('picked', !!board.pinned && this.multiSelected(board.id));            // 잠근 것을 여럿 가운데 고름 — 파란 테두리만
+    if (board.kind !== 'group') el.classList.toggle('tone-dark', this.boardTone(board) === 'dark');   // 어두운 배경일 때 (styles/boards.css)
     el.classList.toggle('tl-direct', board.kind === 'timeline' && board.mode === 'direct');
     if (board.kind === 'timeline') this.renderTimeline(board, el);
     else if (board.kind === 'group') this.renderGroup(board, el);
     else this.renderCalendar(board, el);
-    const grip = document.createElement('div');
-    grip.className = 'board-resize';
-    el.appendChild(grip);
+    if (board.kind !== 'timeline') {                    // 연대표는 막대 끝 길이 손잡이 (timeline.js)
+      const grip = document.createElement('div');
+      grip.className = 'board-resize';
+      el.appendChild(grip);
+    }
     this.updateBoardPosition(el, board);
   },
 
@@ -172,14 +174,6 @@ export const boardMethods = {
     return btn;
   },
 
-  // 판 머리 오른쪽 끝 … — 판 우클릭 메뉴를 그 자리에서
-  boardMoreButton(board) {
-    return this.boardButton('board-more.svg', t('board.more'), (btn) => {
-      const r = btn.getBoundingClientRect();
-      this.openBoardMenu(board, r.left, r.bottom + 4);
-    });
-  },
-
   // 판 이름 (두 번 누르면 이름 바꾸기). 이름이 없으면 fallback 을 보여 줌
   boardNameElement(board, fallback, extraClass = '') {
     const name = document.createElement('div');
@@ -192,25 +186,8 @@ export const boardMethods = {
     return name;
   },
 
-  // 고르개 (세그먼트) — 연대표 눈금 [연 | 월 | 일] (가이드 12-2)
-  boardSegmented(entries, current, onPick) {
-    const wrap = document.createElement('div');
-    wrap.className = 'board-seg';
-    entries.forEach(([value, label]) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = value === current ? 'current' : '';
-      btn.textContent = label;
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        onPick(value);
-      });
-      wrap.appendChild(btn);
-    });
-    return wrap;
-  },
-
-  // 판 크기 조절 — 캘린더는 칸이 함께 늘어나고, 연대표는 폭만 (높이는 걸린 쪽지 층 수로 정해짐)
+  // 판 크기 조절 — 캘린더는 칸이 함께 늘어나고, 연대표는 막대 길이만 (눈금 한 칸 폭은 그대로 — 보이는 때가 늘어남)
+  //   width · height: 화면에 보일 크기 (drag.js — 손잡이가 마우스를 그대로 따라가게)
   resizeBoard(board, width, height) {
     if (board.kind === 'group') {                                   // 파일 묶음: 폭이 바뀌면 칸이 다시 늘어섬
       const min = this.groupMinSize();
@@ -220,12 +197,14 @@ export const boardMethods = {
       return;
     }
     const min = board.kind === 'timeline' ? this.timelineMinSize() : this.calendarMinSize();
-    board.width = Math.max(min.width, width);
-    if (board.kind === 'timeline') {
+    if (board.kind === 'timeline') {                                // 직접 작성 모드: 만든 칸이 잘리지 않게 칸 끝까지만 줄어듦
+      const length = this.timelineVertical(board) ? height : width;  // 세로 막대는 아래 끝을 끌어 길이를 바꿈
+      board.width = Math.max(min.width, length, board.mode === 'direct' ? this.timelineSegmentsWidth(board) : 0);
       this.requestBoardsRefresh();
       return;
     }
-    board.height = Math.max(min.height, height);
+    board.width = Math.max(min.width, width);
+    board.height = Math.max(min.height, this.calendarStoredHeight(board, height));   // 6줄인 달 · 한 주 보기에서도 세로가 가로와 같은 감도로
     const el = document.getElementById(board.id);
     if (el) this.updateBoardPosition(el, board);
     this.updateBoardNotes(board);
@@ -276,6 +255,7 @@ export const boardMethods = {
       const el = document.getElementById(board.id);
       if (!el) return;
       el.classList.toggle('selected', this.boardSelected(board));
+      el.classList.toggle('picked', !!board.pinned && this.multiSelected(board.id));
       el.style.zIndex = String(this.boardLayer(board));       // 고르면 붙은 쪽지와 함께 맨 앞 층으로
     });
     this.notes.forEach(note => {                                // 붙은 쪽지도 판의 층을 따라감 (board-notes.js)
@@ -287,20 +267,23 @@ export const boardMethods = {
   },
 
   // ---- 쌓임 순서 (styles/boards.css 머리 설명) ----
-  // 캘린더 · 연대표마다 자기 층: 판 = 밴드 + 4 × 차례, 붙은 쪽지 = 그 바로 위 (board-notes.js applyNoteLayer)
+  // 캘린더 · 연대표마다 자기 층 (8칸): 판 = 밴드 + 8 × 차례 + 4, 붙은 쪽지 = 그 바로 위 +1 ~ +3 (board-notes.js applyNoteLayer),
+  //   연대표 막대 위에 얹은 쪽지 = 판 바로 아래 −1 ~ −4 (막대를 쪽지보다 위에 그려 끼워 놓은 것처럼)
   //   → 다른 쪽지 · 사진 · 파일 · 파일 묶음 · 다른 판이 판과 붙은 쪽지 사이에 끼지 않음 (지나가면 판과 쪽지가 함께 가려짐)
-  //   차례: 판끼리의 순서 (layer-order.js — 우클릭 › 순서, 24 까지 — 고정한 쪽지 100 아래)
-  //   밴드: 보통 0 (맨 뒤) · 고른 판 90000 (붙은 쪽지와 함께 맨 앞). 잠근 판은 고르지 않으니 늘 뒤
+  //   차례: 판끼리의 순서 (layer-order.js — 우클릭 › 순서, 60 까지 — 파일 묶음 1000 아래)
+  //   밴드: 보통 500 — 고정한 쪽지 · 사진(100) · 고정한 파일 묶음(110 ~ 490) 앞, 파일 묶음(1000 ~) · 연결선 · 쪽지 뒤 (사용자 요청)
+  //         고른 판 90000 (붙은 쪽지와 함께 맨 앞). 잠근 판은 고르지 않으니 늘 500 층
   boardLayer(board) {
-    const rank = Math.min(24, Math.max(0, this.layerZ('board', board)));
-    return (this.boardSelected(board) ? 90000 : 0) + rank * 4;
+    const rank = Math.min(60, Math.max(0, this.layerZ('board', board)));
+    return (this.boardSelected(board) ? 90000 : 500) + rank * 8 + 4;
   },
 
-  // 고른 캘린더 · 연대표의 크기 조절 손잡이를 모든 것보다 위에 하나 더 (styles/boards.css .board-resize-float)
+  // 고른 캘린더의 크기 조절 손잡이를 모든 것보다 위에 하나 더 (styles/boards.css .board-resize-float)
   //   고른 판도 고른 파일 묶음보다는 아래라 모서리에 겹치면 판의 손잡이를 못 잡음. 고른 판 하나만 (마지막으로 고른 것)
+  //   연대표는 막대 끝 길이 손잡이라 따로 띄우지 않음
   updateBoardResizeFloat() {
     const board = [...this.selection].reverse().map(id => this.boards.find(b => b.id === id))
-      .find(b => b && b.kind !== 'group' && !b.pinned);
+      .find(b => b && b.kind === 'calendar' && !b.pinned);
     let handle = document.getElementById('board-resize-float');
     if (!board) {
       if (handle) handle.remove();
@@ -329,24 +312,12 @@ export const boardMethods = {
     handle.style.height = `${s}px`;
   },
 
-  // ---- 판 색 — 흰색 · 검은색 (캘린더 · 연대표. 파일 묶음은 포스트잇 색 — groups.js) ----
-  //   판마다 정한 색, 없으면 배경 테마 따라 (예전에 만든 판 · 설정 '기본 판 색상'이 배경 테마 따라)
-  boardTone(board) {
-    if (board.tone === 'light' || board.tone === 'dark') return board.tone;
+  // ---- 어두운 배경일 때 — 캘린더 종이가 살짝 덜 흰색 (가이드 12-2. 종이라서 어두워지지는 않음. 막대 · 나사 · 걸이는 그대로) ----
+  boardTone() {
     return this.settings && this.settings.theme === 'dark' ? 'dark' : 'light';
   },
 
-  setBoardTone(board, tone) {
-    if (this.boardTone(board) === tone && board.tone === tone) return;
-    this.record();
-    board.tone = tone;
-    board.updatedAt = Date.now();
-    this.renderBoard(board);
-    this.updateFanOverlay();
-    this.scheduleSave();
-  },
-
-  // 배경 테마가 바뀌면 색을 정하지 않은 판도 따라 바꿈 (settings.js applySettings)
+  // 배경 테마가 바뀌면 따라 바꿈 (settings.js applySettings)
   updateBoardTones() {
     if (!this.boards) return;
     this.boards.forEach(board => {
@@ -354,39 +325,20 @@ export const boardMethods = {
       const el = document.getElementById(board.id);
       if (el) el.classList.toggle('tone-dark', this.boardTone(board) === 'dark');
     });
-    if (this.uiLayer) this.updateFanOverlay();
   },
 
-  boardToneMenuItem(board) {
-    const current = this.boardTone(board);
-    return {
-      icon: 'palette.svg', label: t('menu.boardTone'), arrow: true,
-      submenu: [['light', '#FCFBF9'], ['dark', '#2A3038']].map(([tone, swatch]) => ({
-        label: t(`boardTone.${tone}`), swatch, current: current === tone, action: () => this.setBoardTone(board, tone),
-      })),
-    };
-  },
-
-  // ---- 판 메뉴 (판 우클릭 · 판 머리 …) ----
+  // ---- 판 메뉴 (판 우클릭) ----
   //   date: 우클릭한 캘린더 날짜 칸 ('YYYY-MM-DD') — 맨 위에 '이 날짜 표시 ›' (day-marks.js)
   openBoardMenu(board, x, y, date = null) {
     if (board.kind === 'group') {                                   // 파일 묶음 메뉴 (groups.js)
       this.openContextMenu(this.groupMenuItems(board), x, y);
       return;
     }
-    const items = [
-      { icon: 'edit.svg', label: t('menu.rename'), action: () => this.renameBoard(board) },
-      this.boardToneMenuItem(board),                                // 판 색상 › 흰색 · 검은색
-    ];
+    const timeline = board.kind === 'timeline';
+    const items = [{ icon: 'edit.svg', label: t('menu.rename'), action: () => this.renameBoard(board) }];
     if (board.kind === 'calendar' && date && !board.pinned) items.unshift(...this.dayMarkMenuItems(board, date), { separator: true });
     if (board.kind === 'calendar') {
-      // 가이드 12-3: 이름 바꾸기 · 보기 › (한 달 · 한 주) · 오늘로 이동 · 주 시작 요일 › · 판 잠금 · ─ · 판 지우기
-      items.push({
-        icon: 'menu-view.svg', label: t('menu.calView'), arrow: true,
-        submenu: ['month', 'week'].map(view => ({
-          label: t(`calView.${view}`), current: board.view === view, action: () => this.setCalendarViewMode(board, view),
-        })),
-      });
+      // 가이드 12-3: 이름 바꾸기 · 오늘로 이동 · 주 시작 요일 › · 보기 › (한 달 · 한 주) · 띠 색 › · ─ · 판 잠금 · 판 지우기
       items.push({ icon: 'menu-today.svg', label: t('menu.goToday'), action: () => this.calendarGoToday(board) });
       items.push({
         icon: 'menu-weekstart.svg', label: t('menu.weekStart'), arrow: true,
@@ -396,34 +348,48 @@ export const boardMethods = {
           action: () => this.setCalendarWeekStart(board, day),
         })),
       });
-      items.push({ icon: 'pin.svg', label: t(board.pinned ? 'menu.unlockBoard' : 'menu.lockBoard'), action: () => this.toggleBoardLock(board) });
+      items.push({
+        icon: 'menu-view.svg', label: t('menu.calView'), arrow: true,
+        submenu: ['month', 'week'].map(view => ({
+          label: t(`calView.${view}`), current: board.view === view, action: () => this.setCalendarViewMode(board, view),
+        })),
+      });
+      items.push({
+        icon: 'palette.svg', label: t('menu.bandColor'), arrow: true,
+        submenu: Object.keys(CALENDAR_BANDS).map(key => ({
+          label: t(`band.${key}`), swatch: CALENDAR_BANDS[key], current: board.bandColor === key, action: () => this.setCalendarBand(board, key),
+        })),
+      });
       items.push({ separator: true });
+      items.push({ icon: 'pin.svg', label: t(board.pinned ? 'menu.unlockBoard' : 'menu.lockBoard'), action: () => this.toggleBoardLock(board) });
     } else {
-      // 시안 4안: 이름 바꾸기 · 시간 축 › · 눈금 단위 › · 캘린더 판 연동 · 오늘로 이동 · ─ · 판 잠금 · 판 지우기
+      // 이름 바꾸기 · 시간 축 › · 방향 › (가로 · 세로) · 캘린더 연동 · 오늘로 이동 · ─ · 막대 잠금 · 막대 지우기
+      //   눈금 단위(연 · 월 · 일)는 설정 › 판 › 연대표 눈금 단위 에서만 (사용자 요청)
       items.push({
         icon: 'menu-axis.svg', label: t('menu.axis'), arrow: true,
         submenu: ['direct', 'calendar'].map(mode => ({
           label: t(`axis.${mode}`), current: board.mode === mode, action: () => this.setTimelineMode(board, mode),
         })),
       });
+      const dir = this.timelineVertical(board) ? 'v' : 'h';
+      items.push({
+        icon: 'menu-scale.svg', label: t('menu.tlDir'), arrow: true,
+        submenu: ['h', 'v'].map(d => ({
+          label: t(`tlDir.${d}`), current: dir === d, action: () => this.setTimelineDir(board, d),
+        })),
+      });
       if (board.mode === 'calendar') {
-        items.push({
-          icon: 'menu-scale.svg', label: t('menu.scale'), arrow: true,
-          submenu: ['year', 'month', 'day'].map(scale => ({
-            label: t(`scale.${scale}`), current: board.scale === scale, action: () => this.setTimelineScale(board, scale),
-          })),
-        });
         items.push(this.timelineLinkMenuItem(board));
         items.push({ icon: 'menu-today.svg', label: t('menu.goToday'), action: () => this.timelineGoToday(board) });
       }
       items.push({ separator: true });
-      items.push({ icon: 'pin.svg', label: t(board.pinned ? 'menu.unlockBoard' : 'menu.lockBoard'), action: () => this.toggleBoardLock(board) });
+      items.push({ icon: 'pin.svg', label: t(board.pinned ? 'menu.unlockRail' : 'menu.lockRail'), action: () => this.toggleBoardLock(board) });
     }
-    items.push({ icon: 'trash.svg', label: t('menu.deleteBoard'), action: () => this.deleteBoard(board), danger: true });
+    items.push({ icon: 'trash.svg', label: t(timeline ? 'menu.deleteRail' : 'menu.deleteBoard'), action: () => this.deleteBoard(board), danger: true });
     this.openContextMenu(items, x, y);
   },
 
-  // 캘린더 판 연동 — 캘린더 판이 하나면 켜고 끄기, 여럿이면 옆 목록에서 고름
+  // 캘린더 연동 — 캘린더가 하나면 켜고 끄기, 여럿이면 옆 목록에서 고름
   timelineLinkMenuItem(board) {
     const calendars = this.boards.filter(b => b.kind === 'calendar');
     const linked = this.linkedCalendar(board);
@@ -443,7 +409,7 @@ export const boardMethods = {
     return { icon: 'menu-link.svg', label: t('menu.link'), arrow: true, submenu };
   },
 
-  // 이름 바꾸기 — 판 머리의 이름 자리에서 바로 씀 (Enter 끝 · Esc 취소)
+  // 이름 바꾸기 — 캘린더 색 띠 · 연대표 이름 꼬리표 · 묶음 머리의 이름 자리에서 바로 씀 (Enter 끝 · Esc 취소)
   renameBoard(board) {
     const el = document.getElementById(board.id);
     const name = el && el.querySelector('.board-name');
@@ -492,7 +458,7 @@ export const boardMethods = {
     board.pinned = !board.pinned;
     this.refreshAllBoards();
     this.notes.forEach(note => { if (note.boardId === board.id) this.refreshNote(note); });
-    if (board.kind === 'group') this.updateGroupFiles(board);        // 잠긴 묶음의 파일은 못 옮김 표시
+    if (board.kind === 'group') this.updateGroupFiles(board);        // 잠근 묶음은 맨 뒤 층 — 든 파일도 그 층으로 (든 파일은 그대로 옮길 수 있음)
     this.scheduleSave();
   },
 

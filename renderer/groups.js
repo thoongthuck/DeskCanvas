@@ -96,7 +96,8 @@ export const groupMethods = {
     });
   },
 
-  // 잠근 묶음에 든 파일은 못 옮김
+  // 잠근 묶음에 든 파일 — 묶음 잠금은 묶음 자체만 묶음 (옮기기 · 크기 · 풀기). 든 파일은 넣고 · 자리 바꾸고 · 뺄 수 있음 (사용자 요청)
+  //   Delete 키로 지우는 것만 여전히 막음 (selection.js deleteSelection — 바탕화면 파일이 휴지통으로 가므로)
   fileLocked(file) {
     const group = this.fileGroup(file);
     return !!(group && group.pinned);
@@ -149,7 +150,7 @@ export const groupMethods = {
     el.classList.toggle('collapsed', !!board.collapsed);
     const count = board.fileIds.length;
 
-    // 머리: [묶음 아이콘] 이름 · 개수 (접으면 파일 그림) … [접기] [⋯]  (잡고 끌면 묶음이 옮겨짐)
+    // 머리: [묶음 아이콘] 이름 · 개수 (접으면 파일 그림) … [접기]  (잡고 끌면 묶음이 옮겨짐. 묶음 메뉴는 우클릭 — 점 세 개 단추는 없앰, 사용자 요청)
     const head = div('board-head group-head');
     const icon = document.createElement('img');
     icon.className = 'group-icon';
@@ -160,16 +161,6 @@ export const groupMethods = {
     name.classList.toggle('untitled', !board.title);
     const countEl = div('group-count');
     countEl.textContent = count ? t('group.count', { n: count }) : '';
-    const more = document.createElement('button');
-    more.type = 'button';
-    more.className = 'group-more';
-    more.title = t('group.more');
-    more.innerHTML = `<img src="${ICON_DIR}note-more.svg" alt="" draggable="false">`;
-    more.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const r = more.getBoundingClientRect();
-      this.openBoardMenu(board, r.left, r.bottom + 4);
-    });
     const toggle = document.createElement('button');                // 접기 · 펼치기 (펼친 동안 ⌄, 접으면 ›)
     toggle.type = 'button';
     toggle.className = 'group-toggle';
@@ -185,7 +176,7 @@ export const groupMethods = {
     });
     head.append(icon, name, countEl);
     if (board.collapsed && count) head.append(this.groupPeek(board));
-    head.append(div('board-spacer'), toggle, more);
+    head.append(div('board-spacer'), toggle);
 
     // 몸통: 파일이 놓이는 칸 (비었으면 안내)
     const body = div('group-body');
@@ -229,6 +220,7 @@ export const groupMethods = {
       const el = document.getElementById(g.id);
       if (!el) return;
       el.classList.toggle('selected', this.groupSelected(g));
+      el.classList.toggle('picked', !!g.pinned && this.multiSelected(g.id));   // 잠근 묶음을 여럿 가운데 고름 — 파란 테두리만
       el.style.zIndex = String(this.groupLayer(g));
     });
     this.files.forEach(file => {
@@ -325,14 +317,17 @@ export const groupMethods = {
     this.refreshGroup(group, { slide: true });
   },
 
-  // 그 자리(월드 좌표)에 놓인 파일 묶음 — 위에 놓인(나중에 만든) 묶음부터, 잠근 묶음은 빼고
+  // 그 자리(월드 좌표)에 놓인 파일 묶음 — 위에 놓인(나중에 만든) 묶음부터
+  //   잠근 묶음에도 넣을 수 있음. 잠근 묶음은 맨 뒤 층이라 (groupLayer) 겹쳐 있으면 보통 묶음이 먼저
   groupAt(wx, wy) {
     const groups = this.fileGroups();
-    for (let i = groups.length - 1; i >= 0; i--) {
-      const g = groups[i];
-      if (g.pinned) continue;
-      const size = this.groupSize(g);
-      if (wx >= g.x && wy >= g.y && wx <= g.x + size.width && wy <= g.y + size.height) return g;
+    for (const locked of [false, true]) {
+      for (let i = groups.length - 1; i >= 0; i--) {
+        const g = groups[i];
+        if (!!g.pinned !== locked) continue;
+        const size = this.groupSize(g);
+        if (wx >= g.x && wy >= g.y && wx <= g.x + size.width && wy <= g.y + size.height) return g;
+      }
     }
     return null;
   },
@@ -618,12 +613,12 @@ export const groupMethods = {
   },
 
   // 파일 메뉴의 묶음 항목: 묶음에 넣기 › (다른 묶음 · 새 묶음) · 묶음에서 빼기
+  //   잠근 묶음도 넣을 곳으로 고를 수 있고, 잠근 묶음에 든 파일도 다른 묶음으로 옮기거나 뺄 수 있음
   fileGroupMenuItems(file) {
     const current = this.fileGroup(file);
-    if (current && current.pinned) return [];
     const items = [{
       icon: 'add-group.svg', label: t('menu.putInGroup'), arrow: true,
-      submenu: this.fileGroups().filter(g => g !== current && !g.pinned)
+      submenu: this.fileGroups().filter(g => g !== current)
         .map(g => ({ label: this.groupLabel(g), action: () => this.moveFileToGroup(file, g) }))
         .concat([{ label: t('menu.newGroup'), action: () => this.newGroupWithFile(file) }]),
     }];

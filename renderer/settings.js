@@ -1,6 +1,6 @@
 // 설정값 — 불러오기 · 저장 · 화면에 적용 (설정 창 화면은 settings-window.js)
 // 저장 위치: 앱 데이터 폴더의 settings.json (main.js)
-import { DEFAULT_SETTINGS, NEW_NOTE_SIZES, GRID_GAPS, NOTE_COLORS, HOLIDAY_REGIONS, ZOOM_SPEEDS } from './constants.js';
+import { DEFAULT_SETTINGS, NEW_NOTE_SIZES, GRID_GAPS, NOTE_COLORS, HOLIDAY_REGIONS, ZOOM_SPEEDS, CALENDAR_BANDS } from './constants.js';
 import { setLanguage } from './i18n.js';
 import { isHexColor } from './color.js';
 
@@ -36,7 +36,9 @@ export const settingsMethods = {
     if (s.calendarView !== 'week') s.calendarView = 'month';
     s.weekStart = s.weekStart === 1 ? 1 : 0;
     if (s.groupColor !== 'custom' && !NOTE_COLORS[s.groupColor]) s.groupColor = 'yellow';
-    if (!['theme', 'light', 'dark'].includes(s.boardTone)) s.boardTone = 'theme';
+    if (!CALENDAR_BANDS[s.calendarBand]) s.calendarBand = 'navy';
+    if (!['year', 'month', 'day'].includes(s.timelineScale)) s.timelineScale = 'month';
+    delete s.boardTone;                               // 예전 '기본 판 색상' (판 상자가 없어져서 안 씀)
     if (s.noteLinkView !== 'link') s.noteLinkView = 'embed';
     if (!isHexColor(s.groupCustomColor)) s.groupCustomColor = DEFAULT_SETTINGS.groupCustomColor;
     if (!['paper', 'tape', 'pin', 'none'].includes(s.photoFrame)) s.photoFrame = 'paper';
@@ -95,6 +97,7 @@ export const settingsMethods = {
     if (!key || key === 'language') this.refreshTexts();
     if (!key || key === 'overflow') this.fitAllNotes();
     if (key === 'noteLinkView') this.refreshAllNoteLinks();       // 쪽지 속 주소 보기 방식 (note-links.js)
+    if (key === 'timelineScale') this.refreshAllBoards();         // 연대표 눈금 단위 — 모든 연대표를 다시 그림 (timeline.js)
     if (!key || key === 'theme') this.refreshFallbackIcons();    // 파일 기본 그림도 밝은 · 어두운 것으로
     if (!key || key === 'holidays' || key === 'holidayCountry' || key === 'language') this.loadHolidays();
     if (!key || key === 'showGrid') this.resizeCanvas();         // 격자를 끄면 그림판을 1px 로 (app.js) — resizeCanvas 가 다시 그림

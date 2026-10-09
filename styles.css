@@ -293,7 +293,6 @@ body.theme-dark #infinite-canvas {
 /* 어두운 색을 직접 고른 쪽지: 글자·아이콘을 밝게 */
 .sticky-note.note-dark { --ink: #F3F4F6; }
 .note-dark .note-state-icon,
-.note-dark .note-more,
 .note-dark .check-box,
 .note-dark .md-check {
   filter: invert(1) hue-rotate(180deg) brightness(1.1);
@@ -321,6 +320,17 @@ body.theme-dark #infinite-canvas {
   transform: translateY(calc(-3px * var(--z)));
   filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.24))
           drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.14));
+}
+
+/* 고정 · 잠근 것을 여럿 가운데 골랐을 때 (Ctrl · Shift + 누르기 — renderer/selection.js) — 떠오르지 않고 (맨 뒤 층 그대로) 파란 테두리만
+   한꺼번에 고정 · 잠금을 풀 때 무엇을 골랐는지 보이게 */
+.sticky-note.picked,
+.canvas-photo.picked,
+.board-group.picked,
+.board-calendar.picked .cal-paper,
+.board-timeline.picked .tl-rail {
+  outline: 2px solid #7FB2F7;
+  outline-offset: 2px;
 }
 
 /* 고정된 쪽지: 옮기기·크기 조절 잠금 (캔버스를 움직이면 같이 움직임) */
@@ -488,7 +498,7 @@ body.overflow-expand .ink-mirror { white-space: pre; overflow-wrap: normal; }
 .sticky-note:active { cursor: grabbing; }
 
 .note-state-icon,
-.note-more {
+.note-fold {
   width: calc(24px * var(--z));
   height: calc(24px * var(--z));
   display: block;
@@ -497,6 +507,30 @@ body.overflow-expand .ink-mirror { white-space: pre; overflow-wrap: normal; }
   -webkit-user-drag: none;
 }
 .note-state-icon { cursor: default; }
+/* 접기 단추 — 머리 오른쪽 끝 (더보기 … 는 없앰 — 쪽지 메뉴는 우클릭으로). 접힌 쪽지는 ⌄ (펼치기) */
+.note-fold { margin-left: auto; opacity: 0.8; transition: transform 0.15s ease-out; }
+.note-fold:hover { opacity: 1; }
+.sticky-note.folded .note-fold { transform: rotate(180deg); }
+.note-dark .note-fold { filter: invert(1) hue-rotate(180deg) brightness(1.1); }
+/* 접은 쪽지: 머리 · 제목만 (제목이 없으면 글 첫 줄) — 높이는 renderer/fit.js fitFolded */
+.sticky-note.folded { padding-bottom: calc(12px * var(--z)); }
+.sticky-note.folded .note-body,
+.sticky-note.folded .note-time,
+.sticky-note.folded .note-resize { display: none; }
+.sticky-note.folded.no-title .ink-note-title { display: none; }
+.note-fold-preview { display: none; }
+.sticky-note.folded.no-title .note-fold-preview {
+  display: block;
+  margin-top: calc(9px * var(--z));
+  font-family: var(--note-font, inherit);
+  font-size: calc(var(--title-size) * var(--font-scale) * var(--z));
+  line-height: 1.35;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;                  /* 접은 높이를 잴 때 줄어들지 않게 */
+}
 .note-state-icon.clickable { cursor: pointer; }     /* 수정 중: 글 ↔ 할 일 */
 
 /* 제목 + 본문 */
@@ -572,6 +606,30 @@ body.overflow-expand .ink-mirror { white-space: pre; overflow-wrap: normal; }
   display: flex;
   flex-direction: column;
 }
+
+/* 사진 배치 (우클릭 › 사진 배치 ›, renderer/notes.js) — 왼쪽이 기본
+   오른쪽 · 아래는 순서(order)로 — 거꾸로 쌓기(reverse)면 글이 길 때 위 · 왼쪽으로 넘쳐 쪽지가 늘어나지 않아서 */
+.note-photo-body.layout-right .note-photo,
+.note-photo-body.layout-bottom .note-photo { order: 2; }
+.note-photo-body.layout-top,
+.note-photo-body.layout-bottom { flex-direction: column; }
+.note-photo-body.layout-top .note-photo,
+.note-photo-body.layout-bottom .note-photo {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+/* 배경: 사진을 쪽지 글 뒤에 흐리게 */
+.note-photo-body.layout-cover { position: relative; }
+.note-photo-body.layout-cover .note-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.3;
+  pointer-events: none;
+}
+.note-photo-body.layout-cover .note-photo-content { position: relative; }
 
 /* 쪽지 안 스크롤바는 숨김 (내용이 길면 휠로 스크롤) */
 .note-title,

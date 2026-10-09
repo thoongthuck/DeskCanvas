@@ -239,7 +239,6 @@ export const viewMethods = {
       el.classList.toggle('in-group', !!slot);
       this.refreshFallbackIcon(el, file);             // 묶음 안은 밝은 종이 위라 밝은 배경용 기본 그림
     }
-    el.classList.toggle('locked', !!(slot && slot.group.pinned));
     el.classList.toggle('group-lifted', !!(slot && this.groupSelected(slot.group)));   // 묶음이 골라져 떠오름 (groups.css)
     el.classList.toggle('on-dark', !!(slot && this.groupIsDark(slot.group)));           // 어두운 색 묶음 속 — 밝은 칸 위에
     this.applyItemOrder(el, file);                    // 순서 (layer-order.js)

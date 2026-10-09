@@ -90,6 +90,10 @@ export const noteMethods = {
     if (typeof note.title !== 'string') note.title = '';
     if (typeof note.content !== 'string') note.content = '';
     if (typeof note.image !== 'string') note.image = '';
+    // 사진 배치 — 왼쪽(기본) · 오른쪽 · 위 · 아래 · 배경 (note-body.js). 왼쪽은 적지 않음
+    if (!['right', 'top', 'bottom', 'cover'].includes(note.imageLayout)) delete note.imageLayout;
+    if (note.folded) note.folded = true;                              // 접은 쪽지 — 제목 줄만 (toggleNoteFold)
+    else delete note.folded;
     if (note.type === 'image') note.type = 'text';                    // 예전 '이미지 메모' → 사진이 든 글 쪽지
     if (!['text', 'checklist', 'code', 'markdown', 'web', 'table'].includes(note.type)) note.type = 'text';
     if (note.type === 'table') note.table = this.normalizeTable(note.table);   // 표 (table-note.js)
@@ -145,6 +149,8 @@ export const noteMethods = {
       if (!hasSegment) { delete note.segmentId; delete note.ratio; }
       else note.ratio = Math.min(1, Math.max(0, note.ratio));
       if (typeof note.boardAt !== 'number') note.boardAt = 0;
+      if (note.side !== 'up') delete note.side;                       // 연대표 막대 위에 얹은 쪽지 (없으면 아래에 건 쪽지)
+      if (!(note.off > 0)) delete note.off;                           // 연대표 막대에서 띄운 높이 (timeline.js)
     }
     delete note.pinColor;                                             // 예전 동그란 핀 색 (더 이상 안 씀)
     return note;
@@ -157,9 +163,10 @@ export const noteMethods = {
     el.innerHTML = `
       <div class="note-header">
         <img class="note-state-icon" alt="" draggable="false">
-        <img class="note-more" src="${ICON_DIR}note-more.svg" alt="" draggable="false">
+        <img class="note-fold" src="${ICON_DIR}note-fold.svg" alt="" draggable="false">
       </div>
       <textarea class="note-title" rows="1" spellcheck="false"></textarea>
+      <div class="note-fold-preview"></div>
       <div class="note-body"></div>
       <div class="note-time"></div>
       <div class="note-resize"></div>
@@ -203,14 +210,14 @@ export const noteMethods = {
     //  - 수정 중인 쪽지의 글자칸은 제외 (글자 고르기·커서)
     //  - 고정된 쪽지 · 잠근 판의 쪽지는 못 옮김 → 끌면 화면 이동 (boards.js startGrabPan)
     el.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.check-box, .md-check, .code-copy, .code-lang, .note-link-chip, .note-embed video, .note-embed-poster, .table-add')) return;   // 누르는 기능 · 영상 조작
+      if (e.target.closest('.check-box, .md-check, .code-copy, .code-lang, .note-link-chip, .note-embed video, .note-embed-poster, .table-add, .note-fold')) return;   // 누르는 기능 · 영상 조작
       const editing = this.editingId === note.id;
       const onText = e.target.matches('input, textarea');
       if (!editing && onText) e.preventDefault();                     // 보통 상태: 글자칸에 커서가 생기지 않게
-      const canDrag = this.pressSelect(e, note.id, !note.pinned);   // Ctrl · Shift: 여러 개 고르기 (selection.js)
+      const canDrag = this.pressSelect(e, note.id);                 // Ctrl · Shift: 여러 개 고르기 — 고정한 쪽지도 (selection.js)
 
       if (e.button !== 0) return;
-      if (e.target.closest('.note-state-icon, .note-more, .note-resize')) return;
+      if (e.target.closest('.note-state-icon, .note-resize')) return;
       if (editing && onText) return;
       e.preventDefault();
       if (this.noteLocked(note)) {                                     // 고정한 쪽지 · 잠근 판의 쪽지: 끌면 화면 이동
@@ -224,7 +231,7 @@ export const noteMethods = {
 
     // 더블클릭 → 바로 수정 (누른 글자칸에 커서)
     el.addEventListener('dblclick', (e) => {
-      if (e.target.closest('.check-box, .md-check, .note-state-icon, .note-more, .note-resize, .code-copy, .code-lang, .table-add')) return;
+      if (e.target.closest('.check-box, .md-check, .note-state-icon, .note-resize, .code-copy, .code-lang, .table-add, .note-fold')) return;
       if (this.editingId === note.id) return;
       e.preventDefault();
       const td = e.target.closest('.note-table td');
@@ -240,7 +247,7 @@ export const noteMethods = {
 
     // 캘린더 칸에 겹쳐 쌓인 맨 위 쪽지를 누르면 → 그 날짜 쪽지들이 둥글게 펼쳐짐 (calendar.js)
     el.addEventListener('click', (e) => {
-      if (e.target.closest('.check-box, .md-check, .note-state-icon, .note-more, .note-resize, .code-copy, .code-lang, .table-add')) return;
+      if (e.target.closest('.check-box, .md-check, .note-state-icon, .note-resize, .code-copy, .code-lang, .table-add')) return;
       if (this.editingId === note.id || !note.date || e.ctrlKey || e.shiftKey) return;   // Ctrl · Shift 는 여러 개 고르기
       const board = this.noteBoard(note);
       if (!board || board.kind !== 'calendar' || !el.classList.contains('stack-top') || el.classList.contains('fanned')) return;
@@ -261,14 +268,13 @@ export const noteMethods = {
       if (this.editingId === note.id) this.toggleNoteType(note);
     });
 
-    // 헤더 오른쪽 더보기(…): 우클릭 메뉴를 그 자리에서
-    const more = el.querySelector('.note-more');
-    more.addEventListener('click', (e) => {
+    // 헤더 오른쪽 접기(⌃ · ⌄): 제목 줄만 남기고 접기 · 펼치기
+    el.querySelector('.note-fold').addEventListener('click', (e) => {
       e.stopPropagation();
-      this.selectItem(note.id);                       // 여럿 골랐어도 … 는 이 쪽지 메뉴
-      const r = more.getBoundingClientRect();
-      this.openNoteMenu(note, r.left, r.bottom + 4);
+      this.toggleNoteFold(note);
     });
+
+    // 더보기(…) 단추는 없앰 — 쪽지 메뉴는 우클릭으로 (사용자 요청)
 
     // 오른쪽 아래 접힌 모서리를 잡고 크기 조절 (고정된 쪽지는 못 바꿈)
     el.querySelector('.note-resize').addEventListener('mousedown', (e) => {
@@ -314,9 +320,12 @@ export const noteMethods = {
       `ink-${note.ink}`,
       this.noteAlignClass(note),
       note.pinned ? 'pinned' : '',
+      note.pinned && this.multiSelected(note.id) ? 'picked' : '',   // 고정한 쪽지를 여럿 가운데 고름 — 파란 테두리만
       selected ? 'selected' : '',
       editing ? 'editing' : '',
       note.image ? 'has-photo' : '',
+      note.folded ? 'folded' : '',
+      note.folded && !note.title.trim() ? 'no-title' : '',
       custom && isDarkColor(note.customColor) ? 'note-dark' : '',
       ...passing,
     ].filter(Boolean).join(' ');
@@ -342,8 +351,10 @@ export const noteMethods = {
       .forEach(input => { input.readOnly = !editing; });
     const title = el.querySelector('.note-title');
     if (title) title.placeholder = t('note.title');
-    const more = el.querySelector('.note-more');
-    if (more) more.alt = t('note.more');
+    const fold = el.querySelector('.note-fold');
+    if (fold) fold.title = t(note.folded ? 'note.expand' : 'note.collapse');
+    const preview = el.querySelector('.note-fold-preview');
+    if (preview) preview.textContent = note.folded && !note.title.trim() ? this.noteFirstLine(note) : '';
 
     const canToggle = editing && (note.type === 'text' || note.type === 'checklist');
     const icon = this.noteIcon(note);
@@ -394,6 +405,10 @@ export const noteMethods = {
   // 수정 상태: 글자칸을 입력 가능하게 하고 커서를 넣음
   startEditing(note, preferField = '') {
     if (this.editingId && this.editingId !== note.id) this.stopEditing();
+    if (note.folded) {                                   // 접은 쪽지를 고치면 펼침
+      delete note.folded;
+      this.scheduleSave();
+    }
     this.editingId = note.id;
     this.selectedId = note.id;
     this.typingRecorded = false;
@@ -478,6 +493,12 @@ export const noteMethods = {
     this.touch(note);
   },
 
+  // 여러 쪽지에 한꺼번에 (여러 개 메뉴 › 스타일 변경 — style-panel.js) — 되돌리기 한 번에 모두
+  setNotesStyle(notes, patch, { record = true } = {}) {
+    if (record) this.record();
+    notes.forEach(note => this.setNoteStyle(note, patch, { record: false }));
+  },
+
   resetNoteStyle(note) {                  // '기본 스타일로' — 글꼴·크기·글자 색 · 정렬만 되돌림 (쪽지 색은 그대로)
     this.setNoteStyle(note, { font: 'default', size: 'm', ink: 'default', pt: null, align: 'left' });
   },
@@ -508,6 +529,40 @@ export const noteMethods = {
       el.style.removeProperty('--body-size');
       el.style.removeProperty('--title-size');
     }
+  },
+
+  // ---- 쪽지 접기 — 제목 줄만 남김 (제목이 없으면 글 첫 줄을 보여 줌). 고치기 시작하면 펼침 ----
+  toggleNoteFold(note) {
+    this.record();
+    if (this.editingId === note.id) this.stopEditing();
+    if (note.folded) delete note.folded;
+    else note.folded = true;
+    this.refreshNote(note);
+    this.fitNote(note);
+    this.touch(note);
+    if (note.boardId) this.refreshAllBoards();
+  },
+
+  // 접었을 때 보일 글 첫 줄 (글 · 할 일 · 마크다운 · 표 · 웹 페이지)
+  noteFirstLine(note) {
+    let text = '';
+    if (note.type === 'checklist') text = (note.items.find(it => it.text.trim()) || {}).text || '';
+    else if (note.type === 'table' && note.table) text = note.table.rows.flat().find(v => v.trim()) || '';
+    else if (note.type === 'web') text = note.url || '';
+    else text = (note.content || '').split('\n').find(l => l.trim()) || '';
+    if (note.type === 'markdown') text = text.replace(/^\s*(#{1,6}|[-*]\s\[[ xX]\]|[-*]|\d+[.)]|>)\s*/, '').replace(/[*_~=`]/g, '');
+    return text.trim() || t('note.folded');
+  },
+
+  // 사진 배치 — 왼쪽 · 오른쪽 · 위 · 아래 · 배경 (우클릭 › 사진 배치 ›)
+  setNoteImageLayout(note, layout) {
+    if ((note.imageLayout || 'left') === layout) return;
+    this.record();
+    if (layout === 'left') delete note.imageLayout;
+    else note.imageLayout = layout;
+    this.renderNoteBody(note);
+    this.fitNote(note);
+    this.touch(note);
   },
 
   // 사진 넣기 / 빼기
@@ -572,12 +627,12 @@ export const noteMethods = {
   deleteNote(id) {
     this.record();
     if (this.editingId === id) this.editingId = null;
-    const boardId = (this.notes.find(n => n.id === id) || {}).boardId;
+    const board = this.noteBoard(this.notes.find(n => n.id === id) || {});
     this.notes = this.notes.filter(n => n.id !== id);
     const el = document.getElementById(id);
     if (el) el.remove();
     this.selection.delete(id);
-    if (boardId) this.refreshAllBoards();              // 캘린더 칸의 장수 · 겹침 · 연대표 층
+    if (board) this.refreshBoardsAfterDelete(board);   // 캘린더 칸의 장수 · 겹침 · 연대표 층 (연대표는 떼어지는 모습이 끝난 뒤 — board-notes.js)
     this.scheduleSave();
   },
 

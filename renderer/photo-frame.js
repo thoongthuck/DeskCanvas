@@ -1,6 +1,7 @@
 // 사진 틀 고르는 창 — 사진 우클릭 메뉴의 '틀 바꾸기 ›' 옆에 열림 (code/icons/아이콘_가이드.md 13-2)
 //   틀 없음 · 종이 틀 · 테이프 · 압정. 테이프·압정을 고르면 아래에서 색과 자리를 고름 (사진마다 저장)
 //   누르는 즉시 그 사진에 적용되고 저장됨. 창 틀·점·고르개 모양은 쪽지 스타일 창(style-panel)과 같음
+//   사진을 여럿 골랐으면 (여러 개 메뉴 — selection.js) 고른 사진 모두에 한꺼번에. 창에 보이는 값은 첫 사진 것
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { ICON_DIR, NOTE_COLORS } from './constants.js';
 import { t } from './i18n.js';
@@ -9,18 +10,20 @@ import { PHOTO_FRAMES, TAPE_COLORS, TAPE_POSITIONS, PIN_COLORS, PIN_POSITIONS, T
 const TILTS = [['left', -2], ['none', 0], ['right', 2]];
 
 export const photoFrameMethods = {
-  openFramePanel(menu, anchor, photo) {
-    if (this.stylePanel && this.stylePanel.dataset.photo === photo.id) return;
+  openFramePanel(menu, anchor, target) {
+    const photos = Array.isArray(target) ? target : [target];
+    const key = photos.map(p => p.id).join(',');
+    if (this.stylePanel && this.stylePanel.dataset.photo === key) return;
     this.closeStylePanel();
     this.closeContextSubmenu();
     const panel = document.createElement('div');
     panel.id = 'style-panel';                 // 바깥 누르면 닫히기 · 휠 스크롤은 스타일 창과 같게
     panel.className = 'frame-panel';
-    panel.dataset.photo = photo.id;
+    panel.dataset.photo = key;
     document.body.appendChild(panel);
     this.stylePanel = panel;
     this.framePanelAt = { menu, anchor };
-    this.renderFramePanel(photo);
+    this.renderFramePanel(photos);
     anchor.classList.add('open');
   },
 
@@ -39,13 +42,16 @@ export const photoFrameMethods = {
     panel.style.top = `${Math.max(4, top)}px`;
   },
 
-  renderFramePanel(photo) {
+  renderFramePanel(target) {
     const panel = this.stylePanel;
     if (!panel) return;
+    const photos = Array.isArray(target) ? target : [target];
+    const photo = photos[0];
     panel.innerHTML = '';
     const apply = (patch) => {
-      this.setPhotoFrame(photo, patch);
-      this.renderFramePanel(photo);
+      if (photos.length > 1) this.setPhotosFrame(photos, patch);
+      else this.setPhotoFrame(photo, patch);
+      this.renderFramePanel(photos);
     };
     const section = (titleKey) => {
       const wrap = document.createElement('div');
