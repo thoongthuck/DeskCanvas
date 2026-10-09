@@ -15,7 +15,7 @@
     "sticky-notes"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "SEE LICENSE IN build/license.txt",
   "devDependencies": {
     "electron": "44.4.3",
     "electron-builder": "^26.15.3"
