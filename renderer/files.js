@@ -497,6 +497,95 @@ export const fileMethods = {
     if (failed.length) this.showToast(t('toast.trashFail', { name: failed.join(', ') }));
   },
 
+  // ---- 폴더에 넣기 — 파일 아이콘을 폴더 아이콘 위에 끌어다 놓으면 진짜 파일이 그 폴더로 옮겨짐 (윈도우 바탕화면처럼) ----
+  //   옮기는 것: 바탕화면에 있는 파일 · 폴더 (끌어온 파일 아이콘은 다른 곳에 있는 파일이라 옮기지 않음). 여럿을 함께 끌면 함께
+  //   같은 이름이 폴더에 이미 있으면 덮어쓰지 않고 제자리로 돌려놓음. Ctrl+Z 로 폴더에서 다시 꺼냄 (history.js moved)
+  // 그 자리(월드 좌표)의 폴더 아이콘 — skip: 끄는 중인 것들 (자기 자신 위에는 못 놓음)
+  folderAt(wx, wy, skip) {
+    for (let i = this.files.length - 1; i >= 0; i--) {
+      const f = this.files[i];
+      if (!f.isDir || !f.path || skip.has(f.id)) continue;
+      const slot = this.fileSlot(f);
+      if (slot && slot.hidden) continue;               // 접은 묶음 속
+      const r = this.itemRect('file', f);
+      if (wx >= r.x && wy >= r.y && wx <= r.x + r.width && wy <= r.y + r.height) return f;
+    }
+    return null;
+  },
+
+  // 끄는 동안: 마우스 아래 폴더 아이콘을 파랗게 — 반환: 폴더 위인지 (그동안 파일 묶음에는 끼워 넣지 않음 — drag.js)
+  updateFolderDropTarget(drag, clientX, clientY) {
+    const dragged = [drag.item, ...(drag.followers || []).filter(f => f.kind === 'file').map(f => f.item)];
+    const wx = (clientX - this.panX) / this.zoom;
+    const wy = (clientY - this.panY) / this.zoom;
+    const folder = drag.item.source === 'desktop' ? this.folderAt(wx, wy, new Set(dragged.map(f => f.id))) : null;
+    if ((drag.folderTarget || null) !== folder) {
+      this.clearFolderDropTarget(drag);
+      drag.folderTarget = folder;
+      const el = folder && document.getElementById(folder.id);
+      if (el) el.classList.add('drop-folder');
+    }
+    return !!folder;
+  },
+
+  clearFolderDropTarget(drag) {
+    const el = drag.folderTarget && document.getElementById(drag.folderTarget.id);
+    if (el) el.classList.remove('drop-folder');
+    drag.folderTarget = null;
+  },
+
+  // 놓았을 때: 폴더 위면 그 폴더로 옮김 → true (아니면 false). 함께 끈 파일도 같이
+  settleFilesInFolder(file, drag) {
+    const folder = drag.folderTarget;
+    this.clearFolderDropTarget(drag);
+    if (!folder) return false;
+    const entries = [{ item: file, x0: drag.x0, y0: drag.y0 }, ...(drag.followers || []).filter(f => f.kind === 'file')];
+    const home = new Map(entries.map(en => [en.item.id, { x: en.x0, y: en.y0 }]));
+    const files = entries.map(en => en.item).filter(f => f.source === 'desktop' && f !== folder);
+    this.moveFilesIntoFolder(files, folder, { undoEntry: this.undoStack[this.undoStack.length - 1], home, fromGroup: drag.fromGroup });
+    return true;
+  },
+
+  // 진짜 파일을 폴더로 옮기고 (main.js move-paths) 아이콘을 뺌. 못 옮긴 것은 끌기 전 자리로 되돌리고 알림
+  //   undoEntry: 이 끌기의 되돌리기 단계 — 옮긴 경로를 적어 두어 Ctrl+Z 로 다시 꺼냄
+  async moveFilesIntoFolder(files, folder, { undoEntry = null, home = new Map(), fromGroup = null } = {}) {
+    const api = window.canvasAPI;
+    if (!api || !api.movePaths || !files.length) return;
+    const dir = String(folder.path).replace(/[\\/]+$/, '');
+    const key = (p) => String(p || '').toLowerCase();
+    const pairs = files.map(f => ({ from: f.path, to: `${dir}\\${String(f.path).split(/[\\/]/).pop()}` }));
+    let result = { done: [], failed: pairs.map(p => ({ from: p.from, reason: 'error' })) };
+    try {
+      result = await api.movePaths(pairs);
+    } catch (_) {}
+    const moved = new Set((result.done || []).map(d => key(d.from)));
+    const stayed = [];
+    files.forEach(f => {
+      if (moved.has(key(f.path))) {
+        this.deleteFile(f.id, { undoable: false });
+        return;
+      }
+      const at = home.get(f.id);                       // 못 옮긴 것: 끌기 전 자리로 (묶음에서 꺼냈으면 다시 그 묶음에)
+      if (at) {
+        f.x = at.x;
+        f.y = at.y;
+      }
+      const group = fromGroup && f.id === files[0].id ? this.findBoard(fromGroup) : null;
+      if (group && !group.fileIds.includes(f.id)) group.fileIds.push(f.id);
+      const el = document.getElementById(f.id);
+      if (el) this.updateFilePosition(el, f);
+      stayed.push(f);
+    });
+    if (stayed.length) {
+      this.refreshGroups();
+      const reasons = new Map((result.failed || []).map(x => [key(x.from), x.reason]));
+      const exists = stayed.every(f => reasons.get(key(f.path)) === 'exists');
+      this.showToast(t(exists ? 'toast.moveExists' : 'toast.moveFail', { name: stayed.map(f => f.name).join(', '), folder: folder.name }));
+    }
+    this.markMoveStep(undoEntry, result.done || []);
+    this.scheduleSave();
+  },
+
   // 앱 메뉴 '휴지통으로 보내기' (윈도우 메뉴를 못 띄울 때) — Ctrl+Z 로 되살림
   async trashDesktopFile(file) {
     this.record();

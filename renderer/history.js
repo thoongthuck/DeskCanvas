@@ -2,6 +2,8 @@
 // 방식: 무언가 바뀌기 직전의 쪽지·사진·파일 상태를 통째로 저장해 두었다가 그대로 되돌림
 //   바탕화면 파일을 휴지통으로 보낸 단계는 그 경로를 적어 둠 (restore) → 되돌리면 휴지통에서 원래 자리로 되살리고
 //   (자리 · 묶음 · 연결선도 그대로), 다시 실행하면 (retrash) 다시 휴지통으로
+//   파일을 폴더에 넣은 단계는 옮긴 경로를 적어 둠 (moved [{ from, to }]) → 되돌리면 폴더에서 다시 꺼내고,
+//   다시 실행하면 (remove) 다시 폴더로
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 
 import { t } from './i18n.js';
@@ -56,11 +58,17 @@ export const historyMethods = {
     if (!this.undoStack.length) return false;
     const current = this.snapshot();
     const entry = this.undoStack.pop();
-    const restore = JSON.parse(entry).restore || [];
+    const marks = JSON.parse(entry);
+    const restore = marks.restore || [];
+    const moved = marks.moved || [];                         // 폴더에 넣은 파일 — 다시 꺼냄
     if (restore.length) this.holdRestoring(restore);         // 되살리는 동안 바탕화면 감시가 아이콘을 지우지 않게
+    if (moved.length) this.holdRestoring(moved.map(m => m.from));
     this.applySnapshot(entry);
-    this.redoStack.push(restore.length ? this.markSnapshot(current, 'retrash', restore) : current);
+    let next = restore.length ? this.markSnapshot(current, 'retrash', restore) : current;
+    if (moved.length) next = this.markMoves(next, 'remove', moved);
+    this.redoStack.push(next);
     if (restore.length) this.restoreTrashed(restore);
+    if (moved.length) this.moveFilesBack(moved);
     return true;
   },
 
@@ -69,9 +77,14 @@ export const historyMethods = {
     if (!this.redoStack.length) return false;
     const current = this.snapshot();
     const entry = this.redoStack.pop();
-    const retrash = JSON.parse(entry).retrash || [];
+    const marks = JSON.parse(entry);
+    const retrash = marks.retrash || [];
+    const remove = marks.remove || [];                       // 폴더에 넣었다가 되돌린 파일 — 다시 폴더로
     this.applySnapshot(entry);
-    this.undoStack.push(retrash.length ? this.markSnapshot(current, 'restore', retrash) : current);
+    let back = retrash.length ? this.markSnapshot(current, 'restore', retrash) : current;
+    if (remove.length) back = this.markMoves(back, 'moved', remove);
+    this.undoStack.push(back);
+    if (remove.length) this.moveFilesAgain(remove);
     if (retrash.length) {
       const key = (p) => String(p).toLowerCase();
       const again = new Set(retrash.map(key));
@@ -85,6 +98,43 @@ export const historyMethods = {
     const data = JSON.parse(json);
     data[key] = [...new Set([...(data[key] || []), ...paths])];
     return JSON.stringify(data);
+  },
+
+  // 스냅숏에 옮긴 경로 표시 — moved: 되돌릴 때 폴더에서 다시 꺼낼 것, remove: 다시 실행할 때 다시 폴더로 보낼 것 ([{ from, to }])
+  markMoves(json, key, pairs) {
+    const data = JSON.parse(json);
+    data[key] = [...(data[key] || []), ...pairs.map(({ from, to }) => ({ from, to }))];
+    return JSON.stringify(data);
+  },
+
+  // 폴더에 넣은 단계에 표시 (files.js moveFilesIntoFolder) — 그 단계가 아직 되돌리기 목록에 있을 때만
+  markMoveStep(entry, pairs) {
+    if (!entry || !pairs.length) return;
+    const i = this.undoStack.lastIndexOf(entry);
+    if (i >= 0) this.undoStack[i] = this.markMoves(entry, 'moved', pairs);
+  },
+
+  // 되돌리기: 폴더에 넣었던 파일을 원래 자리(바탕화면)로 다시 꺼냄 — 못 꺼낸 것은 알림, 그리고 바탕화면을 다시 읽음
+  async moveFilesBack(pairs) {
+    const froms = pairs.map(p => p.from);
+    this.holdRestoring(froms);
+    let failed = froms;
+    try {
+      const api = window.canvasAPI;
+      if (api && api.movePaths) failed = ((await api.movePaths(pairs.map(p => ({ from: p.to, to: p.from })))).failed || []).map(f => f.from);
+    } catch (_) {}
+    froms.forEach(p => this.restoringPaths.delete(String(p).toLowerCase()));
+    if (failed.length) this.showToast(t('toast.moveBackFail', { name: failed.map(p => String(p).split(/[\\/]/).pop()).join(', ') }));
+    await this.refreshDesktop();
+  },
+
+  // 다시 실행: 다시 폴더로 (아이콘은 바탕화면 감시가 빼 줌)
+  async moveFilesAgain(pairs) {
+    try {
+      const api = window.canvasAPI;
+      if (api && api.movePaths) await api.movePaths(pairs);
+    } catch (_) {}
+    await this.refreshDesktop();
   },
 
   // 휴지통으로 보낸 단계에 표시 (trashDesktopFiles · 윈도우 메뉴 '삭제') — 그 단계가 아직 되돌리기 목록에 있을 때만

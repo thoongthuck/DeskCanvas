@@ -233,6 +233,11 @@ export class InfiniteCanvas {
     // 트레이(알림 영역 아이콘) 메뉴에서 온 부탁: 설정 창 열기 · 설정 바꾸기 (main.js)
     if (window.canvasAPI && window.canvasAPI.onOpenSettings) window.canvasAPI.onOpenSettings(() => this.openSettings());
     if (window.canvasAPI && window.canvasAPI.onApplySetting) window.canvasAPI.onApplySetting((key, value) => this.updateSetting(key, value));
+    // 자동 업데이트 상태 (main.js updater.js) — 설정 창의 업데이트 줄 · 새 판을 다 받았을 때 알림 (settings-window.js)
+    if (window.canvasAPI && window.canvasAPI.onUpdateState) {
+      window.canvasAPI.onUpdateState((state) => this.onUpdateState(state));
+      window.canvasAPI.updateState().then((state) => { this.updateInfo = state; }).catch(() => {});
+    }
 
     // 탐색기에서 파일 끌어다 놓기 (그냥 두면 창이 그 파일로 넘어가 버리므로 막고 아이콘으로 만듦)
     document.addEventListener('dragover', (e) => {

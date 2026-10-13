@@ -25,6 +25,7 @@ export const settingsMethods = {
     if (saved.grid !== undefined && saved.showGrid === undefined) s.showGrid = !!saved.grid;
     s.autoSave = !!s.autoSave;
     s.openLastWorkspace = !!s.openLastWorkspace;
+    s.autoUpdate = s.autoUpdate !== false;
     s.wallpaperMode = s.wallpaperMode !== false;
     s.showGrid = !!s.showGrid;
     s.lockView = !!s.lockView;
@@ -98,6 +99,7 @@ export const settingsMethods = {
     if (!key || key === 'overflow') this.fitAllNotes();
     if (key === 'noteLinkView') this.refreshAllNoteLinks();       // 쪽지 속 주소 보기 방식 (note-links.js)
     if (key === 'timelineScale') this.refreshAllBoards();         // 연대표 눈금 단위 — 모든 연대표를 다시 그림 (timeline.js)
+    if (key === 'autoUpdate' && s.autoUpdate) window.canvasAPI?.checkUpdate?.();   // 켜면 바로 한 번 확인 (updater.js)
     if (!key || key === 'theme') this.refreshFallbackIcons();    // 파일 기본 그림도 밝은 · 어두운 것으로
     if (!key || key === 'holidays' || key === 'holidayCountry' || key === 'language') this.loadHolidays();
     if (!key || key === 'showGrid') this.resizeCanvas();         // 격자를 끄면 그림판을 1px 로 (app.js) — resizeCanvas 가 다시 그림

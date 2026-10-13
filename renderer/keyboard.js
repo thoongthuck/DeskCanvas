@@ -136,6 +136,7 @@ export const keyboardMethods = {
 
   // Ctrl+V — 캔버스에서 복사해 둔 것이 먼저 (그 뒤로 클립보드가 그대로일 때, clipboard.js)
   //   아니면 사진 → 사진 붙이기 (수정 중인 쪽지면 쪽지 사진) · 글 → 새 쪽지 · 탐색기에서 복사한 파일 → 바탕화면에
+  //   웹에서 복사한 움직이는 그림(GIF)은 원본을 받아 붙임 (saveCopiedGif)
   async handlePaste(e) {
     if (this.settingsOpen) return;
     const data = e.clipboardData;
@@ -147,6 +148,7 @@ export const keyboardMethods = {
     const imageItem = [...(data.items || [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
     const imageFile = imageItem ? imageItem.getAsFile() : null;
     const text = data.getData('text/plain');
+    const html = data.getData('text/html');
     const editingNote = this.editingId ? this.notes.find(n => n.id === this.editingId) : null;
     if (!typing) e.preventDefault();
 
@@ -157,7 +159,7 @@ export const keyboardMethods = {
 
     if (imageFile) {
       if (typing) e.preventDefault();
-      const url = await this.saveImageBlob(imageFile);
+      const url = (await this.saveCopiedGif(html)) || (await this.saveImageBlob(imageFile));   // GIF 원본을 못 받으면 클립보드의 한 장면 그대로
       if (!url) return;
       if (editingNote) this.setNotePhoto(editingNote, url);           // 수정 중인 쪽지에 사진 넣기
       else await this.addPhotoAt(at, url);                            // 바탕에 사진 붙이기
@@ -175,6 +177,31 @@ export const keyboardMethods = {
       const clip = api && api.clipboardFiles ? await api.clipboardFiles() : null;
       if (clip && clip.files && clip.files.length) this.pasteDesktopFiles(false, at);
     } catch (_) {}
+  },
+
+  // 웹에서 복사한 움직이는 그림(GIF) — 브라우저의 '이미지 복사'는 클립보드에 멈춘 한 장면(PNG)만 넣어서, 그대로 붙이면 움직이지 않음.
+  //   함께 들어온 HTML (<img src="…">) 의 주소가 GIF 면 원본을 저장하고 그 주소를 돌려줌. 아니거나 못 받으면 null
+  //   · data:image/gif;base64,… 는 그대로 풀어서 · http(s) 주소가 .gif 로 끝나면 main.js 가 받아 옴 (download-gif)
+  async saveCopiedGif(html) {
+    const api = window.canvasAPI;
+    const found = /<img\b[^>]*?\bsrc\s*=\s*(["'])(.*?)\1/i.exec(html || '');
+    if (!api || !found) return null;
+    const box = document.createElement('textarea');           // &amp; 같은 글자 표기를 풀어 줌
+    box.innerHTML = found[2];
+    const src = box.value.trim();
+    try {
+      const data = /^data:image\/gif;base64,(.+)$/i.exec(src);
+      if (data && api.saveImageData) {
+        const bytes = Uint8Array.from(atob(data[1].replace(/\s+/g, '')), ch => ch.charCodeAt(0));
+        return await api.saveImageData(bytes, 'image/gif');
+      }
+      if (!/^https?:\/\//i.test(src) || !api.downloadGif) return null;
+      if (!/\.gif$/i.test(new URL(src).pathname)) return null;
+      return await api.downloadGif(src);
+    } catch (err) {
+      console.error('복사한 GIF 원본을 받지 못했어요:', err);
+      return null;
+    }
   },
 
   // 붙여넣은 그림을 앱 데이터 폴더에 저장하고 주소를 받음

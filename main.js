@@ -4,6 +4,7 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { execFile, spawn } = require('child_process');
 const { buildLayout, cleanText } = require('./menu-layout');
+const { createUpdater } = require('./updater');
 
 // 앱 본체에서만 쓰는 메모리 치우기 (gc) — 바탕화면 층 사진을 찍고 나면 찍은 그림(화면 크기, 20MB 안팎 두 장)을
 //   바로 돌려주려고. 가만두면 한참 뒤에야 치워서 그동안 30MB 가까이 붙잡고 있음 (updateMirror)
@@ -1195,8 +1196,8 @@ ipcMain.handle('rename-path', async (event, filePath, newName) => {
 // 설정 · 종료는 여기서 (캔버스 메뉴에는 없음). 바탕화면에 넣기 켜고 끄기 · 앞으로 꺼내기도
 let tray = null;
 const TRAY_TEXT = {
-  ko: { tip: '배경화면 캔버스', front: '캔버스 앞으로 꺼내기', back: '바탕화면으로 되돌리기', wallpaper: '바탕화면에 넣기', settings: '설정…', quit: '종료', more: '추가 옵션 표시', shortcut: '바로 가기' },
-  en: { tip: 'Wallpaper Canvas', front: 'Bring the canvas forward', back: 'Back to the desktop', wallpaper: 'Live on the desktop', settings: 'Settings…', quit: 'Quit', more: 'Show more options', shortcut: 'Shortcut' },
+  ko: { tip: '배경화면 캔버스', front: '캔버스 앞으로 꺼내기', back: '바탕화면으로 되돌리기', wallpaper: '바탕화면에 넣기', settings: '설정…', quit: '종료', more: '추가 옵션 표시', shortcut: '바로 가기', update: '새 버전 {v} 설치 (다시 시작)' },
+  en: { tip: 'Wallpaper Canvas', front: 'Bring the canvas forward', back: 'Back to the desktop', wallpaper: 'Live on the desktop', settings: 'Settings…', quit: 'Quit', more: 'Show more options', shortcut: 'Shortcut', update: 'Install version {v} (restart)' },
 };
 
 function trayText() {
@@ -1224,7 +1225,11 @@ function refreshTray() {
   const tx = trayText();
   const key = popOutKey ? popOutKey.replace('Control', 'Ctrl') : undefined;
   tray.setToolTip(tx.tip);
+  const update = updater ? updater.state() : null;     // 새 판을 다 받았으면 맨 위에 설치 줄 (updater.js)
   tray.setContextMenu(Menu.buildFromTemplate([
+    ...(update && update.status === 'ready'
+      ? [{ label: tx.update.replace('{v}', update.next), click: () => installUpdateNow() }, { type: 'separator' }]
+      : []),
     {
       label: wallpaper.poppedOut || wallpaper.front ? tx.back : tx.front, accelerator: key, registerAccelerator: false,
       enabled: wallpaper.wanted && (sleep.asleep || wallpaper.pinned || wallpaper.embedded || wallpaper.poppedOut), click: () => togglePopOut(),
@@ -1522,7 +1527,10 @@ function createWindow() {
   });
 
   // 윈도우를 끄거나 로그아웃할 때는 그대로 닫히게 (아래 close 가 막지 않게)
-  mainWindow.on('session-end', () => { quitting = true; });
+  mainWindow.on('session-end', () => {
+    quitting = true;
+    if (updater) updater.skipInstallOnQuit();        // 윈도우가 꺼지는 중에는 새 판을 설치하지 않음 (중간에 끊기지 않게)
+  });
 
   mainWindow.on('close', (event) => {
     // Alt+F4 로는 꺼지지 않음 — 끄기는 트레이 · 메뉴의 종료로만 (quitting). 앞에 꺼내 둔 캔버스는 바탕화면 층으로 돌려보냄
@@ -1703,6 +1711,39 @@ ipcMain.handle('save-image-data', (event, bytes, mime) => {
   return pathToFileURL(dest).href;
 });
 
+// 붙여넣기: 웹에서 복사한 움직이는 그림(GIF)의 원본을 받아 images 폴더에 저장 (renderer/keyboard.js copiedGifUrl)
+//   브라우저의 '이미지 복사'는 클립보드에 멈춘 한 장면(PNG)만 넣어서 그대로 붙이면 움직이지 않음 — 함께 들어온 그림 주소에서 받아 옴
+//   http · https 만, 40MB 까지, 받은 것이 정말 GIF 일 때만 (아니면 null → 화면은 한 장면 그대로 붙임)
+const GIF_MAX_BYTES = 40 * 1024 * 1024;
+ipcMain.handle('download-gif', async (event, address) => {
+  let url;
+  try {
+    url = new URL(String(address || ''));
+  } catch (_) {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), 15000);
+  try {
+    const res = await net.fetch(url.href, { signal: stop.signal, credentials: 'omit' });
+    if (!res.ok) throw new Error(`응답 ${res.status}`);
+    if (Number(res.headers.get('content-length')) > GIF_MAX_BYTES) throw new Error('너무 큼');
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length > GIF_MAX_BYTES) throw new Error('너무 큼');
+    if (bytes.subarray(0, 4).toString('latin1') !== 'GIF8') throw new Error('GIF 가 아님');
+    const dest = path.join(getImagesDir(), `${Date.now()}.gif`);
+    fs.writeFileSync(dest, bytes);
+    logLine(`붙여넣은 GIF 원본 받음: ${url.host} (${Math.round(bytes.length / 1024)}KB)`);
+    return pathToFileURL(dest).href;
+  } catch (err) {
+    logLine(`붙여넣은 GIF 원본 못 받음 (${url.host}): ${err && err.message}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 // 붙여넣기: 탐색기에서 복사한 사진 파일을 images 폴더로
 ipcMain.handle('import-image', (event, filePath) => {
   const src = String(filePath || '');
@@ -1859,6 +1900,44 @@ ipcMain.handle('archive-state', () => {
 // 저장 안 한 변경 (자동 저장이 꺼져 있을 때) — 창을 닫을 때 물어볼지 정함
 let allowClose = false;
 const unsaved = { dirty: false, labels: null };
+
+// ---- 자동 업데이트 (updater.js) — 상태가 바뀌면 트레이 메뉴 · 화면(설정 창 · 알림)에 알림 ----
+let updater = null;
+let installingUpdate = false;                       // '다시 시작해서 설치'를 누름 — 저장을 마친 뒤 설치로 이어감
+function autoUpdateSetting() {
+  try {
+    return JSON.parse(fs.readFileSync(getSettingsFile(), 'utf-8')).autoUpdate !== false;
+  } catch (_) {
+    return true;
+  }
+}
+function startUpdater() {
+  updater = createUpdater({
+    log: logLine,
+    isEnabled: autoUpdateSetting,
+    onChange: (state) => {
+      refreshTray();
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-state', state);
+    },
+  });
+  updater.start();
+}
+// 받아 둔 새 판 설치 — 설치 프로그램이 앱을 닫으므로 저장 안 한 변경이 있으면 먼저 저장 (화면이 저장한 뒤 quit-now 를 보냄)
+function installUpdateNow() {
+  if (!updater || updater.state().status !== 'ready') return;
+  installingUpdate = true;
+  quitting = true;
+  if (unsaved.dirty && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('save-and-quit');
+    return;
+  }
+  allowClose = true;
+  updater.install();
+}
+ipcMain.handle('update-state', () => (updater ? updater.state() : null));
+ipcMain.handle('update-check', () => (updater ? updater.check({ manual: true }) : null));
+ipcMain.on('update-install', () => installUpdateNow());
+
 ipcMain.on('debug-log', (event, text) => logLine(`[화면] ${text}`));
 ipcMain.on('set-dirty', (event, dirty, labels) => {
   unsaved.dirty = !!dirty;
@@ -1872,6 +1951,7 @@ ipcMain.on('request-quit', () => {
 });
 ipcMain.on('quit-now', () => {
   allowClose = true;
+  if (installingUpdate && updater && updater.install()) return;   // 저장을 마쳤으니 새 판을 설치하고 다시 켬
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
 });
 
@@ -2402,6 +2482,44 @@ ipcMain.handle('trash-path', async (event, filePath) => {
   }
 });
 
+// 파일 아이콘을 폴더 아이콘 위에 끌어다 놓기 (renderer/files.js moveFilesIntoFolder) · 그 되돌리기 — 진짜 파일을 옮김
+//   pairs: [{ from, to }]. 한쪽은 바탕화면 폴더 바로 안이어야 함 (넣기: from · 되돌리기: to) — 그 밖의 파일을 옮기는 데는 쓰지 않음
+//   같은 이름이 이미 있으면 덮어쓰지 않고 남김
+//   반환: { done: [{ from, to }], failed: [{ from, reason: 'exists' | 'missing' | 'inside' | 'denied' | 오류 글 }] }
+ipcMain.handle('move-paths', async (event, pairs) => {
+  const desktops = getDesktopDirs().map(d => d.toLowerCase());
+  const onDesktop = (p) => desktops.includes(path.dirname(p).toLowerCase());
+  const done = [];
+  const failed = [];
+  for (const pair of (Array.isArray(pairs) ? pairs : []).slice(0, 500)) {
+    const from = path.resolve(String((pair && pair.from) || ''));
+    const to = path.resolve(String((pair && pair.to) || ''));
+    let reason = '';
+    if (!onDesktop(from) && !onDesktop(to)) reason = 'denied';
+    else if (!fs.existsSync(from)) reason = 'missing';
+    else if (fs.existsSync(to)) reason = 'exists';
+    else if ((to.toLowerCase() + path.sep).startsWith(from.toLowerCase() + path.sep)) reason = 'inside';   // 폴더를 자기 안으로
+    else {
+      try {
+        if (!fs.statSync(path.dirname(to)).isDirectory()) throw new Error('not a folder');
+        try {
+          await fs.promises.rename(from, to);
+        } catch (err) {
+          if (!err || err.code !== 'EXDEV') throw err;       // 다른 드라이브의 폴더: 복사한 뒤 지움
+          await fs.promises.cp(from, to, { recursive: true, errorOnExist: true, force: false });
+          await fs.promises.rm(from, { recursive: true, force: true });
+        }
+      } catch (err) {
+        reason = (err && err.message) || 'error';
+      }
+    }
+    if (reason) failed.push({ from, reason });
+    else done.push({ from, to });
+  }
+  logLine(`파일 옮김: ${done.length}개` + (failed.length ? ` · 못 옮김 ${failed.length}개 (${failed.map(f => f.reason).join(', ')})` : ''));
+  return { done, failed };
+});
+
 // 휴지통으로 보낸 바탕화면 파일 되살리기 (화면의 되돌리기, native/desktop-bridge.ps1 restore) — 반환: { failed: [못 되살린 경로] }
 ipcMain.handle('restore-trashed', async (event, paths) => {
   const list = (Array.isArray(paths) ? paths : []).map(String);
@@ -2464,6 +2582,7 @@ app.on('ready', () => {
   }
   createTray();
   createWindow();
+  startUpdater();          // 새 버전 확인 (설치 파일로 깐 앱에서만 — updater.js)
 });
 
 app.on('before-quit', () => { quitting = true; });

@@ -1,12 +1,14 @@
 // 끌기 — 쪽지 · 사진 · 파일 아이콘 · 판 옮기기, 접힌 모서리(쪽지)·모서리(사진 · 판)로 크기 조절
 //   쪽지를 캘린더 칸 위에 놓으면 그 날짜에 붙고, 칸에서 끌어내면 떨어짐 (calendar.js)
 //   파일을 파일 묶음 위에 놓으면 그 칸에 들어가고, 묶음 밖으로 끌어내면 빠짐 (groups.js)
+//   파일을 폴더 아이콘 위에 놓으면 진짜 파일이 그 폴더로 옮겨짐 (files.js moveFilesIntoFolder)
 //   여러 개를 골랐으면 (selection.js) 잡은 것과 함께 나머지도 같은 만큼 옮겨짐 (followers)
 //   옮기거나 크기를 바꿀 때 다른 것의 가장자리 · 가운데에 맞춰 붙음 (자, align.js)
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { NOTE_MIN_WIDTH, NOTE_MIN_HEIGHT } from './constants.js';
 
 const PHOTO_MIN = 60;
+const RESIZE_SLACK = 4;                  // 쪽지 크기 조절: 세로로 이만큼은 움직여야 '아래로 끌었다'고 봄 (옆으로 끌 때 손 떨림)
 
 export const dragMethods = {
   startItemDrag(e, kind, item) {
@@ -36,6 +38,7 @@ export const dragMethods = {
       startX: e.clientX, startY: e.clientY,
       startW: rect ? rect.width / this.zoom - pad : boardSize ? boardSize.width : item.width,
       startH: rect ? rect.height / this.zoom - pad : groupSize ? groupSize.height : boardSize ? boardSize.height : item.height,
+      storedH: item.height,                    // 쪽지: 정해 둔 높이 (보이는 높이는 글 · 링크 영상에 맞춰 더 늘어나 있을 수 있음 — fit.js)
       ratio: item.height / Math.max(1, item.width),
       followers: [],
       moved: false,
@@ -84,7 +87,11 @@ export const dragMethods = {
       if (snap && (snap.dw || snap.dh)) this.resizeBoard(d.item, w + snap.dw, h + snap.dh);
     } else {
       d.item.width = Math.max(NOTE_MIN_WIDTH, d.startW + (e.clientX - d.startX) / this.zoom);
-      d.item.height = Math.max(NOTE_MIN_HEIGHT, d.startH + (e.clientY - d.startY) / this.zoom);
+      // 세로: 아래로 끌면 보이는 높이부터 (손잡이가 마우스를 따라옴). 옆으로만 끌거나 위로 끌면 정해 둔 높이부터 —
+      //   글 · 링크 영상에 맞춰 늘어나 있던 만큼을 정한 높이로 굳히지 않음. 굳히면 넓혔다 좁힐 때마다 쪽지가 길어지기만 했음
+      //   (영상 칸은 16:9 라 넓히면 커지고, 다시 좁혀도 그 높이가 남았음). 이제 너비에 맞춰 다시 줄어듦
+      const dy = (e.clientY - d.startY) / this.zoom;
+      d.item.height = Math.max(NOTE_MIN_HEIGHT, (dy > RESIZE_SLACK ? d.startH : d.storedH) + dy);
       const snap = this.snapResize(d, e);
       if (snap && (snap.dw || snap.dh)) {
         d.item.width = Math.max(NOTE_MIN_WIDTH, d.item.width + snap.dw);
@@ -97,7 +104,10 @@ export const dragMethods = {
     else this.updateItemPosition(d.kind, d.item);
     // 판에 붙이기는 쪽지 하나만 끌 때 (여럿을 함께 끌면 그냥 옮기기만)
     if (d.kind === 'note' && d.mode === 'move' && !d.followers.length) this.updateBoardDropTarget(d, e.clientX, e.clientY);
-    if (d.kind === 'file' && d.mode === 'move') this.updateGroupDropTarget(d, e.clientX, e.clientY);
+    if (d.kind === 'file' && d.mode === 'move') {
+      const onFolder = this.updateFolderDropTarget(d, e.clientX, e.clientY);      // 폴더 아이콘 위 — 그 폴더에 넣기 (files.js)
+      this.updateGroupDropTarget(d, e.clientX, e.clientY, onFolder);             // 폴더 위에서는 묶음에 끼워 넣지 않음
+    }
     this.requestMinimap();
   },
 
@@ -114,7 +124,8 @@ export const dragMethods = {
     if (moved) {
       // 파일 묶음 위면 그 칸으로 (함께 끈 파일도). 아니면 격자 모드일 때 놓은 자리의 칸에 맞춤 (찬 칸이면 가까운 빈 칸으로)
       if (drag.mode === 'move') {
-        const grouped = kind === 'file' && this.settleFileInGroup(item, drag);
+        const foldered = kind === 'file' && this.settleFilesInFolder(item, drag);   // 폴더 위면 그 폴더로 (진짜 파일을 옮김)
+        const grouped = kind === 'file' && (this.settleFileInGroup(item, drag) || foldered);
         if (!grouped && this.gridSnapOn()) {
           [{ kind, item }, ...followers].filter(en => en.kind === 'file').forEach(en => this.settleFileInGrid(en.item));
         }

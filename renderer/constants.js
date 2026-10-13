@@ -86,6 +86,7 @@ export const NOTE_MAX_AUTO_WIDTH = 720;   // '자동 확장'으로 넓어질 수
 export const DEFAULT_SETTINGS = {
   autoSave: true,
   openLastWorkspace: true,
+  autoUpdate: true,          // 새 버전을 스스로 확인하고 받아 둠 (main.js updater.js)
   wallpaperMode: true,       // 바탕화면에 넣기 — 캔버스를 윈도우 바탕화면 층에 (main.js, 메모장.md Phase 5)
   theme: 'light',            // 'light' | 'dark'
   showGrid: false,

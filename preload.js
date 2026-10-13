@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   // 종료할 때 저장 확인 (자동 저장이 꺼져 있을 때)
   setDirty: (dirty, labels) => ipcRenderer.send('set-dirty', dirty, labels),
   onSaveAndQuit: (callback) => ipcRenderer.on('save-and-quit', () => callback()),
+  // 자동 업데이트 (main.js · updater.js) — 상태 { current, status, next, percent, error }
+  updateState: () => ipcRenderer.invoke('update-state'),
+  checkUpdate: () => ipcRenderer.invoke('update-check'),
+  installUpdate: () => ipcRenderer.send('update-install'),
+  onUpdateState: (callback) => ipcRenderer.on('update-state', (event, state) => callback(state)),
   requestQuit: () => ipcRenderer.send('request-quit'),
   quitNow: () => ipcRenderer.send('quit-now'),
   // 사진 · 파일 고르기
@@ -60,6 +65,7 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   log: (text) => ipcRenderer.send('debug-log', String(text)),
   // 클립보드
   saveImageData: (bytes, mime) => ipcRenderer.invoke('save-image-data', bytes, mime),
+  downloadGif: (url) => ipcRenderer.invoke('download-gif', url),                // 웹에서 복사한 GIF 의 원본 받기 (붙여넣기)
   importImage: (filePath) => ipcRenderer.invoke('import-image', filePath),
   importMedia: (filePath) => ipcRenderer.invoke('import-media', filePath),      // 파일 › 이미지 · 영상 쪽지로 바꾸기
   webSnapshot: (id) => ipcRenderer.invoke('web-snapshot', id),                   // 웹 페이지 쪽지를 내려놓기 전 모습
@@ -69,6 +75,7 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   onDesktopChanged: (callback) => ipcRenderer.on('desktop-changed', (event, list) => callback(list)),
   trashPath: (filePath) => ipcRenderer.invoke('trash-path', filePath),
   restoreTrashed: (paths) => ipcRenderer.invoke('restore-trashed', paths),
+  movePaths: (pairs) => ipcRenderer.invoke('move-paths', pairs),               // 폴더에 넣기 · 그 되돌리기 (진짜 파일을 옮김)
   // 바탕화면 층에 넣기 (Phase 5) · 트레이에서 온 부탁 (설정 창 열기 · 설정 바꾸기)
   setWallpaperMode: (on) => ipcRenderer.invoke('set-wallpaper-mode', !!on),
   getWallpaperState: () => ipcRenderer.invoke('get-wallpaper-state'),

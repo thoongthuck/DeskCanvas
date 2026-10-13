@@ -300,6 +300,21 @@ export const settingsWindowMethods = {
     arrow.src = `${ICON_DIR}chevron.svg`;
     arrow.alt = '';
     arrow.draggable = false;
+    // 자동 업데이트 — 켜 두면 새 버전을 스스로 받아 둠. 설명 줄에 지금 버전 · 상태, 단추로 지금 확인 · 설치 (paintUpdateRow)
+    const updateBox = document.createElement('div');
+    updateBox.className = 'set-update';
+    const updateBtn = document.createElement('button');
+    updateBtn.type = 'button';
+    updateBtn.className = 'set-update-button';
+    updateBtn.addEventListener('click', () => {
+      const api = window.canvasAPI;
+      if (!api) return;
+      if (this.updateInfo && this.updateInfo.status === 'ready') api.installUpdate();
+      else api.checkUpdate();
+    });
+    updateBox.append(updateBtn, this.buildToggle(s.autoUpdate, (on) => this.updateSetting('autoUpdate', on), 'autoupdate'));
+    row(etc, 'row-update', 'row.update', 'update.idle', updateBox);
+    this.paintUpdateRow();
     const shortcutRow = row(etc, 'row-shortcuts', 'row.shortcuts', 'row.shortcuts.desc', arrow);
     shortcutRow.classList.add('link');
     shortcutRow.addEventListener('click', () => {
@@ -330,6 +345,29 @@ export const settingsWindowMethods = {
       const last = etc.offsetHeight;
       spacer.style.height = `${Math.max(0, content.clientHeight - last - 24)}px`;
     });
+  },
+
+  // 자동 업데이트 상태가 바뀜 (main.js → app.js) — 설정 창이 열려 있으면 그 줄만 다시, 새 판을 다 받았으면 한 번 알림
+  onUpdateState(state) {
+    const before = this.updateInfo;
+    this.updateInfo = state;
+    this.paintUpdateRow();
+    if (state && state.status === 'ready' && !(before && before.status === 'ready')) this.showToast(t('update.readyToast', { v: state.next }));
+  },
+
+  // 설정 › 기타 › 자동 업데이트 줄 — 지금 버전 · 상태 글, 단추 (지금 확인 / 다시 시작해서 설치)
+  paintUpdateRow() {
+    const el = document.getElementById('row-update');
+    if (!el) return;
+    const info = this.updateInfo || { status: 'unsupported', current: '' };
+    const status = ['unsupported', 'off', 'checking', 'latest', 'downloading', 'ready', 'error'].includes(info.status) ? info.status : 'idle';
+    const text = t(`update.${status}`, { v: info.next || '', p: info.percent || 0 });
+    el.querySelector('.settings-row-desc').textContent = [info.current ? t('update.version', { v: info.current }) : '', text].filter(Boolean).join(' — ');
+    const btn = el.querySelector('.set-update-button');
+    btn.hidden = status === 'unsupported';
+    btn.disabled = status === 'checking' || status === 'downloading';
+    btn.classList.toggle('ready', status === 'ready');
+    btn.textContent = t(status === 'ready' ? 'update.install' : 'update.check');
   },
 
   // 단축키 안내 화면 (시안에 없어 같은 모양으로 만듦)

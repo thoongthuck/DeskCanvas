@@ -249,6 +249,28 @@ body.theme-dark .settings-overlay { background: rgba(15, 20, 25, 0.35); }
 .set-reset-button:hover { background: rgba(248, 113, 113, 0.18) !important; }
 .set-reset-button img { width: 20px; height: 20px; }
 
+/* 자동 업데이트 줄 — [지금 확인 · 다시 시작해서 설치] 단추 + 켜고 끄기 */
+.set-update {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.set-update-button {
+  height: 38px;
+  padding: 0 16px !important;
+  border-radius: 8px;
+  background: #26313C !important;
+  font-size: 14px;
+  font-weight: 500;
+  color: #FFFFFF !important;
+  white-space: nowrap;
+}
+.set-update-button:hover { background: #2C3845 !important; }
+.set-update-button:disabled { opacity: 0.5; cursor: default; }
+.set-update-button.ready { background: #3B82F6 !important; }
+.set-update-button.ready:hover { background: #4C8EF7 !important; }
+.set-update-button[hidden] { display: none; }
+
 /* 설정 창 위에 뜨는 목록 (드롭다운 · 초기화 확인) */
 .popup-menu.settings-popup { z-index: 3100; }
 

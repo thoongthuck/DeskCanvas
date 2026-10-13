@@ -333,10 +333,11 @@ export const groupMethods = {
   },
 
   // 끄는 동안: 마우스 아래 묶음에 끼워 넣을 빈칸을 만들어 둠 (나머지 파일은 한 칸씩 비켜남)
-  updateGroupDropTarget(drag, clientX, clientY) {
+  //   none: 폴더 아이콘 위 (files.js updateFolderDropTarget) — 묶음에는 끼워 넣지 않음
+  updateGroupDropTarget(drag, clientX, clientY, none = false) {
     const wx = (clientX - this.panX) / this.zoom;
     const wy = (clientY - this.panY) / this.zoom;
-    const g = this.groupAt(wx, wy);
+    const g = none ? null : this.groupAt(wx, wy);
     const target = g ? { groupId: g.id, index: this.groupDropIndex(g, wx, wy) } : null;
     const before = this.groupGap;
     if ((!before && !target) || (before && target && before.groupId === target.groupId && before.index === target.index)) return;

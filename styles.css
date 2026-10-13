@@ -747,6 +747,13 @@ body.overflow-expand .check-text {
   border-color: rgba(100, 100, 100, 0.4);
 }
 
+/* 파일을 끌어다 놓을 폴더 아이콘 (renderer/files.js updateFolderDropTarget) — 놓으면 그 폴더로 옮겨짐 */
+.file-icon.drop-folder {
+  background: linear-gradient(135deg, rgba(90, 152, 254, 0.32) 0%, rgba(127, 178, 247, 0.22) 100%);
+  border: max(1px, calc(2px * var(--zoom))) solid #7FB2F7;
+  box-shadow: 0 0 calc(14px * var(--zoom)) rgba(90, 152, 254, 0.5);
+}
+
 /* 끄는 동안 맨 앞 (renderer/drag.js) — 캘린더에서 펼친 쪽지 · 겹친 쪽지보다도 위 */
 .sticky-note.dragging,
 .canvas-photo.dragging,
