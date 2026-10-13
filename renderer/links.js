@@ -1,4 +1,5 @@
-// 연결선 — 쪽지 · 사진 · 파일 · 파일 묶음 사이를 곡선으로 이음 (마인드맵처럼, 메모장.md 아이디어)
+// 연결선 — 쪽지 · 사진 · 파일 · 파일 묶음 · 캘린더 · 연대표 사이를 곡선으로 이음 (마인드맵처럼, 메모장.md 아이디어)
+//   캘린더는 종이, 연대표는 걸이 막대의 테두리에 닿음 (boards.js boardSize). 연대표에 따라 그린 캘린더 쪽지(note-mirror)는 그림이라 잇지 않음
 //   잇기: 우클릭 › '연결선 잇기' 뒤 이을 것을 누름 · Alt 를 누른 채 끌어 다른 것 위에 놓기
 //         · 여럿 고르고 Ctrl+L — 처음 고른 것(가운데 주제)에 나머지를 하나씩 이음
 //   선을 누르면 고름 → Delete 로 지우기, 선 우클릭 › 지우기. 이은 것이 없어지면 선도 그리지 않고 저장할 때 버림
@@ -16,7 +17,7 @@ import { t } from './i18n.js';
 import { LINK_COLORS, LINK_COLOR_ORDER, LINK_CUSTOM_DEFAULT } from './constants.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const ITEM_SELECTOR = '.sticky-note:not(.note-mirror), .canvas-photo, .file-icon, .board-group';
+const ITEM_SELECTOR = '.sticky-note, .canvas-photo, .file-icon, .board';
 
 // 고정한 끝 자리 — 변 · 변 위 비율. 둥근 모서리에 걸리지 않게 끝에서 조금 안쪽까지만
 const SIDES = ['top', 'right', 'bottom', 'left'];
@@ -179,10 +180,16 @@ export const linkMethods = {
     }, true);
   },
 
-  // 그 요소가 속한 물건 id — 이을 수 있는 것(쪽지 · 사진 · 파일 · 파일 묶음)만
+  // 그 요소가 속한 물건 id — 이을 수 있는 것(쪽지 · 사진 · 파일 · 파일 묶음 · 캘린더 · 연대표)만
   linkableAt(target) {
     const el = target && target.closest ? target.closest(ITEM_SELECTOR) : null;
-    return el && el.id && this.itemById(el.id) ? el.id : null;
+    if (!el || !el.id || el.classList.contains('note-mirror')) return null;   // 연대표에 따라 그린 캘린더 쪽지는 그림일 뿐
+    return this.linkEntry(el.id) ? el.id : null;
+  },
+
+  // id → { kind, item } — 이을 수 있는 것. 캘린더 · 연대표도 (selection.js itemById 는 판 가운데 파일 묶음만 봄)
+  linkEntry(id) {
+    return this.layerEntryById(id);
   },
 
   // ---- 잇기 · 지우기 ----
@@ -191,7 +198,7 @@ export const linkMethods = {
   },
 
   addLink(a, b) {
-    if (!a || !b || a === b || this.hasLink(a, b) || !this.itemById(a) || !this.itemById(b)) return null;
+    if (!a || !b || a === b || this.hasLink(a, b) || !this.linkEntry(a) || !this.linkEntry(b)) return null;
     this.record();
     const link = { id: this.newId('link'), a, b };
     this.links.push(link);
@@ -201,7 +208,7 @@ export const linkMethods = {
 
   // 처음 고른 것(가운데 주제)에 나머지를 하나씩 이음 (Ctrl+L · 여러 개 메뉴) — 되돌리기 한 번에
   connectSelection() {
-    const [hub, ...rest] = this.selectedEntries().map(en => en.item.id);
+    const [hub, ...rest] = [...this.selection].filter(id => this.linkEntry(id));   // 고른 캘린더 · 연대표도
     const pairs = rest.filter(id => !this.hasLink(hub, id)).map(id => [hub, id]);
     if (!pairs.length) return false;
     this.record();
@@ -239,7 +246,7 @@ export const linkMethods = {
     return true;
   },
 
-  // 우클릭 메뉴 줄 (쪽지 · 사진 · 파일 · 파일 묶음 메뉴에 들어감)
+  // 우클릭 메뉴 줄 (쪽지 · 사진 · 파일 · 파일 묶음 · 캘린더 · 연대표 메뉴에 들어감)
   linkMenuItems(id) {
     const items = [{ icon: 'menu-connect.svg', label: t('menu.connect'), action: () => this.startLinking(id) }];
     const n = this.linksOf(id).length;
@@ -575,7 +582,7 @@ export const linkMethods = {
 
   // 선이 닿는 네모 (화면 좌표) — 없거나 숨었으면 null
   linkRect(id) {
-    const entry = this.itemById(id);
+    const entry = this.linkEntry(id);
     if (!entry) return null;
     const { kind, item } = entry;
     let r;

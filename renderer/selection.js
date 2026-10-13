@@ -243,8 +243,9 @@ export const selectionMethods = {
     if (lockable.length - unlocked) {
       items.push({ icon: 'pin.svg', label: t('menu.unpinSelected', { n: lockable.length - unlocked }), action: () => this.setSelectionPinned(false) });
     }
-    if (entries.length > 1) {                               // 처음 고른 것에 나머지를 잇기 (links.js)
-      items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: entries.length }), action: () => this.connectSelection() });
+    const linkable = [...this.selection].filter(id => this.linkEntry(id)).length;   // 캘린더 · 연대표도 (links.js)
+    if (linkable > 1) {                                     // 처음 고른 것에 나머지를 잇기
+      items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: linkable }), action: () => this.connectSelection() });
     }
     items.push(...this.alignMenuItems());                   // 정렬 › (align.js)
     items.push(...this.layerMenuItems());                   // 순서 › (layer-order.js)

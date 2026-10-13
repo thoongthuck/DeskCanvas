@@ -360,6 +360,7 @@ export const boardMethods = {
           label: t(`band.${key}`), swatch: CALENDAR_BANDS[key], current: board.bandColor === key, action: () => this.setCalendarBand(board, key),
         })),
       });
+      items.push(...this.linkMenuItems(board.id));                // 연결선 잇기 · 지우기 (links.js)
       items.push({ separator: true });
       items.push({ icon: 'pin.svg', label: t(board.pinned ? 'menu.unlockBoard' : 'menu.lockBoard'), action: () => this.toggleBoardLock(board) });
     } else {
@@ -382,6 +383,7 @@ export const boardMethods = {
         items.push(this.timelineLinkMenuItem(board));
         items.push({ icon: 'menu-today.svg', label: t('menu.goToday'), action: () => this.timelineGoToday(board) });
       }
+      items.push(...this.linkMenuItems(board.id));                // 연결선 잇기 · 지우기 (links.js)
       items.push({ separator: true });
       items.push({ icon: 'pin.svg', label: t(board.pinned ? 'menu.unlockRail' : 'menu.lockRail'), action: () => this.toggleBoardLock(board) });
     }
