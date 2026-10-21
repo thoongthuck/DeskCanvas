@@ -90,11 +90,11 @@ export const selectionMethods = {
     return [...this.selection].map(id => this.itemById(id)).filter(Boolean);
   },
 
-  // 함께 옮길 수 있는 것 — 판에 붙은 쪽지 · 고정한 것 · 묶음 안 파일(묶음이 옮김) · 잠근 묶음은 제자리
+  // 함께 옮길 수 있는 것 — 판에 붙은 쪽지 · 고정한 것 · 잠근 파일 · 묶음 안 파일(묶음이 옮김) · 잠근 묶음은 제자리
   movableEntry(kind, item) {
     if (kind === 'note') return !item.pinned && !item.boardId;
     if (kind === 'photo') return !item.pinned;
-    if (kind === 'file') return !this.fileGroup(item);
+    if (kind === 'file') return !item.pinned && !this.fileGroup(item);
     if (kind === 'board') return item.kind === 'group' && !item.pinned;
     return false;
   },
@@ -190,9 +190,9 @@ export const selectionMethods = {
     this.openContextMenu(this.selectionMenuItems(), x, y);
   },
 
-  // 고른 것 가운데 고정 · 잠글 수 있는 것 — 쪽지 · 사진 · 파일 묶음 · 캘린더 · 연대표 (파일은 아님)
+  // 고른 것 가운데 고정 · 잠글 수 있는 것 — 쪽지 · 사진 · 파일 · 파일 묶음 · 캘린더 · 연대표
   lockableSelection() {
-    return [...this.selection].map(id => this.layerEntryById(id)).filter(en => en && en.kind !== 'file');
+    return [...this.selection].map(id => this.layerEntryById(id)).filter(Boolean);
   },
 
   // 고른 것을 한꺼번에 고정 · 잠금 / 풀기 — 되돌리기 한 번에 모두
@@ -205,6 +205,7 @@ export const selectionMethods = {
       targets.forEach(en => {
         if (en.kind === 'note') this.togglePin(en.item);
         else if (en.kind === 'photo') this.togglePhotoPin(en.item);
+        else if (en.kind === 'file') this.toggleFileLock(en.item);
         else this.toggleBoardLock(en.item);
       });
     } finally {
@@ -213,9 +214,21 @@ export const selectionMethods = {
     this.updateSelection();                                  // 고정한 것은 떠오르지 않고 파란 테두리로
   },
 
+  // Ctrl + Shift + L — 고른 것 가운데 하나라도 안 잠겼으면 모두 잠그고, 다 잠겼으면 모두 풂 (되돌리기 한 번)
+  //   고정한 쪽지 · 사진은 고른 표시가 없어서 알림으로 알려 줌
+  toggleSelectionLock() {
+    const lockable = this.lockableSelection();
+    if (!lockable.length) return false;
+    const on = lockable.some(en => !en.item.pinned);
+    const n = lockable.filter(en => !!en.item.pinned !== on).length;
+    this.setSelectionPinned(on);
+    this.showToast(t(on ? 'toast.locked' : 'toast.unlocked', { n }));
+    return true;
+  },
+
   selectionMenuItems() {
     const entries = this.selectedEntries();
-    const files = entries.filter(en => en.kind === 'file').map(en => en.item);
+    const files = entries.filter(en => en.kind === 'file' && !en.item.pinned).map(en => en.item);   // 잠근 파일은 묶음 · 쪽지로 바꾸기에서 빠짐
     const notes = entries.filter(en => en.kind === 'note').map(en => en.item);
     const photos = entries.filter(en => en.kind === 'photo').map(en => en.item);
     const lockable = this.lockableSelection();
@@ -239,9 +252,10 @@ export const selectionMethods = {
       items.push({ icon: 'palette.svg', label: t('menu.frameSelected', { n: photos.length }), arrow: true, panel: (menu, row) => this.openFramePanel(menu, row, photos) });
     }
     // 한꺼번에 고정 · 잠금 / 풀기 — 섞여 있으면 두 줄 다
-    if (unlocked) items.push({ icon: 'pin.svg', label: t('menu.pinSelected', { n: unlocked }), action: () => this.setSelectionPinned(true) });
+    //   단축키 Ctrl + Shift + L 은 하나라도 안 잠겼으면 잠그기 쪽 (toggleSelectionLock)
+    if (unlocked) items.push({ icon: 'pin.svg', label: t('menu.pinSelected', { n: unlocked }), key: 'Ctrl+Shift+L', action: () => this.setSelectionPinned(true) });
     if (lockable.length - unlocked) {
-      items.push({ icon: 'pin.svg', label: t('menu.unpinSelected', { n: lockable.length - unlocked }), action: () => this.setSelectionPinned(false) });
+      items.push({ icon: 'pin.svg', label: t('menu.unpinSelected', { n: lockable.length - unlocked }), key: unlocked ? '' : 'Ctrl+Shift+L', action: () => this.setSelectionPinned(false) });
     }
     const linkable = [...this.selection].filter(id => this.linkEntry(id)).length;   // 캘린더 · 연대표도 (links.js)
     if (linkable > 1) {                                     // 처음 고른 것에 나머지를 잇기
@@ -258,9 +272,9 @@ export const selectionMethods = {
     return items;
   },
 
-  // 고른 파일들로 새 묶음 (Ctrl+G · 여러 개 메뉴)
+  // 고른 파일들로 새 묶음 (Ctrl+G · 여러 개 메뉴) — 잠근 파일은 제자리
   groupSelectedFiles() {
-    const files = this.selectedEntries().filter(en => en.kind === 'file').map(en => en.item);
+    const files = this.selectedEntries().filter(en => en.kind === 'file' && !en.item.pinned).map(en => en.item);
     if (!files.length) return false;
     this.newGroupWithFiles(files);
     return true;

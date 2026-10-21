@@ -113,12 +113,45 @@ export const viewMethods = {
     this.animateView(this.homeView());
   },
 
+  // 지금 보이는 화면 — 화면 왼쪽 위에 오는 캔버스 자리 x · y 와 배율 (원점 · 저장한 자리가 이 모양)
+  currentView() {
+    const round = (v, d) => Math.round(v * d) / d;
+    return { x: round(-this.panX / this.zoom, 10), y: round(-this.panY / this.zoom, 10), zoom: round(this.zoom, 100) };
+  },
+
   // 지금 보이는 화면을 원점으로
   setHomeHere() {
-    const round = (v, d) => Math.round(v * d) / d;
-    this.home = { x: round(-this.panX / this.zoom, 10), y: round(-this.panY / this.zoom, 10), zoom: round(this.zoom, 100) };
+    this.home = this.currentView();
     this.scheduleSave();
     this.showToast(t('toast.homeSet'));
+  },
+
+  // ---- 저장한 자리 (Ctrl + 1~9) — 원점을 여럿 둔 것처럼. this.spots = { '1': { x, y, zoom }, … } (저장 파일에 함께 — storage.js)
+  //   Ctrl + 숫자: 그 자리로 (비어 있으면 알림만 — 잘못 눌러 저장되지 않게) · Ctrl + Alt + 숫자: 지금 화면을 저장 (keyboard.js)
+  goToSpot(n) {
+    const h = this.spots[n];
+    if (!h) {
+      this.showToast(t('toast.spotEmpty', { n }));
+      return;
+    }
+    this.animateView({ zoom: h.zoom, panX: -h.x * h.zoom, panY: -h.y * h.zoom });
+  },
+
+  saveSpot(n) {
+    this.spots = { ...this.spots, [n]: this.currentView() };
+    this.scheduleSave();
+    this.showToast(t('toast.spotSaved', { n }));
+  },
+
+  // 저장 파일의 자리들 — 1~9 번만, 모양이 맞는 것만 (normalizeHome)
+  normalizeSpots(spots) {
+    const out = {};
+    if (!spots || typeof spots !== 'object') return out;
+    for (let n = 1; n <= 9; n++) {
+      const h = this.normalizeHome(spots[n]);
+      if (h) out[n] = h;
+    }
+    return out;
   },
 
   // 원점을 처음 자리(0, 0 · 100%)로 되돌림
@@ -204,7 +237,10 @@ export const viewMethods = {
   // 확대 · 축소가 멈추면 (0.15초) 쪽지 크기를 다시 맞춤 (fit.js fitAllNotes 가 fitZoom 을 적어 둠)
   scheduleRefit() {
     clearTimeout(this.refitTimer);
-    this.refitTimer = setTimeout(() => this.fitAllNotes(), 150);
+    this.refitTimer = setTimeout(() => {
+      this.fitAllNotes();
+      this.updateFileNameOpen();                    // 고른 파일의 펼친 이름도 이 배율에서 다시 잼 (아주 작게 줄였을 때 잰 것은 어긋남)
+    }, 150);
   },
 
   updateNotePosition(el, note) {
@@ -235,18 +271,21 @@ export const viewMethods = {
       file.y = slot.y;
     }
     el.classList.toggle('group-hidden', !!(slot && slot.hidden));   // 접힌 묶음 속
-    if (el.classList.contains('in-group') !== !!slot) {
+    const onDark = !!(slot && this.groupIsDark(slot.group));        // 어두운 색 묶음 속 — 이름을 밝게 (groups.css)
+    if (el.classList.contains('in-group') !== !!slot || el.classList.contains('on-dark') !== onDark) {
       el.classList.toggle('in-group', !!slot);
-      this.refreshFallbackIcon(el, file);             // 묶음 안은 밝은 종이 위라 밝은 배경용 기본 그림
+      el.classList.toggle('on-dark', onDark);
+      this.refreshFallbackIcon(el, file);             // 묶음 종이 색에 맞는 기본 그림 (files.js useFallbackIcon)
     }
     el.classList.toggle('group-lifted', !!(slot && this.groupSelected(slot.group)));   // 묶음이 골라져 떠오름 (groups.css)
-    el.classList.toggle('on-dark', !!(slot && this.groupIsDark(slot.group)));           // 어두운 색 묶음 속 — 밝은 칸 위에
     this.applyItemOrder(el, file);                    // 순서 (layer-order.js)
     this.applyFileLayer(el, file, slot);              // 묶음 속이면 묶음 바로 위 층 (groups.js)
     el.style.left = `${file.x * this.zoom + this.panX}px`;
     el.style.top = `${file.y * this.zoom + this.panY}px`;
     el.style.width = `${file.width * this.zoom}px`;
-    el.style.height = `${file.height * this.zoom}px`;
+    const extra = el.nameExtra || 0;                  // 하나만 고른 파일의 펼친 이름만큼 아래로 (files.js updateFileNameOpen)
+    el.style.height = `${(file.height + extra) * this.zoom}px`;
+    el.style.setProperty('--name-extra', extra);
     el.style.setProperty('--zoom', this.zoom);        // 테두리 · 여백도 같은 배율 (styles.css)
     const symbol = el.querySelector('.file-icon-symbol');
     if (symbol) symbol.style.fontSize = `${32 * this.zoom}px`;     // 최소 크기를 두지 않음 —

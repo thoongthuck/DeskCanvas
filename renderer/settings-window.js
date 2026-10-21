@@ -1,7 +1,7 @@
 // 설정 창 — 시안(설정창_미리보기.png)과 가이드 7장 그대로
 //   왼쪽 사이드바 + 오른쪽 한 페이지, 누르면 그 자리로 스크롤
 //   닫기: 오른쪽 위 X · Esc · 창 밖 클릭
-import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS, HOLIDAY_REGIONS, ZOOM_SPEEDS, CALENDAR_BANDS } from './constants.js';
+import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS, HOLIDAY_REGIONS, ZOOM_SPEEDS, CALENDAR_BANDS, LINK_WIDTH_ORDER } from './constants.js';
 import { PHOTO_FRAMES } from './photos.js';
 import { t } from './i18n.js';
 
@@ -34,6 +34,7 @@ const SHORTCUTS = [
   ['sc.connect', 'key.altDrag'],
   ['sc.noSnap', 'key.altWhileDrag'],
   ['sc.connectSelected', 'Ctrl + L'],
+  ['sc.lockSelected', 'Ctrl + Shift + L'],
   ['sc.deselect', 'Esc'],
   ['sc.rename', 'F2'],
   ['sc.popOut', 'popOutKey'],               // main.js 가 잡은 단축키 (못 잡았으면 줄을 뺌)
@@ -45,6 +46,8 @@ const SHORTCUTS = [
   ['sc.textStyle', 'key.ctrlBIU'],
   ['sc.zoom', 'key.wheel'],
   ['sc.goHome', 'Ctrl + 0'],
+  ['sc.goSpot', 'Ctrl + 1 ~ 9'],
+  ['sc.saveSpot', 'Ctrl + Alt + 1 ~ 9'],
   ['sc.search', 'Ctrl + F'],
   ['sc.minimap', 'Ctrl + M'],
   ['sc.pan', 'key.dragEmpty'],
@@ -222,6 +225,9 @@ export const settingsWindowMethods = {
         { label: t('linkStyle.curve'), value: 'curve' },
         { label: t('linkStyle.straight'), value: 'straight' },
       ], s.linkStyle, (v) => this.updateSetting('linkStyle', v), 'linkstyle'));
+    row(canvas, 'row-linkwidth', 'row.linkWidth', 'row.linkWidth.desc',
+      this.buildDropdown(LINK_WIDTH_ORDER.map(key => ({ label: t(`linkWidth.${key}`), value: key })),
+        s.linkWidth, (v) => this.updateSetting('linkWidth', v), 'linkwidth'));
     row(canvas, 'row-gridgap', 'row.gridGap', 'row.gridGap.desc',
       this.buildDropdown(GRID_GAPS.map(g => ({ label: `${g} px`, value: g })), s.gridGap,
         (v) => this.updateSetting('gridGap', v), 'gridgap'));

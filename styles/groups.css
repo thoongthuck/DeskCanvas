@@ -34,7 +34,7 @@ body.theme-dark .board.board-group.selected {
 }
 .file-icon.in-group {
   z-index: 1001;                         /* 담긴 묶음 바로 위 (groups.js 가 묶음마다 정함) */
-  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s ease-out;
+  transition: background 0.12s, border-color 0.12s, transform 0.2s ease-out;
 }
 .file-icon.in-group.group-lifted { transform: translateY(calc(-3px * var(--zoom))); }
 .board.board-group { cursor: grab; }
@@ -58,11 +58,12 @@ body.theme-dark .board.board-group.group-dark { color: #F3F4F6; }
 .board-group.group-dark .group-peek img { filter: invert(1) hue-rotate(180deg) brightness(1.1); }
 .board-group.group-dark .group-toggle:hover { background: rgba(255, 255, 255, 0.12); }
 .board-group.group-dark .group-empty { color: rgba(255, 255, 255, 0.6); border-color: rgba(255, 255, 255, 0.3); }
-/* 어두운 색 묶음 속 파일: 밝은 칸 위에 (그림 · 이름이 잘 보이게) */
-.file-icon.in-group.on-dark,
-body.theme-dark .file-icon.in-group.on-dark {
-  background: rgba(255, 255, 255, 0.88);
-  border-color: rgba(255, 255, 255, 0.5);
+/* 어두운 색 묶음 속 파일: 칸 없이 이름을 밝게 (윈도우 바탕화면의 어두운 배경 위처럼). 기본 그림도 어두운 바탕용 (files.js useFallbackIcon)
+   마우스 · 고르기 칸은 어두운 바탕용 색 (styles.css .file-icon.on-dark) */
+.file-icon.in-group.on-dark .file-icon-name,
+body.theme-dark .file-icon.in-group.on-dark .file-icon-name {
+  color: #F3F4F6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
 /* 머리 — 위 여백 15 + 아이콘 24 (쪽지 머리와 같은 자리). 잡고 끌면 묶음이 옮겨짐 */
@@ -197,22 +198,13 @@ body.theme-dark .board-name.group-title.untitled { color: rgba(31, 47, 69, 0.55)
 }
 .board-group .board-resize::after { display: none; }
 
-/* 묶음에 든 파일 — 포스트잇이 틀이 되니 점선 상자는 숨기고, 마우스를 올리면 살짝 */
-.file-icon.in-group,
-body.theme-dark .file-icon.in-group {
-  background: transparent;
-  border-color: transparent;
-}
-.file-icon.in-group:hover,
-body.theme-dark .file-icon.in-group:hover {
-  background: rgba(31, 47, 69, 0.06);
-  border-color: rgba(31, 47, 69, 0.14);
-}
-.file-icon.in-group.selected,
-body.theme-dark .file-icon.in-group.selected {
-  background: linear-gradient(135deg, rgba(100, 150, 200, 0.3) 0%, rgba(100, 180, 220, 0.2) 100%);
-  border: max(1px, calc(2px * var(--zoom))) solid rgba(100, 150, 200, 0.8);
-  box-shadow: 0 0 calc(12px * var(--zoom)) rgba(100, 150, 200, 0.4);
+/* 묶음에 든 파일 — 마우스 · 고르기 · 폴더에 넣기 칸은 낱개 파일과 같은 모양 (styles.css .file-icon)
+   다만 색 종이 위라 비치는 파랑은 종이 색과 섞여 잿빛이 됨 → 탐색기 색(#E5F3FF · #CCE8FF · #99D1FF)을 거의 그대로 */
+.file-icon.in-group:not(.on-dark) {
+  --file-hover: rgba(229, 243, 255, 0.8);
+  --file-pick: rgba(204, 232, 255, 0.92);
+  --file-pick-hover: rgba(188, 224, 255, 0.95);
+  --file-pick-line: #99D1FF;
 }
 body.theme-dark .file-icon.in-group .file-icon-name {       /* 어두운 배경이어도 묶음 안은 밝은 종이 위 */
   color: #333;

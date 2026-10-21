@@ -619,9 +619,10 @@ export const noteMethods = {
     document.querySelectorAll('.file-icon').forEach(el => {
       el.classList.toggle('selected', this.selection.has(el.id));
     });
+    this.updateFileNameOpen();                      // 하나만 고른 파일은 긴 이름을 끝까지 (files.js)
     this.updateGroupSelection();                    // 파일 묶음 (groups.js)
     this.updateBoardSelection();                    // 캘린더 · 연대표 (boards.js)
-    this.requestLinks();                            // 고른 것에 이은 선은 진하게 (links.js)
+    this.requestLinks();                            // 고르면 층이 바뀜 — 안쪽에 고정한 선의 층도 맞춤 (links.js linkHost)
   },
 
   deleteNote(id) {

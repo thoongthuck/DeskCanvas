@@ -10,6 +10,7 @@ export const storageMethods = {
       panX: this.panX,
       panY: this.panY,
       home: this.home,                  // 정해 둔 원점 (없으면 null — view.js)
+      spots: this.spots,                // 저장한 자리 1~9 (Ctrl + 숫자 — view.js)
       notes: this.notes,
       files: this.files,
       photos: this.photos,
@@ -135,6 +136,7 @@ export const storageMethods = {
     this.panX = typeof data.panX === 'number' ? data.panX : 0;
     this.panY = typeof data.panY === 'number' ? data.panY : 0;
     this.home = this.normalizeHome(data.home);
+    this.spots = this.normalizeSpots(data.spots);
     this.notes =(Array.isArray(data.notes) ? data.notes : []).map(n => this.normalizeNote(n));
     this.photos = (Array.isArray(data.photos) ? data.photos : []).map(p => this.normalizePhoto(p));
     this.boards = (Array.isArray(data.boards) ? data.boards : []).map(b => this.normalizeBoard(b)).filter(Boolean);

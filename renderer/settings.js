@@ -1,6 +1,6 @@
 // 설정값 — 불러오기 · 저장 · 화면에 적용 (설정 창 화면은 settings-window.js)
 // 저장 위치: 앱 데이터 폴더의 settings.json (main.js)
-import { DEFAULT_SETTINGS, NEW_NOTE_SIZES, GRID_GAPS, NOTE_COLORS, HOLIDAY_REGIONS, ZOOM_SPEEDS, CALENDAR_BANDS } from './constants.js';
+import { DEFAULT_SETTINGS, NEW_NOTE_SIZES, GRID_GAPS, NOTE_COLORS, HOLIDAY_REGIONS, ZOOM_SPEEDS, CALENDAR_BANDS, LINK_WIDTHS } from './constants.js';
 import { setLanguage } from './i18n.js';
 import { isHexColor } from './color.js';
 
@@ -46,6 +46,7 @@ export const settingsMethods = {
     s.videoSound = !!s.videoSound;
     s.videoAutoplay = s.videoAutoplay !== false;
     if (s.linkStyle !== 'straight') s.linkStyle = 'curve';
+    if (!LINK_WIDTHS[s.linkWidth]) s.linkWidth = 'normal';
     s.holidays = !!s.holidays;
     if (!HOLIDAY_REGIONS.includes(s.holidayCountry)) s.holidayCountry = DEFAULT_SETTINGS.holidayCountry;
     delete s.showMinimap;                        // 예전 이름 — 미니맵은 이제 켤 때마다 꺼진 채로
@@ -90,7 +91,7 @@ export const settingsMethods = {
 
     if (key === 'autoSave' && s.autoSave && this.dirty) this.persist();
     if (!key || key === 'wallpaperMode') this.applyWallpaperMode();
-    if (!key || key === 'linkStyle') this.requestLinks();
+    if (!key || key === 'linkStyle' || key === 'linkWidth') this.requestLinks();
     if (!key || key === 'theme') window.canvasAPI?.setBackground?.(s.theme === 'dark' ? '#1F252C' : '#F5F5F5');   // 창 바탕색도 (main.js)
     if (!key || key === 'theme' || key === 'desktopBackground') {     // 윈도우 배경 화면도 캔버스 색으로 (끄면 원래대로, main.js)
       window.canvasAPI?.setDesktopBackground?.(s.desktopBackground, s.theme === 'dark' ? '#1F252C' : '#F5F5F5');

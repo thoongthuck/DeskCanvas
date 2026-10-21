@@ -712,9 +712,15 @@ body.overflow-expand .check-text {
 }
 
 /* ===== 파일 아이콘 ===== */
-/* 쪽지 · 사진보다 뒤 · 고정한 것보다 앞. 파일 묶음에 든 파일은 묶음과 같은 층 (styles/groups.css) */
+/* 쪽지 · 사진보다 뒤 · 고정한 것보다 앞. 파일 묶음에 든 파일은 묶음과 같은 층 (styles/groups.css)
+   윈도우 바탕화면처럼 평소에는 테두리 · 바탕 없이 그림과 이름만. 마우스를 올리면 옅은 파란 칸, 고르면 진한 파란 칸 + 얇은 테두리
+   (탐색기 아이콘 보기의 #E5F3FF · #CCE8FF · #99D1FF 를 비치는 색으로 — 어두운 바탕 · 묶음 종이 위에서도 같은 느낌) */
 .file-icon {
   --zoom: 1;
+  --file-hover: rgba(51, 153, 255, 0.12);
+  --file-pick: rgba(51, 153, 255, 0.25);
+  --file-pick-hover: rgba(51, 153, 255, 0.32);
+  --file-pick-line: rgba(51, 153, 255, 0.55);
   position: absolute;
   z-index: calc(10000 + var(--order, 0));   /* 쪽지 · 사진과 한 무리로 순서 (renderer/layer-order.js) */
   display: flex;
@@ -724,12 +730,12 @@ body.overflow-expand .check-text {
   overflow: hidden;                      /* 많이 줄였을 때 속 내용이 테두리 밖으로 안 나가게 */
   cursor: move;
   user-select: none;
-  background: linear-gradient(135deg, rgba(200, 200, 200, 0.15) 0%, rgba(220, 220, 220, 0.08) 100%);
-  border-radius: calc(6px * var(--zoom));
-  border: max(1px, calc(2px * var(--zoom))) dashed rgba(100, 100, 100, 0.25);
+  background: transparent;
+  border-radius: calc(4px * var(--zoom));
+  border: 1px solid transparent;          /* 윈도우처럼 늘 1px (확대해도 굵어지지 않음) */
   padding: calc(8px * var(--zoom));
   pointer-events: auto;
-  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;   /* 위치·크기는 바로 따라감 */
+  transition: background 0.12s, border-color 0.12s;   /* 위치·크기는 바로 따라감 */
   /* 뒤 흐림(backdrop-filter)은 쓰지 않음 — 아이콘마다 GPU 층이 따로 생기고, 그 위에 겹친 큰 층(연결선 · 판 …)까지
      GPU 에 올라가 메모리를 수백 MB 더 씀. 아이콘 뒤는 거의 늘 단색 바탕이라 흐림은 눈에 띄지 않았음 */
 }
@@ -738,20 +744,42 @@ body.overflow-expand .check-text {
 @media (prefers-reduced-motion: no-preference) {
   .file-icon.settling {
     transition: left 0.15s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.15s cubic-bezier(0.22, 0.61, 0.36, 1),
-                background 0.2s, border-color 0.2s, box-shadow 0.2s;
+                background 0.12s, border-color 0.12s;
   }
 }
 
-.file-icon:hover {
-  background: linear-gradient(135deg, rgba(200, 200, 200, 0.25) 0%, rgba(220, 220, 220, 0.15) 100%);
-  border-color: rgba(100, 100, 100, 0.4);
+/* 어두운 바탕 위 (어두운 테마의 낱개 파일 · 어두운 색 묶음 속 파일 — 묶음 종이는 밝아서 밝은 테마 색 그대로) */
+body.theme-dark .file-icon:not(.in-group),
+.file-icon.on-dark {
+  --file-hover: rgba(90, 170, 255, 0.18);
+  --file-pick: rgba(90, 170, 255, 0.32);
+  --file-pick-hover: rgba(90, 170, 255, 0.4);
+  --file-pick-line: rgba(130, 190, 255, 0.7);
 }
 
-/* 파일을 끌어다 놓을 폴더 아이콘 (renderer/files.js updateFolderDropTarget) — 놓으면 그 폴더로 옮겨짐 */
+.file-icon:hover { background: var(--file-hover); }
+.file-icon.selected {
+  background: var(--file-pick);
+  border-color: var(--file-pick-line);
+}
+/* 고른 것 위에 마우스 · 파일을 끌어다 놓을 폴더 (renderer/files.js updateFolderDropTarget — 놓으면 그 폴더로 옮겨짐) */
+.file-icon.selected:hover,
 .file-icon.drop-folder {
-  background: linear-gradient(135deg, rgba(90, 152, 254, 0.32) 0%, rgba(127, 178, 247, 0.22) 100%);
-  border: max(1px, calc(2px * var(--zoom))) solid #7FB2F7;
-  box-shadow: 0 0 calc(14px * var(--zoom)) rgba(90, 152, 254, 0.5);
+  background: var(--file-pick-hover);
+  border-color: var(--file-pick-line);
+}
+
+/* 하나만 고른 파일: 두 줄을 넘는 이름을 끝까지 펼침 (윈도우 바탕화면처럼 — renderer/files.js updateFileNameOpen)
+   펼친 만큼(--name-extra, 월드 px) 칸이 아래로 길어지고 (view.js updateFilePosition) 아래 여백도 그만큼 늘려
+   그림 · 이름 자리는 그대로 둔 채 이름만 아래로 내려감. 아래 아이콘을 덮게 앞으로 (묶음 속 파일도) */
+.file-icon.name-open {
+  padding-bottom: calc((8px + var(--name-extra, 0) * 1px) * var(--zoom));
+  z-index: calc(50000 + var(--order, 0)) !important;
+}
+.file-icon.name-open .file-icon-name {
+  display: block;
+  max-height: none;
+  margin-bottom: calc(var(--name-extra, 0) * -1px * var(--zoom));
 }
 
 /* 끄는 동안 맨 앞 (renderer/drag.js) — 캘린더에서 펼친 쪽지 · 겹친 쪽지보다도 위 */
@@ -766,6 +794,7 @@ body.overflow-expand .check-text {
   overflow: visible;
   z-index: 94000 !important;            /* 묶음 속 파일은 층을 글 칸(style)으로 받아서 !important */
 }
+.file-icon.renaming .file-icon-name { display: block; }   /* 두 줄 줄임(…)을 풀고 이름 칸만 */
 .file-rename-input {
   display: block;
   width: calc(100% + 20px * var(--zoom));
@@ -781,18 +810,27 @@ body.overflow-expand .check-text {
   text-shadow: none;
 }
 
-.file-icon.selected {
-  background: linear-gradient(135deg, rgba(100, 150, 200, 0.3) 0%, rgba(100, 180, 220, 0.2) 100%);
-  border: max(1px, calc(2px * var(--zoom))) solid rgba(100, 150, 200, 0.8);
-  box-shadow: 0 0 calc(12px * var(--zoom)) rgba(100, 150, 200, 0.4);
-}
-
 .file-icon-symbol {
+  position: relative;                    /* 잠금 자물쇠 자리 */
   font-size: 32px;
   margin-bottom: calc(4px * var(--zoom));
   display: block;
   line-height: 1;
 }
+/* 잠근 파일 (renderer/files.js toggleFileLock) — 그림 왼쪽 아래에 작은 자물쇠 (윈도우 바로 가기 화살표 같은 겹침 아이콘 자리)
+   크기는 그림(1em = 32px × 배율)에 맞춰 */
+.file-icon.locked .file-icon-symbol::after {
+  content: '';
+  position: absolute;
+  left: -0.14em;
+  bottom: -0.1em;
+  width: 0.47em;
+  height: 0.47em;
+  background: url('icons/file-lock.svg') center / contain no-repeat;
+  filter: drop-shadow(0 0.02em 0.04em rgba(0, 0, 0, 0.25));
+  pointer-events: none;
+}
+.file-icon.locked { cursor: default; }
 
 /* 파일 아이콘 그림 (윈도우 파일 아이콘) — 크기는 글자 크기(zoom)에 맞춰 */
 .file-icon-img {
@@ -811,15 +849,14 @@ body.overflow-expand .check-text {
   color: #333;
   word-break: break-word;
   white-space: normal;
+  display: -webkit-box;                  /* 두 줄을 넘으면 … (윈도우처럼 — 하나만 고르면 끝까지: .name-open) */
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   max-height: calc(30px * var(--zoom));
   overflow: hidden;
   text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
-body.theme-dark .file-icon {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.18);
-}
 body.theme-dark .file-icon-name {
   color: #E5E7EB;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);

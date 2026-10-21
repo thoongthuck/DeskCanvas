@@ -2,6 +2,7 @@
 //   판(boards.js)의 한 종류(kind: 'group')라서 판처럼 쪽지 · 파일보다 아래에 깔림
 //   머리를 잡고 끌면 묶음이 옮겨지고 담긴 파일도 함께 움직임. 오른쪽 아래 접힌 모서리로 크기를 바꿈
 //   담긴 파일은 묶음 안 칸에 차례로 놓임 (묶음의 fileIds 순서). 파일을 끌어다 놓으면 놓은 칸에 끼워 넣음
+//   담긴 폴더의 칸 가운데에 놓으면 끼워 넣지 않고 그 폴더에 넣음 (진짜 파일을 옮김 — files.js folderAt). 칸 양옆은 폴더 앞 · 뒤에 끼워 넣기
 //   담긴 파일의 x · y 는 늘 보이는 칸 자리로 맞춰 둠 → 찾기 · 미니맵 · 저장 · 묶음 풀기가 그대로 씀
 //   진짜 폴더가 아니라 화면에서만 묶음 (파일은 옮기지 않음)
 //   접으면 머리 한 줄만 남고 담긴 파일 그림이 작게 늘어섬 (그 자리에서 다시 펼침 — 창을 여는 폴더와 다름)
@@ -20,6 +21,7 @@ const START = { cols: 4, rows: 2 };                // 새 묶음 크기 (4칸 ×
 const SLIDE_MS = 180;                              // 칸이 밀리고 당겨지는 움직임 (styles.css .file-icon.settling)
 const FOLD_MS = 220;                               // 접고 펼 때 높이가 바뀌는 움직임 (styles/groups.css .folding)
 const PEEK = 6;                                    // 접었을 때 머리에 보이는 파일 그림 수 (나머지는 +N)
+const FOLDER_EDGE = 0.2;                           // 폴더 칸의 양옆 이만큼(칸 폭의 비율)은 그 앞 · 뒤에 끼워 넣기, 가운데는 폴더에 넣기
 
 const div = (className) => {
   const el = document.createElement('div');
@@ -96,9 +98,11 @@ export const groupMethods = {
     });
   },
 
-  // 잠근 묶음에 든 파일 — 묶음 잠금은 묶음 자체만 묶음 (옮기기 · 크기 · 풀기). 든 파일은 넣고 · 자리 바꾸고 · 뺄 수 있음 (사용자 요청)
-  //   Delete 키로 지우는 것만 여전히 막음 (selection.js deleteSelection — 바탕화면 파일이 휴지통으로 가므로)
+  // Delete 키로 지우지 않을 파일 (selection.js deleteSelection — 바탕화면 파일이 휴지통으로 가므로)
+  //   잠근 파일 (files.js toggleFileLock) · 잠근 묶음에 든 파일 — 묶음 잠금은 묶음 자체만 묶음 (옮기기 · 크기 · 풀기).
+  //   든 파일은 넣고 · 자리 바꾸고 · 뺄 수 있음 (사용자 요청)
   fileLocked(file) {
+    if (file.pinned) return true;
     const group = this.fileGroup(file);
     return !!(group && group.pinned);
   },
@@ -310,6 +314,7 @@ export const groupMethods = {
     const file = drag.item;
     const group = this.fileGroup(file);
     if (!group) return;
+    drag.fromIndex = group.fileIds.indexOf(file.id);     // 폴더에 못 넣으면 이 칸으로 돌아옴 (files.js moveFilesIntoFolder)
     group.fileIds = group.fileIds.filter(id => id !== file.id);
     drag.fromGroup = group.id;
     const el = document.getElementById(file.id);
@@ -355,12 +360,45 @@ export const groupMethods = {
   },
 
   // 마우스가 있는 칸 = 끼워 넣을 차례 (맨 뒤보다 뒤는 맨 뒤). 접힌 묶음은 맨 뒤로
+  //   폴더 칸의 오른쪽 가장자리는 그 폴더 뒤 (왼쪽 가장자리는 다른 칸처럼 그 앞 — 가운데는 폴더에 넣기라 여기 오지 않음)
   groupDropIndex(group, wx, wy) {
     if (group.collapsed) return group.fileIds.length;
     const { cols } = this.groupLayout(group);
     const col = Math.min(cols - 1, Math.max(0, Math.floor((wx - group.x - PAD.left) / CELL.width)));
     const row = Math.max(0, Math.floor((wy - group.y - HEAD) / CELL.height));
-    return Math.min(row * cols + col, group.fileIds.length);
+    const cell = this.groupCellAt(group, wx, wy);
+    const after = cell && cell.part > 0 && this.groupFolderIn(group, cell.index) ? 1 : 0;
+    return Math.min(row * cols + col + after, group.fileIds.length);
+  },
+
+  // 마우스가 있는 칸 { index, part } — 칸 밖(머리 · 옆 여백 · 접힌 묶음)이면 null
+  //   index: 빈칸 없이 줄 세운 차례 (fileIds 의 차례). 끼워 넣을 빈칸 때문에 밀려난 모습이 아니라 제자리 기준
+  //   part: 칸의 왼쪽 가장자리 -1 · 가운데 0 · 오른쪽 가장자리 1 (FOLDER_EDGE)
+  groupCellAt(group, wx, wy) {
+    if (group.collapsed) return null;
+    const { cols } = this.groupLayout(group);
+    const cx = (wx - group.x - PAD.left) / CELL.width;
+    const cy = (wy - group.y - HEAD) / CELL.height;
+    const col = Math.floor(cx);
+    if (cx < 0 || cy < 0 || col >= cols) return null;
+    const fx = cx - col;
+    return { index: Math.floor(cy) * cols + col, part: fx < FOLDER_EDGE ? -1 : fx > 1 - FOLDER_EDGE ? 1 : 0 };
+  },
+
+  // 묶음의 그 차례에 든 폴더 (폴더가 아니면 null)
+  groupFolderIn(group, index) {
+    const id = group.fileIds[index];
+    const file = id ? this.files.find(f => f.id === id) : null;
+    return file && file.isDir && file.path ? file : null;
+  },
+
+  // 그 자리(월드 좌표)의 묶음 속 폴더 — 폴더 칸의 가운데에 마우스가 있을 때 (그 폴더에 파일 넣기 — files.js folderAt)
+  //   끄는 동안에는 마우스가 있는 칸마다 끼워 넣을 빈칸이 생겨 그 칸의 파일이 한 칸 밀려남 → 보이는 자리로 따지면
+  //   폴더가 마우스 밑에 올 수 없음. 그래서 제자리(빈칸이 없을 때의 칸)로 따짐: 폴더 칸 가운데에 오면 빈칸이 닫히고
+  //   (updateGroupDropTarget none) 폴더가 제자리에서 파랗게 됨
+  groupFolderAt(group, wx, wy) {
+    const cell = this.groupCellAt(group, wx, wy);
+    return cell && !cell.part ? this.groupFolderIn(group, cell.index) : null;
   },
 
   // 놓았을 때: 묶음 위면 그 차례에 넣고 칸으로 미끄러져 들어감 → true (아니면 false — 낱개 파일로 남음)
@@ -614,8 +652,9 @@ export const groupMethods = {
   },
 
   // 파일 메뉴의 묶음 항목: 묶음에 넣기 › (다른 묶음 · 새 묶음) · 묶음에서 빼기
-  //   잠근 묶음도 넣을 곳으로 고를 수 있고, 잠근 묶음에 든 파일도 다른 묶음으로 옮기거나 뺄 수 있음
+  //   잠근 묶음도 넣을 곳으로 고를 수 있고, 잠근 묶음에 든 파일도 다른 묶음으로 옮기거나 뺄 수 있음. 잠근 파일은 제자리라 없음
   fileGroupMenuItems(file) {
+    if (file.pinned) return [];
     const current = this.fileGroup(file);
     const items = [{
       icon: 'add-group.svg', label: t('menu.putInGroup'), arrow: true,

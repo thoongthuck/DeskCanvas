@@ -213,7 +213,15 @@ export const photoMethods = {
     });
 
     // 틀이 있는 사진(종이 · 테이프 · 압정)을 두 번 누르면 캡션 쓰기
+    //   고정한 사진 · 영상은 바탕처럼 — 빈 곳을 두 번 누른 것과 같이 쪽지 추가 창 (그 위에 쪽지를 붙이게. 캡션은 우클릭 메뉴로)
     el.addEventListener('dblclick', (e) => {
+      if (photo.pinned) {
+        if (e.target.closest('.video-btn, .photo-caption-input')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.openDesktopMenu(e.clientX, e.clientY);
+        return;
+      }
       if (!this.photoHasCaptionRoom(photo) || e.target.closest('.photo-resize, .photo-caption-input')) return;
       e.preventDefault();
       this.editPhotoCaption(photo);

@@ -232,12 +232,15 @@ export const menuMethods = {
     this.openContextMenu(this.fileMenuItems(file, { fallback: true }), x, y);
   },
 
-  // 파일 메뉴의 앱 줄 — 묶음에 넣기 › · 묶음에서 빼기 (groups.js) · 연결선 잇기 · 지우기 (links.js)
+  // 파일 메뉴의 앱 줄 — 묶음에 넣기 › · 묶음에서 빼기 (groups.js) · 파일 잠금 (files.js) · 연결선 잇기 · 지우기 (links.js)
   //   끌어다 놓은 파일(바탕화면 밖)은 '아이콘 지우기' (파일은 그대로). 지우기 · 휴지통은 윈도우 메뉴에 있음
   //   fallback: 윈도우 메뉴를 못 띄울 때 — 바탕화면 파일은 휴지통으로 보내기도
+  //   잠근 파일: 쪽지로 바꾸기(파일이 휴지통으로 감) · 묶음 · 지우기 줄은 빼고 잠금 풀기만
   fileMenuItems(file, { fallback = false } = {}) {
-    const items = [...this.fileMediaMenuItems([file]), ...this.fileGroupMenuItems(file), ...this.linkMenuItems(file.id),   // 이미지 · 영상 쪽지로 (file-media.js)
-      ...this.layerMenuItems(file.id)];                                                                                     // 순서 › (layer-order.js)
+    const items = [...(file.pinned ? [] : this.fileMediaMenuItems([file])), ...this.fileGroupMenuItems(file),   // 이미지 · 영상 쪽지로 (file-media.js)
+      { icon: 'pin.svg', label: t(file.pinned ? 'menu.unlockFile' : 'menu.lockFile'), key: 'Ctrl+Shift+L', action: () => this.toggleFileLock(file) },
+      ...this.linkMenuItems(file.id), ...this.layerMenuItems(file.id)];                                                    // 순서 › (layer-order.js)
+    if (file.pinned) return items;
     const remove = file.source !== 'desktop'
       ? { icon: 'close.svg', label: t('menu.removeIcon'), action: () => this.deleteFile(file.id) }
       : fallback ? { icon: 'trash.svg', label: t('menu.trash'), action: () => this.trashDesktopFile(file), danger: true } : null;

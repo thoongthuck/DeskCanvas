@@ -3,18 +3,24 @@
 //   잇기: 우클릭 › '연결선 잇기' 뒤 이을 것을 누름 · Alt 를 누른 채 끌어 다른 것 위에 놓기
 //         · 여럿 고르고 Ctrl+L — 처음 고른 것(가운데 주제)에 나머지를 하나씩 이음
 //   선을 누르면 고름 → Delete 로 지우기, 선 우클릭 › 지우기. 이은 것이 없어지면 선도 그리지 않고 저장할 때 버림
+//   선을 두 번 누르거나 우클릭하면 수정 메뉴 (모양 · 색 · 굵기 · 연결 위치 · 지우기 — openLinkMenu)
 //   그리기: 판 바로 뒤에 둔 SVG 한 장 (#link-layer) — 판 위 · 쪽지 · 사진 · 파일 아래.
 //     두 물건의 마주 보는 변 가운데를 잇는 곡선 + 양 끝 점. 접힌 파일 묶음 속 파일은 묶음에, 다른 달에 붙어 숨은 쪽지는 선도 숨김
 //   모양: 곡선 · 직선 — 설정 '연결선 모양'이 기본, 선마다 우클릭으로 바꿀 수 있음 (link.style)
 //   색: 선 우클릭 › '선 색 ›' — 기본(회색) + 5색 + 직접 고르기 (쪽지 스타일 창과 같은 점 · 고르개)
+//   굵기: 선 우클릭 › '선 굵기 ›' — 가늘게 · 보통 · 굵게 · 아주 굵게. 설정 '연결선 굵기'가 기본 (link.width)
 //   이은 자리: 보통은 마주 보는 변 가운데 (자동). 선을 고르면 양 끝에 손잡이 → 끌어 테두리 위 원하는 자리에 고정
 //     (물건을 옮기거나 크기를 바꿔도 그 변의 같은 비율 자리). 손잡이 두 번 누르기 · 선 우클릭 › '연결 위치 자동으로' 로 되돌림
+//     사진 · 영상 · 캘린더 · 연대표는 안쪽에도 고정 (사진 속 한 곳 · 캘린더의 한 날짜를 가리키게) — 테두리에서 조금 들어오면 안쪽 자리
+//     사진처럼 선 층보다 위에 있는 물건의 안쪽에 고정한 선은 그 물건 바로 뒤의 작은 층(.link-float)에 그려 물건 위로 보이게 (linkHost)
 //   this.links = [{ id, a, b, style?, color?, customColor?, anchorA?, anchorB? }] — a · b 는 물건 id (방향 없음)
 //     color: LINK_COLORS 의 이름 · 'custom'(customColor 에 #RRGGBB). 없으면 기본 색
-//     anchorA · anchorB: a · b 쪽 끝을 고정한 자리 { side: 'top'|'right'|'bottom'|'left', t: 변 위 비율 0~1 }. 없으면 자동
+//     width: LINK_WIDTHS 의 키. 없으면 설정 '연결선 굵기'
+//     anchorA · anchorB: a · b 쪽 끝을 고정한 자리 { side: 'top'|'right'|'bottom'|'left', t: 변 위 비율 0~1 }
+//       · 안쪽 { side: 'inside', u, v } (네모 안 가로 · 세로 비율 0~1). 없으면 자동
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
-import { LINK_COLORS, LINK_COLOR_ORDER, LINK_CUSTOM_DEFAULT } from './constants.js';
+import { LINK_COLORS, LINK_COLOR_ORDER, LINK_CUSTOM_DEFAULT, LINK_WIDTHS, LINK_WIDTH_ORDER } from './constants.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ITEM_SELECTOR = '.sticky-note, .canvas-photo, .file-icon, .board';
@@ -24,9 +30,12 @@ const SIDES = ['top', 'right', 'bottom', 'left'];
 const NORMAL = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] };   // 변에서 바깥쪽 — 곡선이 뻗어 나가는 방향
 const ANCHOR_T_MIN = 0.08;
 const ANCHOR_T_MAX = 0.92;
-const ANCHOR_SNAP_PX = 8;          // 변 가운데에서 이만큼(화면 px) 안이면 가운데에 붙음
+const ANCHOR_SNAP_PX = 8;          // 변 가운데에서 이만큼(화면 px) 안이면 가운데에 붙음 (안쪽 자리는 한가운데에)
+const INSIDE_EDGE_PX = 10;         // 안쪽 자리를 쓸 수 있는 것: 테두리에서 이만큼(화면 px, 폭 · 높이의 1/4 까지) 들어와야 안쪽
+const LINK_LAYER_Z = 2000;         // 선 층 (styles/links.css #link-layer) — 이보다 위 층인 물건의 안쪽 끝은 .link-float 에
 
-function sidePoint(r, { side, t }) {
+function sidePoint(r, { side, t, u, v }) {
+  if (side === 'inside') return { x: r.x + r.width * u, y: r.y + r.height * v };   // 안쪽 자리
   if (side === 'top') return { x: r.x + r.width * t, y: r.y };
   if (side === 'bottom') return { x: r.x + r.width * t, y: r.y + r.height };
   if (side === 'left') return { x: r.x, y: r.y + r.height * t };
@@ -57,7 +66,23 @@ function nearestAnchor(r, x, y) {
   return { side: best.side, t: Math.round(best.t * 1000) / 1000 };
 }
 
+// 끈 자리(x, y) → 고정할 자리. inside: 안쪽에도 고정할 수 있는 것 — 테두리에서 조금 들어오면 { side: 'inside', u, v }
+//   (판 막대처럼 얇으면 들어올 몫도 얇게 — 폭 · 높이의 1/4 까지). 한가운데 가까이면 한가운데에 붙음
+function anchorAt(r, x, y, inside) {
+  const ex = Math.min(INSIDE_EDGE_PX, r.width / 4);
+  const ey = Math.min(INSIDE_EDGE_PX, r.height / 4);
+  if (!inside || x <= r.x + ex || x >= r.x + r.width - ex || y <= r.y + ey || y >= r.y + r.height - ey) return nearestAnchor(r, x, y);
+  let u = (x - r.x) / r.width;
+  let v = (y - r.y) / r.height;
+  if (Math.hypot((u - 0.5) * r.width, (v - 0.5) * r.height) < ANCHOR_SNAP_PX) u = v = 0.5;
+  return { side: 'inside', u: Math.round(u * 1000) / 1000, v: Math.round(v * 1000) / 1000 };
+}
+
 function cleanAnchor(v) {
+  const unit = (n) => typeof n === 'number' && isFinite(n);
+  if (v && v.side === 'inside' && unit(v.u) && unit(v.v)) {
+    return { side: 'inside', u: Math.min(1, Math.max(0, v.u)), v: Math.min(1, Math.max(0, v.v)) };
+  }
   if (!v || !SIDES.includes(v.side) || typeof v.t !== 'number' || !isFinite(v.t)) return null;
   return { side: v.side, t: Math.min(ANCHOR_T_MAX, Math.max(ANCHOR_T_MIN, v.t)) };
 }
@@ -113,7 +138,7 @@ function straightGeometry(a, b) {
 }
 
 // 한쪽이라도 끝 자리를 고정한 선 — 고정한 끝은 그 자리, 아닌 끝은 상대 끝을 바라보는 변 가운데 (곡선) · 테두리 교점 (직선)
-//   곡선은 각 끝의 변에서 바깥쪽으로 뻗어 나감
+//   곡선은 각 끝의 변에서 바깥쪽으로 뻗어 나감. 안쪽에 고정한 끝은 상대 쪽을 바라보는 변 방향으로 뻗어 나감
 function anchoredGeometry(a, b, anchorA, anchorB, style, zoom) {
   const f = (v) => Math.round(v * 10) / 10;
   const dot = (p) => ({ x: p.x, y: p.y, width: 0, height: 0 });
@@ -125,8 +150,9 @@ function anchoredGeometry(a, b, anchorA, anchorB, style, zoom) {
     const q = fixedB || edgePoint(b, fixedA || center(a));
     return { ax: f(p.x), ay: f(p.y), bx: f(q.x), by: f(q.y), d: `M${f(p.x)} ${f(p.y)} L${f(q.x)} ${f(q.y)}` };
   }
-  const sideA = anchorA ? anchorA.side : facingSide(a, fixedB ? dot(fixedB) : b);
-  const sideB = anchorB ? anchorB.side : facingSide(b, fixedA ? dot(fixedA) : a);
+  const edge = (anchor) => anchor && anchor.side !== 'inside';
+  const sideA = edge(anchorA) ? anchorA.side : facingSide(a, fixedB ? dot(fixedB) : b);
+  const sideB = edge(anchorB) ? anchorB.side : facingSide(b, fixedA ? dot(fixedA) : a);
   const p = fixedA || sidePoint(a, { side: sideA, t: 0.5 });
   const q = fixedB || sidePoint(b, { side: sideB, t: 0.5 });
   const k = Math.max(Math.hypot(q.x - p.x, q.y - p.y) * 0.4, 24 * zoom);
@@ -178,6 +204,12 @@ export const linkMethods = {
       e.stopPropagation();
       this.startLinking(id, { drag: true, x: e.clientX, y: e.clientY });
     }, true);
+  },
+
+  // 끝을 안쪽에도 고정할 수 있는 것 — 사진 · 영상 · 캘린더 · 연대표 (가리킬 곳이 안에 있음)
+  linkInsideOk(id) {
+    const entry = this.linkEntry(id);
+    return !!entry && (entry.kind === 'photo' || (entry.kind === 'board' && entry.item.kind !== 'group'));
   },
 
   // 그 요소가 속한 물건 id — 이을 수 있는 것(쪽지 · 사진 · 파일 · 파일 묶음 · 캘린더 · 연대표)만
@@ -266,6 +298,7 @@ export const linkMethods = {
     }).map(l => {
       const link = { id: typeof l.id === 'string' ? l.id : this.newId('link'), a: l.a, b: l.b };
       if (l.style === 'curve' || l.style === 'straight') link.style = l.style;
+      if (LINK_WIDTHS[l.width]) link.width = l.width;
       if (l.color === 'custom' && /^#[0-9a-f]{6}$/i.test(String(l.customColor))) {
         link.color = 'custom';
         link.customColor = l.customColor.toUpperCase();
@@ -291,6 +324,39 @@ export const linkMethods = {
     this.record();
     link.style = style;
     this.scheduleSave();
+  },
+
+  // 선 굵기 — 선마다 정한 것, 없으면 설정 '연결선 굵기' (키 · 월드 px)
+  linkWidthOf(link) {
+    const own = link && link.width;
+    if (LINK_WIDTHS[own]) return own;
+    const s = this.settings && this.settings.linkWidth;
+    return LINK_WIDTHS[s] ? s : 'normal';
+  },
+
+  linkWidthPx(link) {
+    return LINK_WIDTHS[this.linkWidthOf(link)];
+  },
+
+  setLinkWidth(id, key) {
+    const link = this.links.find(l => l.id === id);
+    if (!link || !LINK_WIDTHS[key] || link.width === key) return;
+    this.record();
+    link.width = key;
+    this.requestLinks();
+    this.scheduleSave();
+  },
+
+  // 선 굵기를 그 선의 SVG 묶음에 (선 · 누르는 자리 굵기 · 끝 점 크기) — 바뀔 때만
+  //   w: 월드 px. 보통(2)일 때 예전 값과 같음: 선 max(1, 2z) · 누르는 자리 max(10, 14z) · 끝 점 max(2.5, 4z)
+  applyLinkWidth(parts, w) {
+    const z = this.zoom;
+    const key = `${w}@${z}`;
+    if (parts.widthKey === key) return;
+    parts.widthKey = key;
+    parts.el.style.setProperty('--link-w', `${Math.max(1, w * z)}px`);
+    parts.el.style.setProperty('--link-hit-w', `${Math.max(10, (w + 12) * z)}px`);
+    parts.dotR = Math.max(2.5, (2 + w) * z);
   },
 
   // 선 색 — 이름('gray' 는 기본) · 실제 색 (#RRGGBB, 기본이면 null — CSS 가 배경에 맞춰 정함)
@@ -380,6 +446,7 @@ export const linkMethods = {
 
   // ---- 이은 자리 옮기기 · 고정 ----
   // 고른 선의 끝 손잡이를 누름 — 끌면 그 물건 테두리 위 가장 가까운 자리로 (end: 'a' · 'b')
+  //   사진 · 영상 · 캘린더 · 연대표는 테두리에서 안으로 들어오면 그 안쪽 자리로 (anchorAt)
   startAnchorDrag(e, end) {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -388,6 +455,7 @@ export const linkMethods = {
     if (!link) return;
     const key = end === 'a' ? 'anchorA' : 'anchorB';
     const itemId = link[end];
+    const inside = this.linkInsideOk(itemId);
     let recorded = false;
     document.body.classList.add('link-anchoring');
     const move = (ev) => {
@@ -397,7 +465,7 @@ export const linkMethods = {
         this.record();                                    // 되돌리기 한 번에 옮기기 전 자리로
         recorded = true;
       }
-      link[key] = nearestAnchor(r, ev.clientX, ev.clientY);
+      link[key] = anchorAt(r, ev.clientX, ev.clientY, inside);
       this.requestLinks();
     };
     const up = () => {
@@ -456,7 +524,7 @@ export const linkMethods = {
         layer.appendChild(h);
       });
     }
-    const r = Math.max(4.5, 6 * this.zoom);
+    const r = Math.max(4.5, (4 + this.linkWidthPx(link)) * this.zoom);   // 굵은 선은 손잡이도 크게 (보통: 6z)
     [...layer.children].forEach(h => {
       const end = h.dataset.end;
       h.setAttribute('cx', end === 'a' ? geo.ax : geo.bx);
@@ -574,6 +642,7 @@ export const linkMethods = {
     layer = svg('svg');
     layer.id = 'link-layer';
     layer.linkEls = new Map();
+    layer.floatEls = new Map();                            // 선 id → 물건 바로 뒤의 작은 층 (linkHost)
     const boards = this.uiLayer.querySelectorAll(':scope > .board');
     if (boards.length) boards[boards.length - 1].after(layer);
     else this.uiLayer.prepend(layer);
@@ -599,6 +668,38 @@ export const linkMethods = {
     return { x: r.x * z + this.panX, y: r.y * z + this.panY, width: r.width * z, height: r.height * z };
   },
 
+  // 선을 그릴 SVG — 보통은 선 층. 끝을 물건 안쪽에 고정했고 그 물건이 선 층보다 위 층이면 (사진 · 영상 · 고른 판)
+  //   그 물건 바로 뒤에 둔 작은 층(.link-float, 같은 층 번호)에 → 물건 위로 그려져 가리킨 곳이 보이고, 그 물건보다 앞의 것에는 가려짐
+  //   양 끝이 다 그렇다면 더 위에 있는 물건 쪽에
+  linkHost(link, layer) {
+    let top = null;
+    let z = LINK_LAYER_Z;
+    ['a', 'b'].forEach(end => {
+      const anchor = link[end === 'a' ? 'anchorA' : 'anchorB'];
+      if (!anchor || anchor.side !== 'inside') return;
+      const el = document.getElementById(link[end]);
+      const layerZ = el ? parseInt(getComputedStyle(el).zIndex, 10) : NaN;
+      if (layerZ > z) {
+        z = layerZ;
+        top = el;
+      }
+    });
+    let float = layer.floatEls.get(link.id);
+    if (!top) {
+      if (float) float.remove();
+      layer.floatEls.delete(link.id);
+      return layer;
+    }
+    if (!float) {
+      float = svg('svg', 'link-float');
+      layer.floatEls.set(link.id, float);
+    }
+    if (top.nextSibling !== float) top.after(float);
+    float.style.zIndex = String(z);
+    ['--link-w', '--link-hit-w', '--link-ring-w', '--link-shadow-y', '--link-shadow-blur'].forEach(k => float.style.setProperty(k, layer.style.getPropertyValue(k)));
+    return float;
+  },
+
   createLinkElement(link) {
     const el = svg('g', 'link');
     const line = svg('path', 'link-line');
@@ -611,27 +712,38 @@ export const linkMethods = {
       e.stopPropagation();
       this.selectLink(link.id);
     });
-    hit.addEventListener('contextmenu', (e) => {
+    const openMenu = (e) => {                              // 우클릭 · 두 번 누르기 — 같은 수정 메뉴
       e.preventDefault();
       e.stopPropagation();
       this.selectLink(link.id);
-      const straight = this.linkStyleOf(this.links.find(l => l.id === link.id)) === 'straight';
-      this.openContextMenu([
-        straight
-          ? { icon: 'menu-connect.svg', label: t('menu.linkCurve'), action: () => this.setLinkStyle(link.id, 'curve') }
-          : { icon: 'menu-straight.svg', label: t('menu.linkStraight'), action: () => this.setLinkStyle(link.id, 'straight') },
-        { icon: 'palette.svg', label: t('menu.linkColor'), arrow: true, panel: (menu, row) => this.openLinkColorPanel(menu, row, link.id) },
-        ...(() => {
-          const cur = this.links.find(l => l.id === link.id);
-          return cur && (cur.anchorA || cur.anchorB)
-            ? [{ icon: 'style-reset.svg', label: t('menu.linkAutoAnchor'), action: () => this.resetLinkAnchors(link.id) }]
-            : [];
-        })(),
-        { separator: true },
-        { icon: 'trash.svg', label: t('menu.deleteLink'), danger: true, action: () => this.deleteLink(link.id) },
-      ], e.clientX, e.clientY);
-    });
+      this.openLinkMenu(link.id, e.clientX, e.clientY);
+    };
+    hit.addEventListener('contextmenu', openMenu);
+    hit.addEventListener('dblclick', openMenu);
     return { el, line, dotA, dotB, hit };
+  },
+
+  // 선 수정 메뉴 — 곡선 · 직선 / 선 색 › / 선 굵기 › / (고정했으면) 연결 위치 자동으로 / 지우기
+  openLinkMenu(id, x, y) {
+    const link = this.links.find(l => l.id === id);
+    if (!link) return;
+    const straight = this.linkStyleOf(link) === 'straight';
+    const now = this.linkWidthOf(link);
+    this.openContextMenu([
+      straight
+        ? { icon: 'menu-connect.svg', label: t('menu.linkCurve'), action: () => this.setLinkStyle(link.id, 'curve') }
+        : { icon: 'menu-straight.svg', label: t('menu.linkStraight'), action: () => this.setLinkStyle(link.id, 'straight') },
+      { icon: 'palette.svg', label: t('menu.linkColor'), arrow: true, panel: (menu, row) => this.openLinkColorPanel(menu, row, link.id) },
+      {                                                    // 선 굵기 › 가늘게 · 보통 · 굵게 · 아주 굵게
+        icon: 'menu-line-width.svg', label: t('menu.linkWidth'), arrow: true,
+        submenu: LINK_WIDTH_ORDER.map(key => ({ label: t(`linkWidth.${key}`), current: now === key, action: () => this.setLinkWidth(link.id, key) })),
+      },
+      ...(link.anchorA || link.anchorB
+        ? [{ icon: 'style-reset.svg', label: t('menu.linkAutoAnchor'), action: () => this.resetLinkAnchors(link.id) }]
+        : []),
+      { separator: true },
+      { icon: 'trash.svg', label: t('menu.deleteLink'), danger: true, action: () => this.deleteLink(link.id) },
+    ], x, y);
   },
 
   drawLinks() {
@@ -641,18 +753,20 @@ export const linkMethods = {
     layer.style.setProperty('--link-w', `${Math.max(1, 2 * z)}px`);
     layer.style.setProperty('--link-hit-w', `${Math.max(10, 14 * z)}px`);
     layer.style.setProperty('--link-ring-w', `${Math.max(1, 1.5 * z)}px`);
+    layer.style.setProperty('--link-shadow-y', `${Math.max(1.5, 3 * z)}px`);     // 고른 선의 그림자 (styles/links.css)
+    layer.style.setProperty('--link-shadow-blur', `${Math.max(2, 4 * z)}px`);
     const r = Math.max(2.5, 4 * z);
     const els = layer.linkEls;
     const seen = new Set();
-    const place = (parts, geo) => {
+    const place = (parts, geo, radius = r) => {
       parts.line.setAttribute('d', geo.d);
       if (parts.hit) parts.hit.setAttribute('d', geo.d);
       parts.dotA.setAttribute('cx', geo.ax);
       parts.dotA.setAttribute('cy', geo.ay);
       parts.dotB.setAttribute('cx', geo.bx);
       parts.dotB.setAttribute('cy', geo.by);
-      parts.dotA.setAttribute('r', r);
-      parts.dotB.setAttribute('r', r);
+      parts.dotA.setAttribute('r', radius);
+      parts.dotB.setAttribute('r', radius);
     };
 
     this.links.forEach(link => {
@@ -664,10 +778,12 @@ export const linkMethods = {
         parts = this.createLinkElement(link);
         els.set(link.id, parts);
       }
-      if (parts.el.parentNode !== layer) layer.appendChild(parts.el);
+      const host = this.linkHost(link, layer);            // 보통은 선 층, 사진 · 고른 판 안쪽에 고정한 선은 그 물건 위 (linkHost)
+      if (parts.el.parentNode !== host) host.appendChild(parts.el);
       seen.add(link.id);
       parts.geo = this.linkShape(ra, rb, this.linkStyleOf(link), link);
-      place(parts, parts.geo);
+      this.applyLinkWidth(parts, this.linkWidthPx(link));  // 선마다 굵기 (보통이면 예전과 같음)
+      place(parts, parts.geo, parts.dotR);
       const color = this.linkColorValue(link);
       if (color !== parts.color) {                         // 색을 정한 선: --link-color (styles/links.css .link.colored)
         parts.color = color;
@@ -675,13 +791,17 @@ export const linkMethods = {
         if (color) parts.el.style.setProperty('--link-color', color);
         else parts.el.style.removeProperty('--link-color');
       }
-      parts.el.classList.toggle('selected', this.selectedLinkId === link.id);
-      parts.el.classList.toggle('related', this.selection.has(link.a) || this.selection.has(link.b));
+      parts.el.classList.toggle('selected', this.selectedLinkId === link.id);   // 고르면 진하게 (styles/links.css) — 이은 것을 골라도 선은 그대로
     });
     els.forEach((parts, id) => {
       if (seen.has(id)) return;
       parts.el.remove();
       els.delete(id);
+    });
+    layer.floatEls.forEach((float, id) => {               // 안 그린 선 · 선 층으로 돌아간 선의 작은 층은 치움
+      if (seen.has(id) && float.firstChild) return;
+      float.remove();
+      layer.floatEls.delete(id);
     });
     const chosen = !this.linking && this.selectedLinkId && this.links.find(l => l.id === this.selectedLinkId);
     this.drawLinkHandles(chosen && els.has(chosen.id) ? chosen : null, chosen && els.get(chosen.id) ? els.get(chosen.id).geo : null);
@@ -702,6 +822,7 @@ export const linkMethods = {
     }
     layer.appendChild(temp.el);
     const target = this.linking.target && this.linkRect(this.linking.target);
-    place(temp, this.linkShape(from, target || { x: this.linking.x, y: this.linking.y, width: 0, height: 0 }, this.linkStyleOf(null)));
+    this.applyLinkWidth(temp, this.linkWidthPx(null));    // 새 선은 설정 '연결선 굵기'
+    place(temp, this.linkShape(from, target || { x: this.linking.x, y: this.linking.y, width: 0, height: 0 }, this.linkStyleOf(null)), temp.dotR);
   },
 };

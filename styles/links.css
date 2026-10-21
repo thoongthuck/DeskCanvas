@@ -1,7 +1,8 @@
 /* ===== 연결선 — 쪽지 · 사진 · 파일 · 파일 묶음 사이 곡선 (renderer/links.js, 아이콘_가이드.md 16장) =====
    판 바로 뒤에 둔 SVG 한 장이라 판 위 · 쪽지 · 사진 · 파일 아래에 그려짐.
-   굵기는 zoom 을 곱해 renderer 가 --link-w · --link-hit-w · --link-ring-w 로 넣어 줌 */
-#link-layer {
+   굵기 · 그림자 거리는 zoom 을 곱해 renderer 가 --link-w · --link-hit-w · --link-ring-w · --link-shadow-y · --link-shadow-blur 로 넣어 줌 */
+#link-layer,
+.link-float {
   position: absolute;
   left: 0;
   top: 0;
@@ -11,15 +12,18 @@
   pointer-events: none;
   z-index: 2000;                         /* 판 · 파일 묶음 위, 파일 · 쪽지 · 사진 아래 (styles/boards.css 머리 설명) */
   --link: #A3AEBF;
-  --link-strong: #6E7C93;
-  --link-selected: #4A99EB;
+  --link-selected: #4A99EB;               /* 잇는 중인 점선 */
   --link-ring: #f5f5f5;
+  --link-shadow: rgba(31, 47, 69, 0.5);    /* 고른 선의 그림자 */
 }
 
-body.theme-dark #link-layer {
+/* .link-float: 사진 · 영상 · 고른 판의 안쪽에 끝을 고정한 선 — 그 물건 바로 뒤에 두고 층 번호를 같게 (renderer/links.js linkHost) */
+
+body.theme-dark #link-layer,
+body.theme-dark .link-float {
   --link: rgba(229, 231, 235, 0.34);
-  --link-strong: rgba(229, 231, 235, 0.72);
   --link-ring: #1F252C;
+  --link-shadow: rgba(0, 0, 0, 0.8);
 }
 
 .link-line {
@@ -46,30 +50,23 @@ body.theme-dark #link-layer {
   cursor: pointer;
 }
 
-/* 마우스를 올렸거나 이은 것을 골랐을 때 진하게, 선을 골랐을 때 파랗게 */
-.link:hover .link-line,
-.link.related .link-line { stroke: var(--link-strong); }
-.link:hover .link-dot,
-.link.related .link-dot { fill: var(--link-strong); }
-.link.selected .link-line {
-  stroke: var(--link-selected);
-  stroke-width: calc(var(--link-w, 2px) * 1.5);
+/* 평소에는 원래 색 그대로 (이은 쪽지 · 사진을 골라도 바뀌지 않음). 마우스를 올리면 조금 밝게 (흰색을 섞음),
+   선을 고르면 색은 그대로 1.5배 굵게 + 뒤에 그림자 (떠오른 것처럼) */
+.link {
+  --link-hover: color-mix(in srgb, var(--link) 70%, #FFFFFF);
+  transition: filter 0.15s ease;
 }
-.link.selected .link-dot { fill: var(--link-selected); }
+.link:not(.selected):hover .link-line { stroke: var(--link-hover); }
+.link:not(.selected):hover .link-dot { fill: var(--link-hover); }
+.link.selected { filter: drop-shadow(0 var(--link-shadow-y, 2px) var(--link-shadow-blur, 3px) var(--link-shadow)); }
+.link.selected .link-line { stroke-width: calc(var(--link-w, 2px) * 1.5); }
+/* 고르는 순간은 바로 (마우스를 올려 밝아진 색에서 원래 색 · 그림자로 넘어가는 움직임 없이). 마우스를 올리고 내릴 때 · 풀 때만 부드럽게 */
+.link.selected,
+.link.selected .link-line,
+.link.selected .link-dot { transition: none; }
 
-/* 색을 정한 선 (선 우클릭 › 선 색) — 그 색으로, 올리거나 이은 것을 고르면 조금 진하게.
-   고르면 파랗게 바꾸지 않고 그 색 그대로 굵게 + 끝 점에 파란 테두리 (고른 색이 보이게) */
-.link.colored {
-  --link: var(--link-color);
-  --link-strong: color-mix(in srgb, var(--link-color) 78%, #1F2F45);
-}
-body.theme-dark .link.colored { --link-strong: color-mix(in srgb, var(--link-color) 78%, #FFFFFF); }
-.link.colored.selected .link-line { stroke: var(--link-color); }
-.link.colored.selected .link-dot {
-  fill: var(--link-color);
-  stroke: var(--link-selected);
-  stroke-width: calc(var(--link-ring-w, 1.5px) * 1.6);
-}
+/* 색을 정한 선 (선 우클릭 › 선 색) — 그 색으로 */
+.link.colored { --link: var(--link-color); }
 
 /* 선 색 고르는 창 — 쪽지 스타일 창(styles/style-panel.css)과 같은 틀 · 점. 점 7개(기본 + 5색 + 직접 고르기) 만큼 좁게 */
 #style-panel.link-color-panel { width: auto; }

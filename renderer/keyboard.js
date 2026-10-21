@@ -79,6 +79,11 @@ export const keyboardMethods = {
       this.groupSelectedFiles();
       return;
     }
+    if (ctrl && key === 'l' && e.shiftKey && !typing) {   // 고른 것 고정 · 잠금 / 풀기 (selection.js)
+      e.preventDefault();
+      this.toggleSelectionLock();
+      return;
+    }
     if (ctrl && key === 'l' && !typing) {                 // 처음 고른 것에 나머지를 연결선으로 (links.js)
       e.preventDefault();
       this.connectSelection();
@@ -87,6 +92,22 @@ export const keyboardMethods = {
     if (ctrl && key === 'm') {                            // 미니맵 켜기 · 끄기
       e.preventDefault();
       this.toggleMinimap();
+      return;
+    }
+    // 숫자: Ctrl + 1~9 저장한 자리로 (비어 있으면 알림만) · Ctrl + Alt + 1~9 지금 화면을 그 번호에 저장 (view.js)
+    //   0 은 원점 — Ctrl + 0 원점으로 · Ctrl + Alt + 0 지금 화면을 원점으로. 키 자리 이름(code)으로 봄 (배열에 따라 글자가 달라도)
+    const digit = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
+    if (ctrl && digit && !e.shiftKey) {
+      e.preventDefault();
+      const n = digit[1];
+      if (n === '0') {
+        if (e.altKey) this.setHomeHere();
+        else this.goHome();
+      } else if (e.altKey) {
+        this.saveSpot(n);
+      } else {
+        this.goToSpot(n);
+      }
       return;
     }
     if (ctrl && (key === '0' || key === 'home')) {        // 원점으로 (정해 둔 화면 · 없으면 처음 자리 100%, view.js)

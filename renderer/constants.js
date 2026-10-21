@@ -43,6 +43,9 @@ export const LINK_COLORS = {
 };
 export const LINK_COLOR_ORDER = ['gray', 'yellow', 'pink', 'blue', 'green', 'purple'];
 export const LINK_CUSTOM_DEFAULT = '#E0736C';     // 직접 고르기 창을 처음 열 때
+// 연결선 굵기 (월드 px — 확대 배율을 곱해 그림, links.js). 보통 2 가 예전 굵기
+export const LINK_WIDTHS = { thin: 1, normal: 2, thick: 3.5, bold: 5 };
+export const LINK_WIDTH_ORDER = ['thin', 'normal', 'thick', 'bold'];
 
 // 쪽지 글자 색 (가이드 8-1)
 export const INK_COLORS = {
@@ -108,6 +111,7 @@ export const DEFAULT_SETTINGS = {
   videoSound: false,         // 새 영상 소리 켜고 시작
   videoAutoplay: true,       // 새 영상 바로 재생 (끄면 멈춘 채로)
   linkStyle: 'curve',        // 연결선 모양 — 'curve' | 'straight' (선마다 따로 정할 수도 있음, links.js)
+  linkWidth: 'normal',       // 연결선 굵기 — LINK_WIDTHS 의 키 (선마다 따로 정할 수도 있음, links.js)
   noteColor: 'random',       // 'random' | 색 이름 | 'custom'
   noteCustomColor: '#BFD7F5',
   noteSize: 'small',         // NEW_NOTE_SIZES 의 키
