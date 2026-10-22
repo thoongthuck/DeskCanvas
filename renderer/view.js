@@ -325,7 +325,7 @@ export const viewMethods = {
     el.style.width = `${r.width * this.zoom}px`;
     el.style.height = `${r.height * this.zoom}px`;
     el.style.setProperty('--zoom', this.zoom);      // 아이콘·글자·여백·접힘도 같은 배율로
-    this.applyItemOrder(el, note);                  // 순서 (layer-order.js)
+    this.applyItemOrder(el, note, 'note');                  // 순서 (layer-order.js)
     this.applyBoardState(el, note);
     this.requestLinks();                            // 연결선도 따라감 (links.js)
   },
@@ -355,7 +355,7 @@ export const viewMethods = {
       this.refreshFallbackIcon(el, file);             // 묶음 종이 색에 맞는 기본 그림 (files.js useFallbackIcon)
     }
     el.classList.toggle('group-lifted', !!(slot && this.groupSelected(slot.group)));   // 묶음이 골라져 떠오름 (groups.css)
-    this.applyItemOrder(el, file);                    // 순서 (layer-order.js)
+    this.applyItemOrder(el, file, 'file');                    // 순서 (layer-order.js)
     this.applyFileLayer(el, file, slot);              // 묶음 속이면 묶음 바로 위 층 (groups.js)
     el.style.left = `${file.x * this.zoom + this.panX}px`;
     el.style.top = `${file.y * this.zoom + this.panY}px`;

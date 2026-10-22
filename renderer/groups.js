@@ -67,11 +67,12 @@ export const groupMethods = {
   // ---- 쌓임 순서 (styles/boards.css 머리 설명) ----
   // 묶음마다 자기 층: 묶음 = 밴드 + 2 × 차례, 담긴 파일 = 그 바로 위
   //   → 다른 묶음이나 그 파일이 묶음과 담긴 파일 사이에 끼지 않음 (쪽지 · 사진 · 파일이 지나가면 묶음과 파일이 함께 가려짐)
-  //   차례: 묶음끼리의 순서 (layer-order.js — 우클릭 › 순서). 밴드: 고정한 묶음 110 · 보통 1000 · 고른 묶음 90100 (맨 앞 — 고른 판 90000 ~ 위)
+  //   차례: 묶음끼리의 순서 (layer-order.js — 우클릭 › 순서). 밴드: 보통 1000 · 고른 묶음 90100 (맨 앞 — 고른 판 90000 ~ 위)
+  //   잠근 묶음은 고정한 쪽지 · 사진과 한 무리로 100 + 2 × 차례 (layer-order.js pinnedLayer — 나중에 잠근 것이 위)
   groupLayer(group) {
+    if (group.pinned) return this.pinnedLayer(group);       // 잠근 묶음: 고정한 쪽지 · 사진과 한 무리로 맨 뒤 층 (layer-order.js)
     const rank = Math.min(190, Math.max(0, this.layerZ('group', group)));
-    const band = group.pinned ? 110 : this.groupSelected(group) ? 90100 : 1000;
-    return band + rank * 2;
+    return (this.groupSelected(group) ? 90100 : 1000) + rank * 2;
   },
 
   // 묶음에 든 파일은 묶음 바로 위 층, 아니면 CSS 대로 (styles.css .file-icon)
@@ -322,17 +323,13 @@ export const groupMethods = {
     this.refreshGroup(group, { slide: true });
   },
 
-  // 그 자리(월드 좌표)에 놓인 파일 묶음 — 위에 놓인(나중에 만든) 묶음부터
-  //   잠근 묶음에도 넣을 수 있음. 잠근 묶음은 맨 뒤 층이라 (groupLayer) 겹쳐 있으면 보통 묶음이 먼저
+  // 그 자리(월드 좌표)에 놓인 파일 묶음 — 위 층(groupLayer)에 놓인 묶음부터
+  //   잠근 묶음에도 넣을 수 있음. 잠근 묶음은 맨 뒤 층이라 겹쳐 있으면 보통 묶음이 먼저
   groupAt(wx, wy) {
-    const groups = this.fileGroups();
-    for (const locked of [false, true]) {
-      for (let i = groups.length - 1; i >= 0; i--) {
-        const g = groups[i];
-        if (!!g.pinned !== locked) continue;
-        const size = this.groupSize(g);
-        if (wx >= g.x && wy >= g.y && wx <= g.x + size.width && wy <= g.y + size.height) return g;
-      }
+    const groups = this.fileGroups().map(g => ({ g, layer: this.groupLayer(g) })).sort((a, b) => b.layer - a.layer);
+    for (const { g } of groups) {
+      const size = this.groupSize(g);
+      if (wx >= g.x && wy >= g.y && wx <= g.x + size.width && wy <= g.y + size.height) return g;
     }
     return null;
   },

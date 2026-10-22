@@ -460,6 +460,7 @@ export const noteMethods = {
     const copy = JSON.parse(JSON.stringify(note));
     copy.id = this.newId('note');
     delete copy.z;                                      // 순서: 맨 위 (layer-order.js)
+    delete copy.pz;
     copy.x += 24;
     copy.y += 24;
     copy.pinned = false;
@@ -476,6 +477,7 @@ export const noteMethods = {
   togglePin(note) {                       // 고정하기 / 고정 해제하기
     this.record();
     note.pinned = !note.pinned;
+    this.restackLock('note', note);       // 나중에 고정한 것이 고정한 것들 가운데 위 (layer-order.js)
     this.refreshNote(note);
     this.scheduleSave();
   },

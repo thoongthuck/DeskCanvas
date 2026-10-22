@@ -1120,7 +1120,14 @@ async function showFluentMenu(layout, timing = null) {
   finishMenu(null);                                          // 떠 있던 것은 닫고
   const point = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(point);
-  const b = display.bounds, w = display.workArea;
+  const w = display.workArea;
+  // 화면 하나를 덮되 캔버스(작업 영역)가 닿는 가장자리 한 줄은 비워 둠 — 캔버스가 빈틈없이 다 덮이면 윈도우 · 크로미움이
+  //   캔버스를 '다 가려짐'으로 보고 화면 갱신을 건너뛰어, 메뉴가 떠 있는 동안 쪽지 GIF · 영상이 멈춰 보였음 (투명한 창이어도)
+  const b = { ...display.bounds };
+  if (w.x + w.width === b.x + b.width) b.width -= 1;
+  else if (w.x === b.x) { b.x += 1; b.width -= 1; }
+  else if (w.y === b.y) { b.y += 1; b.height -= 1; }
+  else b.height -= 1;
   win.setBounds(b);
   const chosen = new Promise(resolve => { menuResolve = resolve; });
   const drawn = new Promise(resolve => {                     // 새 판을 다 그린 뒤에 보여 줌 (지난번 모습이 잠깐 비치지 않게)
@@ -1133,7 +1140,7 @@ async function showFluentMenu(layout, timing = null) {
     layout,
     x: point.x - b.x,
     y: point.y - b.y,
-    work: { left: w.x - b.x, top: w.y - b.y, right: w.x - b.x + w.width, bottom: w.y - b.y + w.height },
+    work: { left: Math.max(0, w.x - b.x), top: Math.max(0, w.y - b.y), right: Math.min(b.width, w.x - b.x + w.width), bottom: Math.min(b.height, w.y - b.y + w.height) },
     dark: nativeTheme.shouldUseDarkColors,
   });
   const drawAsked = Date.now();

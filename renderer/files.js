@@ -114,6 +114,7 @@ export const fileMethods = {
   toggleFileLock(file) {
     this.record();
     file.pinned = !file.pinned;
+    this.restackLock('file', file);                     // 나중에 잠근 것이 잠근 것들 가운데 위 (layer-order.js)
     const el = document.getElementById(file.id);
     if (el) el.classList.toggle('locked', file.pinned);
     this.scheduleSave();

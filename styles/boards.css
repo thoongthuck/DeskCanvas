@@ -1,12 +1,13 @@
 /* ===== 판 — 캘린더 · 연대표 (아이콘_가이드.md 12장, 시안_캘린더판.png · 시안_연대표판.png) =====
    renderer/boards.js · calendar.js · timeline.js — 모든 값은 zoom 1 기준 (--zoom 을 곱해 씀)
    쌓임 순서 (뒤에서부터 z-index — #ui-layer 안에서만 견줌, 메뉴 · 창은 따로):
-     100 고정한 쪽지 · 사진 → 110+ 고정한 파일 묶음 → 500+ 캘린더 · 연대표 판과 붙은 쪽지 (고정한 것들 앞)
+     100+ 고정한 쪽지 · 사진 · 잠근 파일 묶음 (한 무리로 순서 — 나중에 고정한 것이 위, 담긴 파일은 묶음 바로 위)
+     → 500+ 캘린더 · 연대표 판과 붙은 쪽지 (고정한 것들 앞)
      → 1000+ 파일 묶음 → 2000 연결선 → 10000+ 쪽지 · 사진 · 파일 (한 무리로 순서 — renderer/layer-order.js)
      → 50000+ 고른 쪽지 · 사진 · 파일 → 90000+ 고른 판과 붙은 쪽지 → 90100+ 고른 파일 묶음
      → 91000 캘린더에서 펼친 쪽지 바탕 · 91100 펼친 쪽지 · 94000 이름 바꾸는 파일 · 94400 판 크기 손잡이
      · 94500 연결선 손잡이 · 95000 끄는 중
-     순서 바꾸기(우클릭 › 순서)는 무리 안에서만: 쪽지 · 사진 · 파일끼리 · 판끼리 · 파일 묶음끼리
+     순서 바꾸기(우클릭 › 순서)는 무리 안에서만: 쪽지 · 사진 · 파일끼리 · 판끼리 · 파일 묶음끼리 · 고정 · 잠근 것끼리
      판은 판마다 자기 층 (8칸): 판 = 밴드 + 8 × 차례 + 4, 붙은 쪽지 = 그 바로 위 +1 · 맨 위 +2 · 고른 쪽지 +3,
        연대표 막대 위에 얹은 쪽지 = 판 바로 아래 −1(고른 쪽지) · −2 ~ −4(1층 ~ 3층) (renderer/boards.js boardLayer)
      파일 묶음도 묶음마다 자기 층: 묶음 = 밴드 + 2 × 차례, 담긴 파일 = 그 바로 위 (renderer/groups.js groupLayer)
@@ -398,7 +399,7 @@
 .sticky-note.on-board .note-time,
 .sticky-note.on-board .note-resize { display: none; }
 /* 붙은 판 바로 위 층 — --layer 는 판의 층 (board-notes.js applyNoteLayer). 겹친 쪽지 +1 · 맨 위 +2 · 고른 쪽지 +3
-   고정한 쪽지도 판에 붙었으면 판 층 (styles.css .pinned 100 보다 앞서게 .on-board.pinned) */
+   고정한 쪽지도 판에 붙었으면 판 층 (styles.css .pinned 층보다 앞서게 .on-board.pinned) */
 .sticky-note.on-board,
 .sticky-note.on-board.pinned { z-index: calc(var(--layer, 0) + 1); }
 .sticky-note.on-board.stack-top { z-index: calc(var(--layer, 0) + 2); }

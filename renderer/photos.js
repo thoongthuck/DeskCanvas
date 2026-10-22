@@ -286,7 +286,7 @@ export const photoMethods = {
   },
 
   updatePhotoPosition(el, photo) {
-    this.applyItemOrder(el, photo);                   // 순서 (layer-order.js)
+    this.applyItemOrder(el, photo, 'photo');                   // 순서 (layer-order.js)
     const z = this.zoom;
     const pad = this.photoPadding(photo);
     const size = this.photoOuterSize(photo);
@@ -532,6 +532,7 @@ export const photoMethods = {
     this.record();
     const copy = this.newPhoto({ ...photo, id: this.newId('photo'), x: photo.x + 24, y: photo.y + 24, pinned: false });
     delete copy.z;                                    // 순서: 맨 위 (layer-order.js)
+    delete copy.pz;
     this.photos.push(copy);
     this.createPhotoElement(copy);
     this.selectItem(copy.id);
@@ -541,6 +542,7 @@ export const photoMethods = {
   togglePhotoPin(photo) {
     this.record();
     photo.pinned = !photo.pinned;
+    this.restackLock('photo', photo);                 // 나중에 고정한 것이 고정한 것들 가운데 위 (layer-order.js)
     this.refreshPhoto(photo);
     this.scheduleSave();
   },

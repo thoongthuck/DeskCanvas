@@ -111,6 +111,7 @@ export const clipboardMethods = {
       const b = clone(src);
       b.id = this.newId('board');
       delete b.z;                                        // 순서: 그 무리 맨 위 (layer-order.js)
+      delete b.pz;
       b.x += dx;
       b.y += dy;
       b.pinned = false;
@@ -127,6 +128,7 @@ export const clipboardMethods = {
       const n = clone(data);
       n.id = this.newId('note');
       delete n.z;
+      delete n.pz;
       n.pinned = false;
       n.items = (Array.isArray(n.items) ? n.items : []).map(it => ({ ...it, id: this.newId('item') }));
       n.updatedAt = Date.now();
@@ -149,6 +151,7 @@ export const clipboardMethods = {
       const p = clone(src);
       p.id = this.newId('photo');
       delete p.z;
+      delete p.pz;
       p.x += dx;
       p.y += dy;
       p.pinned = false;

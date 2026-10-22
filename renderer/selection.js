@@ -199,6 +199,13 @@ export const selectionMethods = {
   setSelectionPinned(on) {
     const targets = this.lockableSelection().filter(en => !!en.item.pinned !== on);
     if (!targets.length) return;
+    // 보이는 순서대로 (잠글 때는 아래 것부터, 풀 때는 위 것부터) — 하나씩 맨 위 · 맨 뒤로 가도 서로의 순서가 그대로 (layer-order.js restackLock)
+    const layer = (en) => {
+      const el = document.getElementById(en.item.id);
+      return el ? parseInt(getComputedStyle(el).zIndex, 10) || 0 : 0;
+    };
+    const layers = new Map(targets.map(en => [en, layer(en)]));
+    targets.sort((a, b) => (on ? 1 : -1) * (layers.get(a) - layers.get(b)));
     this.record();
     this.batching = true;                                    // 안에서 부르는 record() 는 건너뜀 (history.js)
     try {

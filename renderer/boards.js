@@ -362,6 +362,7 @@ export const boardMethods = {
         })),
       });
       items.push(...this.linkMenuItems(board.id));                // 연결선 잇기 · 지우기 (links.js)
+      items.push(...this.layerMenuItems(board.id));               // 순서 › — 판끼리 (layer-order.js)
       items.push({ separator: true });
       items.push({ icon: 'pin.svg', label: t(board.pinned ? 'menu.unlockBoard' : 'menu.lockBoard'), action: () => this.toggleBoardLock(board) });
     } else {
@@ -385,6 +386,7 @@ export const boardMethods = {
         items.push({ icon: 'menu-today.svg', label: t('menu.goToday'), action: () => this.timelineGoToday(board) });
       }
       items.push(...this.linkMenuItems(board.id));                // 연결선 잇기 · 지우기 (links.js)
+      items.push(...this.layerMenuItems(board.id));               // 순서 › — 판끼리 (layer-order.js)
       items.push({ separator: true });
       items.push({ icon: 'pin.svg', label: t(board.pinned ? 'menu.unlockRail' : 'menu.lockRail'), action: () => this.toggleBoardLock(board) });
     }
@@ -459,6 +461,7 @@ export const boardMethods = {
   toggleBoardLock(board) {
     this.record();
     board.pinned = !board.pinned;
+    this.restackLock('board', board);                                // 나중에 잠근 것이 잠근 것들 가운데 위 (layer-order.js)
     this.refreshAllBoards();
     this.notes.forEach(note => { if (note.boardId === board.id) this.refreshNote(note); });
     if (board.kind === 'group') this.updateGroupFiles(board);        // 잠근 묶음은 맨 뒤 층 — 든 파일도 그 층으로 (든 파일은 그대로 옮길 수 있음)

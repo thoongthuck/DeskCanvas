@@ -90,7 +90,7 @@
   filter: drop-shadow(0 calc(14px * var(--z)) calc(16px * var(--z)) rgba(31, 47, 69, 0.28))
           drop-shadow(0 calc(4px * var(--z)) calc(5px * var(--z)) rgba(31, 47, 69, 0.16));
 }
-.canvas-photo.pinned { z-index: 100; cursor: default; }        /* 고정됨 = 다른 것들 뒤 */
+.canvas-photo.pinned { z-index: var(--pin-layer, 100); cursor: default; }   /* 고정됨 = 다른 것들 뒤 — 고정한 것끼리는 나중에 고정한 것이 위 (renderer/layer-order.js) */
 
 /* 크기 조절 — 오른쪽 아래 ⌟ 손잡이 (비율 유지). 마우스를 올렸거나 골랐을 때만 보임 */
 .photo-resize {
