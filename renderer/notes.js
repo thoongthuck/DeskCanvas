@@ -95,6 +95,7 @@ export const noteMethods = {
     if (!['right', 'top', 'bottom', 'cover'].includes(note.imageLayout)) delete note.imageLayout;
     if (note.folded) note.folded = true;                              // 접은 쪽지 — 제목 줄만 (toggleNoteFold)
     else delete note.folded;
+    if (!note.folded || !(note.foldHeight > 0)) delete note.foldHeight;   // 접기 전 높이 (timeline.js timelineNoteFull)
     if (note.hideTime) note.hideTime = true;                          // 왼쪽 아래 시각 숨김 (toggleNoteTime)
     else delete note.hideTime;
     if (note.type === 'image') note.type = 'text';                    // 예전 '이미지 메모' → 사진이 든 글 쪽지
@@ -230,6 +231,13 @@ export const noteMethods = {
       if (!canDrag) return;
       this.syncNoteSlotPosition(note);                                // 캘린더 칸에 붙은 쪽지: 보이는 자리에서 끌기 시작
       this.startItemDrag(e, 'note', note);
+    });
+
+    // 접은 쪽지: 아무 데나 눌러도 펼침 (접기 화살표 말고도 — 끈 것 · Ctrl · Shift 로 고른 것은 빼고)
+    el.addEventListener('click', (e) => {
+      if (!note.folded || !this.isPlainClick(e) || e.target.closest('.note-fold')) return;
+      this.markUnfolded(note.id);
+      this.toggleNoteFold(note);
     });
 
     // 더블클릭 → 바로 수정 (누른 글자칸에 커서)
@@ -411,6 +419,7 @@ export const noteMethods = {
     if (this.editingId && this.editingId !== note.id) this.stopEditing();
     if (note.folded) {                                   // 접은 쪽지를 고치면 펼침
       delete note.folded;
+      delete note.foldHeight;
       this.scheduleSave();
     }
     this.editingId = note.id;
@@ -550,8 +559,13 @@ export const noteMethods = {
   toggleNoteFold(note) {
     this.record();
     if (this.editingId === note.id) this.stopEditing();
-    if (note.folded) delete note.folded;
-    else note.folded = true;
+    if (note.folded) {
+      delete note.folded;
+      delete note.foldHeight;
+    } else {
+      note.foldHeight = Math.round(this.noteSize(note).height);   // 펼쳤을 때 높이 — 연대표가 이만큼 자리를 둠 (timeline.js timelineNoteFull)
+      note.folded = true;
+    }
     this.refreshNote(note);
     this.fitNote(note);
     this.touch(note);

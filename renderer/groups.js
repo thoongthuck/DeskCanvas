@@ -177,6 +177,12 @@ export const groupMethods = {
     });
     head.addEventListener('dblclick', (e) => {                       // 머리 두 번 누르기 = 접기 · 펼치기 (이름은 이름 바꾸기)
       if (e.target.closest('.board-name, button, input')) return;
+      if (this.justUnfolded(board.id)) return;                       // 첫 번 누르기로 막 펼친 것 — 다시 접지 않음
+      this.toggleGroupCollapse(board);
+    });
+    head.addEventListener('click', (e) => {                          // 접혀 있으면 아무 데나 눌러도 펼침 (화살표 말고도)
+      if (!board.collapsed || !this.isPlainClick(e) || e.target.closest('button, input')) return;
+      this.markUnfolded(board.id);
       this.toggleGroupCollapse(board);
     });
     head.append(icon, name, countEl);

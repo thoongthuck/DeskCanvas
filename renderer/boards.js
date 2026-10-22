@@ -98,7 +98,7 @@ export const boardMethods = {
 
     // 연대표: 막대를 두 번 누르면 그 자리에 새 쪽지를 검 (직접 작성 모드의 칸은 이름 고치기 — timeline.js)
     el.addEventListener('dblclick', (e) => {
-      if (board.kind !== 'timeline' || board.pinned || !e.target.closest('.tl-rail')) return;
+      if (board.kind !== 'timeline' || !e.target.closest('.tl-rail')) return;   // 잠근 막대에도 쪽지는 걸 수 있음
       const wx = (e.clientX - this.panX) / this.zoom;
       const wy = (e.clientY - this.panY) / this.zoom;
       // 가로 막대: 그 날짜 아래쪽에 걸기 / 세로 막대: 오른쪽에 붙이기
@@ -457,7 +457,7 @@ export const boardMethods = {
     input.addEventListener('blur', () => finish(true));
   },
 
-  // 판 잠금 — 판과 그 위 쪽지를 옮기거나 고칠 수 없음 (화면 이동 · 확대는 그대로)
+  // 판 잠금 — 판과 붙은 쪽지를 옮길 수 없음 (화면 이동 · 확대 · 쪽지 고치기 · 새 쪽지 붙이기는 그대로)
   toggleBoardLock(board) {
     this.record();
     board.pinned = !board.pinned;

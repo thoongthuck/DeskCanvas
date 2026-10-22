@@ -190,10 +190,15 @@ export const viewMethods = {
     cancelAnimationFrame(this.viewAnim);
     this.commitView();
     {
+      // 지나가는 길을 다 그려 둘지: 두 화면이 가까우면 (사이가 화면 하나 넘게 벌어지지 않으면) 둘을 감싼 네모 전부,
+      //   멀면 떠나는 화면 · 갈 화면만 — 홈 · 저장한 자리처럼 멀리 갈 때 그 사이의 것을 다 그리면 화면 메모리가 수백 MB 늘었음
+      //   (쪽지 600 · 사진 60 을 깐 길: 한 번 갈 때마다 660개를 다 그려 4번 오가면 364 → 668MB). 사이는 눈 깜짝할 새 지나감
       const world = (v) => ({ x: -v.panX / v.zoom, y: -v.panY / v.zoom, width: this.viewWidth / v.zoom, height: this.viewHeight / v.zoom });
       const a = world(this), b = world(target);
       const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-      this.keepViewDrawn({ x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y });
+      const union = { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
+      const near = union.width <= a.width + b.width + Math.max(a.width, b.width) && union.height <= a.height + b.height + Math.max(a.height, b.height);
+      this.keepViewDrawn(near ? [union] : [b]);                 // 떠나는 화면은 cullItem 이 늘 그림 (지금 화면 + 둘레)
       this.updateUIPositions();
     }
     const set = (zoom, panX, panY) => { this.zoom = zoom; this.panX = panX; this.panY = panY; };
@@ -276,17 +281,17 @@ export const viewMethods = {
   //   → 놓인 것이 많아도 화면을 끌고 확대하는 비용 · 그리는 데 드는 메모리가 보이는 것만큼만. 가까워지면 그 자리 · 크기로 다시 그림
   //   (update…Position 이 빼 둔 동안은 자리를 적지 않고, 다시 보일 때 처음부터 다 적음. 데이터 · 연결선 · 미니맵 · 찾기는 그대로)
   //   늘 그리는 것: 끄는 중 · 이름 바꾸는 중 · 글 쓰는 중 (웹 페이지 쪽지는 부르는 쪽에서 뺌 — 페이지는 web-note.js 가 따로 내려놓음)
-  //   움직이는 동안의 미리 보기(previewView)는 다시 배치하지 않음 → 갈 곳은 cullKeep(월드 네모)으로 미리 그려 둠 (animateView)
+  //   움직이는 동안의 미리 보기(previewView)는 다시 배치하지 않음 → 갈 곳은 cullKeep(월드 네모들)으로 미리 그려 둠 (animateView)
   //   반환: 빼 두었는지 (그러면 부르는 쪽은 자리를 적지 않음)
   cullItem(el, left, top, width, height) {
     const mx = this.viewWidth * CULL_MARGIN;
     const my = this.viewHeight * CULL_MARGIN;
     let out = left > this.viewWidth + mx || top > this.viewHeight + my || left + width < -mx || top + height < -my;
     const keep = this.cullKeep;
-    if (out && keep) {                               // 갈 곳 (월드 네모)
+    if (out && keep) {                               // 갈 곳 (월드 네모들)
       const z = this.zoom;
       const x = (left - this.panX) / z, y = (top - this.panY) / z;
-      out = !(x < keep.x + keep.width && x + width / z > keep.x && y < keep.y + keep.height && y + height / z > keep.y);
+      out = !keep.some(k => x < k.x + k.width && x + width / z > k.x && y < k.y + k.height && y + height / z > k.y);
     }
     if (out && (el.id === this.editingId || el.classList.contains('dragging') || el.classList.contains('renaming'))) out = false;
     if (el.classList.contains('culled') !== out) {      // class 하나로만 봄 (다른 곳에서 class 를 다시 써도 어긋나지 않게)
@@ -312,9 +317,9 @@ export const viewMethods = {
     });
   },
 
-  // 갈 곳을 미리 그려 둠 (월드 네모 · 없으면 풂) — 움직이는 동안은 다시 배치하지 않아서 (animateView)
-  keepViewDrawn(rect) {
-    this.cullKeep = rect;
+  // 갈 곳을 미리 그려 둠 (월드 네모 목록 · 없으면 풂) — 움직이는 동안은 다시 배치하지 않아서 (animateView)
+  keepViewDrawn(rects) {
+    this.cullKeep = rects && rects.length ? rects : null;
   },
 
   updateNotePosition(el, note) {

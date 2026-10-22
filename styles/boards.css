@@ -358,7 +358,7 @@
   text-align: center;
 }
 .cal-cell.fan-open .cal-count { background: #5A98FE; color: #FFFFFF; }
-.board:not(.pinned) .cal-cell:hover .cal-count { right: calc(30px * var(--z)); }
+.cal-cell:hover .cal-count { right: calc(30px * var(--z)); }
 
 /* 마우스를 올린 칸 — 오른쪽 위 + (그 날짜에 새 쪽지) */
 .cal-add {

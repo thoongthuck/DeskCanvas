@@ -344,7 +344,9 @@ export const backgroundMethods = {
       }
       const r = this.spotRect(spot);
       const left = r.x * z + this.panX, top = r.y * z + this.panY, w = r.width * z, h = r.height * z;
-      const far = left > this.viewWidth * 2 || top > this.viewHeight * 2 || left + w < -this.viewWidth || top + h < -this.viewHeight;
+      const keep = this.cullKeep;                                   // 그 자리로 가는 중이면 미리 그려 둠 (view.js animateView)
+      const far = (left > this.viewWidth * 2 || top > this.viewHeight * 2 || left + w < -this.viewWidth || top + h < -this.viewHeight)
+        && !(keep && keep.some(k => r.x < k.x + k.width && r.x + r.width > k.x && r.y < k.y + k.height && r.y + r.height > k.y));
       el.classList.toggle('culled', far);
       if (far) return;
       el.style.left = `${left}px`;

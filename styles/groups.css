@@ -66,11 +66,12 @@ body.canvas-dark .file-icon.in-group.on-dark .file-icon-name {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
-/* 머리 — 위 여백 15 + 아이콘 24 (쪽지 머리와 같은 자리). 잡고 끌면 묶음이 옮겨짐 */
+/* 머리 — 위 여백 15 + 아이콘 24 (쪽지 머리와 같은 자리). 잡고 끌면 묶음이 옮겨짐
+   오른쪽 여백 32: 접은 묶음은 머리 한 줄이라 오른쪽 아래 접힌 모서리가 단추 자리에 닿음 → 비켜 둔 자리를 펼쳤을 때도 써서 접고 펴도 화살표가 그 자리 */
 .board-group .board-head.group-head {
   box-sizing: content-box;
   height: calc(24px * var(--z));
-  padding: calc(15px * var(--z)) calc(14px * var(--z)) calc(15px * var(--z)) calc(20px * var(--z));
+  padding: calc(15px * var(--z)) calc(32px * var(--z)) calc(15px * var(--z)) calc(20px * var(--z));
   gap: calc(8px * var(--z));
   border-bottom: none;
 }
@@ -123,10 +124,10 @@ body.theme-dark .board-name.group-title.untitled { color: rgba(31, 47, 69, 0.55)
 }
 .board-group.collapsed .group-toggle img { transform: none; }
 
-/* 접은 묶음 — 머리 한 줄 (몸통 · 크기 손잡이 숨김). 오른쪽 끝은 접힌 모서리 자리라 단추를 조금 안으로 */
+/* 접은 묶음 — 머리 한 줄 (몸통 · 크기 손잡이 숨김). 머리를 아무 데나 누르면 펼침 (groups.js) */
 .board-group.collapsed .group-body,
 .board-group.collapsed .board-resize { display: none; }
-.board-group.collapsed .board-head.group-head { padding-right: calc(32px * var(--z)); }
+.board-group.collapsed .board-head.group-head { cursor: pointer; }
 .board-group.folding { transition: height 0.2s ease, transform 0.2s ease-out, filter 0.2s ease-out; }
 .group-peek {                                   /* 접었을 때 담긴 파일 그림 */
   flex: 0 1 auto;

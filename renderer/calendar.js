@@ -261,15 +261,13 @@ export const calendarMethods = {
         badge.title = t('fan.hint');
         cell.appendChild(badge);
       }
-      if (!board.pinned) {                                   // 마우스를 올린 칸에 + (그 날짜에 새 쪽지)
-        const add = document.createElement('button');
-        add.type = 'button';
-        add.className = 'cal-add';
-        add.title = t('board.addNote');
-        add.innerHTML = `<img src="${ICON_DIR}plus.svg" alt="" draggable="false">`;
-        add.addEventListener('click', () => this.addNoteOnDate(board, key));
-        cell.appendChild(add);
-      }
+      const add = document.createElement('button');          // 마우스를 올린 칸에 + (그 날짜에 새 쪽지) — 잠근 판에도
+      add.type = 'button';
+      add.className = 'cal-add';
+      add.title = t('board.addNote');
+      add.innerHTML = `<img src="${ICON_DIR}plus.svg" alt="" draggable="false">`;
+      add.addEventListener('click', () => this.addNoteOnDate(board, key));
+      cell.appendChild(add);
       // 날짜를 누르면: 겹친 칸이면 펼치기 · 접기, 아니면 펼친 것을 접음
       cell.addEventListener('click', (e) => {
         if (e.target.closest('button') || this.justPannedBoard) return;
@@ -377,9 +375,8 @@ export const calendarMethods = {
     });
   },
 
-  // 칸의 + : 그 날짜에 새 쪽지 (바로 제목 입력)
+  // 칸의 + : 그 날짜에 새 쪽지 (바로 제목 입력). 잠근 판에도 — 붙인 쪽지는 판과 함께 잠겨 옮길 수는 없음 (board-notes.js noteLocked)
   addNoteOnDate(board, date) {
-    if (board.pinned) return;
     const grid = this.calendarGrid(board);
     const i = grid.index.get(date);
     if (i === undefined) return;

@@ -230,10 +230,16 @@ export const timelineMethods = {
       items.push({
         note, mirror, pos, side: note.side === 'up' ? 'up' : 'down',
         off: note.off > 0 ? note.off : 0,                 // 막대에서 더 띄운 만큼 (끌어서 정한 높이)
-        width: size.width, height: size.height,
+        width: size.width, height: size.height, full: this.timelineNoteFull(note, size),
       });
     });
     return items;
+  },
+
+  // 자리를 잡을 때 쓰는 높이 — 접은 쪽지는 펼쳤을 때 높이 (notes.js toggleNoteFold 의 foldHeight)
+  //   접고 펴도 머리(접기 화살표) 자리 · 둘레 쪽지 자리가 그대로. 막대 위에 얹은 쪽지는 접으면 머리만 그 자리에 남고 받침 선으로 막대에 이어짐
+  timelineNoteFull(note, size = this.noteSize(note)) {
+    return note.folded && note.foldHeight > size.height ? note.foldHeight : size.height;
   },
 
   // 세로 막대: 왼쪽 바깥 꼬리표(눈금 글씨 · 칸 이름) 자리 — 왼쪽 쪽지는 이 자리를 지나서 놓임
@@ -254,8 +260,8 @@ export const timelineMethods = {
     const sep = { up: vert ? V.col : -PERCH, down: vert ? V.col : TIER_GAP };
     const placed = { up: [], down: [] };
     items.forEach(item => {
-      item.span = vert ? item.height : item.width;        // 막대 방향으로 차지하는 길이
-      const depth = vert ? item.width : item.height;      // 막대에서 멀어지는 쪽 두께
+      item.span = vert ? item.full : item.width;          // 막대 방향으로 차지하는 길이
+      const depth = vert ? item.width : item.full;        // 막대에서 멀어지는 쪽 두께
       item.lo = item.pos - item.span / 2;
       const hi = item.lo + item.span;
       const near = placed[item.side].filter(p => item.lo < p.hi + NOTE_GAP && p.lo < hi + NOTE_GAP);
@@ -295,7 +301,7 @@ export const timelineMethods = {
         item.x = item.lo;
         if (item.side === 'up') {
           item.base = PERCH - item.d;                     // 얹은 쪽지의 아래 끝 — 띄우지 않으면 막대에 6 물림
-          item.y = item.base - item.height;
+          item.y = item.base - item.full;                 // 접은 쪽지는 펼쳤을 때의 위 끝 (머리 자리 그대로)
         } else {
           item.y = FIRST_TIER + item.d;
         }
@@ -308,7 +314,8 @@ export const timelineMethods = {
         items.forEach(o => {
           if (o !== item && o.side === 'up' && o.d < item.d && o.lo <= item.pos && item.pos <= o.lo + o.span) support = Math.min(support, o.y);
         });
-        if (item.base < support - 0.5) item.stem = { from: item.base, to: support };
+        const bottom = item.y + item.height;              // 접은 쪽지는 머리 아래 끝
+        if (bottom < support - 0.5) item.stem = { from: bottom, to: support };
       });
       lo = (placed.up.length ? PERCH - end('up') : 0) - TOP_ROW;
       hi = (placed.down.length ? FIRST_TIER + end('down') : RAIL_H) + BOTTOM_PAD;
@@ -325,17 +332,18 @@ export const timelineMethods = {
     const item = layout.byNote.get(note.id);
     if (!item) return { board, offView: true };
     const size = this.noteSize(note);
+    const full = this.timelineNoteFull(note, size);
     const up = item.side === 'up';
     if (layout.vert) {
       return {
         x: board.x + (up ? item.edge - size.width : item.x),
-        y: board.y + item.pos - size.height / 2,
+        y: board.y + item.pos - full / 2,
         width: size.width, height: size.height, board, top: true,
       };
     }
     return {
       x: board.x + item.pos - size.width / 2,
-      y: board.y + (up ? item.base - size.height : item.y),
+      y: board.y + (up ? item.base - full : item.y),
       width: size.width, height: size.height, board, top: true,
       perch: up ? item.over + 1 : 0,
     };
@@ -807,7 +815,7 @@ export const timelineMethods = {
 
   // 막대를 두 번 누르면 그 자리에 새 쪽지를 걸고 바로 제목 입력 (boards.js)
   addNoteOnTimeline(board, target) {
-    if (board.pinned || !target) return;
+    if (!target) return;                                    // 잠근 막대에도 — 붙인 쪽지는 막대와 함께 잠김
     this.record();
     const note = this.newNote({ x: board.x, y: board.y });   // 자리는 막대가 정함 (timelineNoteSlot)
     this.hangNoteOnTimeline(note, board, target);

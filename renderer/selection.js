@@ -48,6 +48,20 @@ export const selectionMethods = {
     return true;
   },
 
+  // 그냥 누르기 — 왼쪽 단추, Ctrl · Shift(여러 개 고르기) 없이, 끌거나 화면을 옮긴 뒤가 아님 (끈 뒤의 클릭은 app.js 가 이미 막음)
+  isPlainClick(e) {
+    if (e.button !== 0 || this.justPannedBoard) return false;
+    return !((e.ctrlKey && !e.altKey) || e.shiftKey || (IS_MAC && e.metaKey));
+  },
+
+  // 접힌 것을 누르기로 막 펼침 — 이어서 오는 두 번 누르기가 다시 접지 않게 (groups.js)
+  markUnfolded(id) {
+    this.unfoldedAt = { id, at: Date.now() };
+  },
+  justUnfolded(id) {
+    return !!(this.unfoldedAt && this.unfoldedAt.id === id && Date.now() - this.unfoldedAt.at < 600);
+  },
+
   // 우클릭: 이미 고른 것 중 하나면 그대로 (여러 개 메뉴), 아니면 그것만
   ensureSelected(id) {
     if (!this.selection.has(id)) this.selectItem(id);

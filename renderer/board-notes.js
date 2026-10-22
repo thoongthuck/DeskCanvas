@@ -200,7 +200,7 @@ export const boardNoteMethods = {
     const rect = { x: drag.item.x, y: drag.item.y, width: size.width, height: size.height };   // 연대표: 끄는 쪽지가 있는 자리 — 놓은 날짜 · 쪽 · 높이 그대로
     let target = null;
     for (const board of this.boards) {
-      if (board.pinned || board.kind === 'group') continue;           // 파일 묶음에는 쪽지를 붙이지 않음
+      if (board.kind === 'group') continue;                          // 파일 묶음에는 쪽지를 붙이지 않음 (잠근 판에는 붙일 수 있음 — 붙으면 판과 함께 잠김)
       const hit = board.kind === 'calendar' ? this.calendarDropAt(board, wx, wy) : this.timelineDropAt(board, wx, wy, rect);
       if (hit) {
         target = { board, ...hit };
