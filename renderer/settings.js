@@ -41,6 +41,7 @@ export const settingsMethods = {
     if (!['year', 'month', 'day'].includes(s.timelineScale)) s.timelineScale = 'month';
     delete s.boardTone;                               // 예전 '기본 판 색상' (판 상자가 없어져서 안 씀)
     if (s.noteLinkView !== 'link') s.noteLinkView = 'embed';
+    delete s.noteTime;                               // 잠깐 있던 전체 설정 — 이제 쪽지마다 (note.hideTime)
     if (!isHexColor(s.groupCustomColor)) s.groupCustomColor = DEFAULT_SETTINGS.groupCustomColor;
     if (!['paper', 'tape', 'pin', 'none'].includes(s.photoFrame)) s.photoFrame = 'paper';
     s.videoSound = !!s.videoSound;
@@ -51,6 +52,23 @@ export const settingsMethods = {
     if (!HOLIDAY_REGIONS.includes(s.holidayCountry)) s.holidayCountry = DEFAULT_SETTINGS.holidayCountry;
     delete s.showMinimap;                        // 예전 이름 — 미니맵은 이제 켤 때마다 꺼진 채로
     if (s.theme !== 'dark') s.theme = 'light';
+    if (!['theme', 'color', 'image'].includes(s.bgKind)) s.bgKind = 'theme';
+    if (!isHexColor(s.bgColor)) s.bgColor = DEFAULT_SETTINGS.bgColor;
+    // 바탕 사진 — 예전(한 장) bgImage 는 목록으로 옮김. 모양이 맞는 것만
+    if (typeof saved.bgImage === 'string' && saved.bgImage && !(Array.isArray(saved.bgImages) && saved.bgImages.length)) {
+      s.bgImages = [{ url: saved.bgImage, name: saved.bgImageName || '', w: saved.bgImageW || 0, h: saved.bgImageH || 0, thumb: '' }];
+      s.bgIndex = 0;
+    }
+    ['bgImage', 'bgImageName', 'bgImageW', 'bgImageH'].forEach(k => delete s[k]);
+    s.bgImages = (Array.isArray(s.bgImages) ? s.bgImages : [])
+      .filter(i => i && typeof i.url === 'string' && i.url)
+      .map(i => ({ url: i.url, name: String(i.name || ''), w: +i.w || 0, h: +i.h || 0, thumb: typeof i.thumb === 'string' ? i.thumb : '' }));
+    s.bgIndex = Math.min(Math.max(0, s.bgIndex | 0), Math.max(0, s.bgImages.length - 1));
+    if (![0, 1, 10, 30, 60, 1440].includes(s.bgInterval)) s.bgInterval = DEFAULT_SETTINGS.bgInterval;
+    if (s.bgOrder !== 'shuffle') s.bgOrder = 'order';
+    if (s.bgKind === 'image' && !s.bgImages.length) s.bgKind = 'theme';
+    if (!['fill', 'fit', 'stretch', 'center', 'tile'].includes(s.bgFit)) s.bgFit = 'fill';
+    if (s.bgMove !== 'canvas') s.bgMove = 'screen';
     if (!GRID_GAPS.includes(s.gridGap)) s.gridGap = DEFAULT_SETTINGS.gridGap;
     if (!NEW_NOTE_SIZES[s.noteSize]) s.noteSize = DEFAULT_SETTINGS.noteSize;
     if (s.overflow !== 'expand') s.overflow = 'wrap';
@@ -86,22 +104,18 @@ export const settingsMethods = {
     const s = this.settings;
     setLanguage(s.language);
     document.body.classList.toggle('theme-dark', s.theme === 'dark');
-    if (!key || key === 'theme') this.updateBoardTones?.();        // 색을 정하지 않은 판은 배경 테마를 따라감 (boards.js)
     document.body.classList.toggle('overflow-expand', s.overflow === 'expand');
 
     if (key === 'autoSave' && s.autoSave && this.dirty) this.persist();
     if (!key || key === 'wallpaperMode') this.applyWallpaperMode();
     if (!key || key === 'linkStyle' || key === 'linkWidth') this.requestLinks();
-    if (!key || key === 'theme') window.canvasAPI?.setBackground?.(s.theme === 'dark' ? '#1F252C' : '#F5F5F5');   // 창 바탕색도 (main.js)
-    if (!key || key === 'theme' || key === 'desktopBackground') {     // 윈도우 배경 화면도 캔버스 색으로 (끄면 원래대로, main.js)
-      window.canvasAPI?.setDesktopBackground?.(s.desktopBackground, s.theme === 'dark' ? '#1F252C' : '#F5F5F5');
-    }
+    // 캔버스 바탕 (테마 색 · 고른 색 · 사진) — 판 이름 · 파일 기본 그림 · 창 바탕색 · 윈도우 배경 화면도 함께 (background.js)
+    if (!key || key === 'theme' || key === 'desktopBackground' || /^bg/.test(key)) this.applyBackground();
     if (!key || key === 'language') this.refreshTexts();
     if (!key || key === 'overflow') this.fitAllNotes();
     if (key === 'noteLinkView') this.refreshAllNoteLinks();       // 쪽지 속 주소 보기 방식 (note-links.js)
     if (key === 'timelineScale') this.refreshAllBoards();         // 연대표 눈금 단위 — 모든 연대표를 다시 그림 (timeline.js)
     if (key === 'autoUpdate' && s.autoUpdate) window.canvasAPI?.checkUpdate?.();   // 켜면 바로 한 번 확인 (updater.js)
-    if (!key || key === 'theme') this.refreshFallbackIcons();    // 파일 기본 그림도 밝은 · 어두운 것으로
     if (!key || key === 'holidays' || key === 'holidayCountry' || key === 'language') this.loadHolidays();
     if (!key || key === 'showGrid') this.resizeCanvas();         // 격자를 끄면 그림판을 1px 로 (app.js) — resizeCanvas 가 다시 그림
     else this.draw();

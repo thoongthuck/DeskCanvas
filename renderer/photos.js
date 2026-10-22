@@ -299,6 +299,7 @@ export const photoMethods = {
         this.applyVideoState(photo, el);
       }
     }
+    if (this.cullItem(el, left, top, size.width * z, size.height * z)) return;   // 화면 밖 멀리 — 그리지 않음 (view.js)
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
     el.style.width = `${size.width * z}px`;

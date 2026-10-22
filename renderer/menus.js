@@ -33,6 +33,10 @@ export const menuMethods = {
           { label: t('menu.lockView'), current: !!s.lockView, action: () => this.toggleViewLock() },
           { separator: true },
           ...this.homeMenuItems().map(({ icon, ...rest }) => rest),     // 하위 목록의 다른 줄처럼 그림 없이
+          ...(() => {                                                      // 누른 곳이 저장한 자리 안이면 그 자리 바탕 사진 (background.js)
+            const spot = this.spotMenuItems(at).map(({ icon, ...rest }) => rest);
+            return spot.length ? [{ separator: true }, ...spot] : [];
+          })(),
         ],
       },
       {
@@ -156,6 +160,7 @@ export const menuMethods = {
       }
     }
     items.push({ icon: 'chevron-down.svg', label: t(note.folded ? 'note.expand' : 'note.collapse'), action: () => this.toggleNoteFold(note) });
+    items.push({ icon: 'menu-today.svg', label: t(note.hideTime ? 'menu.showTime' : 'menu.hideTime'), action: () => this.toggleNoteTime(note) });   // 왼쪽 아래 시각
     const rail = this.noteTimeline(note);
     if (rail && !this.noteLocked(note)) {                  // 연대표에 붙은 쪽지: 막대 위로 / 아래로 · 세로 막대는 왼쪽으로 / 오른쪽으로 (글자만 — timeline.js)
       const up = note.side === 'up';
@@ -394,7 +399,7 @@ export const menuMethods = {
         onClick: () => { this.closeMenus(); this.toggleGridSnap(); } },
       { icon: this.viewLocked() ? 'checkbox-checked.svg' : 'checkbox.svg', label: t('menu.lockView'), current: this.viewLocked(),
         onClick: () => { this.closeMenus(); this.toggleViewLock(); } },
-      ...this.homeMenuItems().map(item => ({
+      ...[...this.homeMenuItems(), ...this.spotMenuItems(at)].map(item => ({   // 저장한 자리 안이면 그 자리 바탕 사진 줄도 (background.js)
         icon: item.icon, label: item.label, onClick: () => { this.closeMenus(); item.action(); },
       })),
     ]);

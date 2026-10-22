@@ -13,17 +13,21 @@
   z-index: 2000;                         /* 판 · 파일 묶음 위, 파일 · 쪽지 · 사진 아래 (styles/boards.css 머리 설명) */
   --link: #A3AEBF;
   --link-selected: #4A99EB;               /* 잇는 중인 점선 */
-  --link-ring: #f5f5f5;
+  --link-ring: var(--canvas-bg, #f5f5f5); /* 끝 점 테두리 = 캔버스 바탕색 (renderer/background.js) */
   --link-shadow: rgba(31, 47, 69, 0.5);    /* 고른 선의 그림자 */
 }
 
 /* .link-float: 사진 · 영상 · 고른 판의 안쪽에 끝을 고정한 선 — 그 물건 바로 뒤에 두고 층 번호를 같게 (renderer/links.js linkHost) */
 
-body.theme-dark #link-layer,
-body.theme-dark .link-float {
+body.canvas-dark #link-layer,            /* 어두운 캔버스 바탕 (어두운 테마 · 어두운 색 · 사진) */
+body.canvas-dark .link-float {
   --link: rgba(229, 231, 235, 0.34);
-  --link-ring: #1F252C;
   --link-shadow: rgba(0, 0, 0, 0.8);
+}
+body.bg-photo #link-layer,           /* 사진 위: 더 또렷한 흰 선 */
+body.bg-photo .link-float {
+  --link: rgba(255, 255, 255, 0.82);
+  --link-ring: rgba(31, 37, 44, 0.55);
 }
 
 .link-line {

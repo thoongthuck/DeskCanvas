@@ -123,7 +123,7 @@ export const fileMethods = {
   useFallbackIcon(img, file) {
     img.classList.add('fallback');
     const group = this.fileGroup(file);
-    img.src = fallbackIcon(file, group ? this.groupIsDark(group) : !!(this.settings && this.settings.theme === 'dark'));
+    img.src = fallbackIcon(file, group ? this.groupIsDark(group) : !!this.canvasDark);   // 바탕이 어두우면 (background.js)
   },
 
   // 하나만 고른 파일은 두 줄을 넘는 이름을 끝까지 펼쳐 보임 (윈도우 바탕화면처럼 — 여럿 고르거나 안 고르면 두 줄에서 …)

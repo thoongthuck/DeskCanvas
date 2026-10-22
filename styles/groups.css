@@ -61,7 +61,7 @@ body.theme-dark .board.board-group.group-dark { color: #F3F4F6; }
 /* 어두운 색 묶음 속 파일: 칸 없이 이름을 밝게 (윈도우 바탕화면의 어두운 배경 위처럼). 기본 그림도 어두운 바탕용 (files.js useFallbackIcon)
    마우스 · 고르기 칸은 어두운 바탕용 색 (styles.css .file-icon.on-dark) */
 .file-icon.in-group.on-dark .file-icon-name,
-body.theme-dark .file-icon.in-group.on-dark .file-icon-name {
+body.canvas-dark .file-icon.in-group.on-dark .file-icon-name {
   color: #F3F4F6;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
@@ -206,7 +206,7 @@ body.theme-dark .board-name.group-title.untitled { color: rgba(31, 47, 69, 0.55)
   --file-pick-hover: rgba(188, 224, 255, 0.95);
   --file-pick-line: #99D1FF;
 }
-body.theme-dark .file-icon.in-group .file-icon-name {       /* 어두운 배경이어도 묶음 안은 밝은 종이 위 */
+body.canvas-dark .file-icon.in-group .file-icon-name {      /* 어두운 바탕이어도 묶음 안은 밝은 종이 위 */
   color: #333;
   text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
 }

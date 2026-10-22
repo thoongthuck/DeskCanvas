@@ -25,6 +25,10 @@ export const fitMethods = {
 
   fitNote(note, el = document.getElementById(note.id)) {
     if (!el || !this.settings) return;
+    if (el.classList.contains('culled')) {         // 화면 밖에 빼 둔 쪽지(view.js cullItem)는 잴 수 없음 — 맞춰 둔 크기 그대로, 보이면 잼
+      (this.refitPending = this.refitPending || new Set()).add(note.id);
+      return;
+    }
     const before = this.fitSizes.get(note.id);
     this.fitSizes.delete(note.id);
     this.updateNotePosition(el, note);           // 자리·크기를 화면 배율에 맞춤 (확대·축소·화면 이동도 여기로 옴)

@@ -258,8 +258,12 @@ export const selectionMethods = {
       items.push({ icon: 'pin.svg', label: t('menu.unpinSelected', { n: lockable.length - unlocked }), key: unlocked ? '' : 'Ctrl+Shift+L', action: () => this.setSelectionPinned(false) });
     }
     const linkable = [...this.selection].filter(id => this.linkEntry(id)).length;   // 캘린더 · 연대표도 (links.js)
+    const among = this.linksAmongSelection().length;        // 고른 것끼리 이미 이은 선
     if (linkable > 1) {                                     // 처음 고른 것에 나머지를 잇기
-      items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: linkable }), action: () => this.connectSelection() });
+      items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: linkable }), key: among ? '' : 'Ctrl+L', action: () => this.connectSelection() });
+    }
+    if (among) {                                            // 고른 것끼리 이은 선 끊기 — 이어져 있으면 Ctrl+L 이 이쪽
+      items.push({ icon: 'menu-disconnect.svg', label: t('menu.disconnectSelected', { n: among }), key: 'Ctrl+L', action: () => this.disconnectSelection() });
     }
     items.push(...this.alignMenuItems());                   // 정렬 › (align.js)
     items.push(...this.layerMenuItems());                   // 순서 › (layer-order.js)

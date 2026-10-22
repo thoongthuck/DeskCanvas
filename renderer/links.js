@@ -1,7 +1,7 @@
 // 연결선 — 쪽지 · 사진 · 파일 · 파일 묶음 · 캘린더 · 연대표 사이를 곡선으로 이음 (마인드맵처럼, 메모장.md 아이디어)
 //   캘린더는 종이, 연대표는 걸이 막대의 테두리에 닿음 (boards.js boardSize). 연대표에 따라 그린 캘린더 쪽지(note-mirror)는 그림이라 잇지 않음
 //   잇기: 우클릭 › '연결선 잇기' 뒤 이을 것을 누름 · Alt 를 누른 채 끌어 다른 것 위에 놓기
-//         · 여럿 고르고 Ctrl+L — 처음 고른 것(가운데 주제)에 나머지를 하나씩 이음
+//         · 여럿 고르고 Ctrl+L — 처음 고른 것(가운데 주제)에 나머지를 하나씩 이음. 고른 것끼리 이어진 선이 있으면 Ctrl+L 은 끊기
 //   선을 누르면 고름 → Delete 로 지우기, 선 우클릭 › 지우기. 이은 것이 없어지면 선도 그리지 않고 저장할 때 버림
 //   선을 두 번 누르거나 우클릭하면 수정 메뉴 (모양 · 색 · 굵기 · 연결 위치 · 지우기 — openLinkMenu)
 //   그리기: 판 바로 뒤에 둔 SVG 한 장 (#link-layer) — 판 위 · 쪽지 · 사진 · 파일 아래.
@@ -247,6 +247,23 @@ export const linkMethods = {
     pairs.forEach(([a, b]) => this.links.push({ id: this.newId('link'), a, b }));
     this.scheduleSave();
     return true;
+  },
+
+  // 고른 것끼리 이은 선 (양 끝이 다 고른 것)
+  linksAmongSelection() {
+    return this.liveLinks().filter(l => this.selection.has(l.a) && this.selection.has(l.b));
+  },
+
+  // 고른 것끼리 이은 선 끊기 (Ctrl+L — 이어져 있을 때 · 여러 개 메뉴) — 되돌리기 한 번에. 반환: 끊은 수
+  disconnectSelection() {
+    const gone = new Set(this.linksAmongSelection().map(l => l.id));
+    if (!gone.size) return 0;
+    this.record();
+    this.links = this.links.filter(l => !gone.has(l.id));
+    if (gone.has(this.selectedLinkId)) this.selectedLinkId = null;
+    this.requestLinks();
+    this.scheduleSave();
+    return gone.size;
   },
 
   deleteLink(id) {

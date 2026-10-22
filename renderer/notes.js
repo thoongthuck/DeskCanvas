@@ -12,7 +12,8 @@ import { cleanSpans } from './text-color.js';
 
 // 쪽지 요소에 잠깐 붙었다 떨어지는 표시 — refreshNote 가 class 를 다시 쓸 때도 남김
 //   fan-anim: 캘린더에서 펼치기 · 접기 움직임 (calendar.js) · search-hit: 찾기로 간 쪽지 반짝임 (search.js)
-const PASSING_CLASSES = ['fan-anim', 'search-hit'];
+//   culled: 화면 밖에 빼 둠 (view.js cullItem) — 지워지면 자리를 받지 못한 채 왼쪽 위에 그려짐
+const PASSING_CLASSES = ['fan-anim', 'search-hit', 'culled'];
 
 export const noteMethods = {
   newId(prefix) {
@@ -94,6 +95,8 @@ export const noteMethods = {
     if (!['right', 'top', 'bottom', 'cover'].includes(note.imageLayout)) delete note.imageLayout;
     if (note.folded) note.folded = true;                              // 접은 쪽지 — 제목 줄만 (toggleNoteFold)
     else delete note.folded;
+    if (note.hideTime) note.hideTime = true;                          // 왼쪽 아래 시각 숨김 (toggleNoteTime)
+    else delete note.hideTime;
     if (note.type === 'image') note.type = 'text';                    // 예전 '이미지 메모' → 사진이 든 글 쪽지
     if (!['text', 'checklist', 'code', 'markdown', 'web', 'table'].includes(note.type)) note.type = 'text';
     if (note.type === 'table') note.table = this.normalizeTable(note.table);   // 표 (table-note.js)
@@ -325,6 +328,7 @@ export const noteMethods = {
       editing ? 'editing' : '',
       note.image ? 'has-photo' : '',
       note.folded ? 'folded' : '',
+      note.hideTime ? 'hide-time' : '',             // 시각 숨김 (styles.css .note-time)
       note.folded && !note.title.trim() ? 'no-title' : '',
       custom && isDarkColor(note.customColor) ? 'note-dark' : '',
       ...passing,
@@ -532,6 +536,15 @@ export const noteMethods = {
   },
 
   // ---- 쪽지 접기 — 제목 줄만 남김 (제목이 없으면 글 첫 줄을 보여 줌). 고치기 시작하면 펼침 ----
+  // 쪽지 우클릭 › 시각 숨기기 · 보이기 — 자리는 그대로 두어 쪽지 크기는 안 바뀜
+  toggleNoteTime(note) {
+    this.record();
+    if (note.hideTime) delete note.hideTime;
+    else note.hideTime = true;
+    this.refreshNote(note);
+    this.scheduleSave();
+  },
+
   toggleNoteFold(note) {
     this.record();
     if (this.editingId === note.id) this.stopEditing();
@@ -650,5 +663,6 @@ export const noteMethods = {
     this.files.forEach(file => this.createFileElement(file));
     this.updateSelection();
     this.requestLinks();                           // 연결선 층도 판 바로 뒤에 다시 (links.js)
+    this.updateSpotBackgrounds();                  // 저장한 자리 바탕 사진도 다시 (background.js)
   },
 };

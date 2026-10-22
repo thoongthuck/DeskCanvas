@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeImage, screen, net, globalShortcut, Tray, Menu, session, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { pathToFileURL } = require('url');
+const { pathToFileURL, fileURLToPath } = require('url');
 const { execFile, spawn } = require('child_process');
 const { buildLayout, cleanText } = require('./menu-layout');
 const { createUpdater } = require('./updater');
@@ -85,6 +85,54 @@ function getVideosDir() {
   return dir;
 }
 
+// 캔버스 바탕 사진 — 앱 데이터 폴더 backgrounds (슬라이드 쇼 · 저장한 자리 바탕 사진. 안 쓰게 되면 화면 쪽이 지우라고 알려 줌)
+//   아주 큰 사진은 긴 변이 BG_MAX_EDGE 가 되게 줄여서 (화면에 그릴 때 사진 전체를 풀어 두므로 메모리) — 움직이는 GIF 는 그대로
+//   설정 창에 보일 작은 그림(<이름>.thumb.jpg)도 함께 — 큰 사진을 작은 칸에 그려도 다 풀어서 메모리를 씀
+const BG_MAX_EDGE = 3840;
+function getBackgroundsDir() {
+  const dir = path.join(app.getPath('userData'), 'backgrounds');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function storeBackground(src) {
+  const ext = path.extname(src).toLowerCase();
+  const dir = getBackgroundsDir();
+  const base = `background-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;   // 여러 장을 한 번에 넣어도 겹치지 않게
+  let dest = path.join(dir, base + ext);
+  let image = ext === '.gif' ? null : nativeImage.createFromPath(src);
+  let size = image && !image.isEmpty() ? image.getSize() : null;
+  if (!size && ext === '.gif') {                             // 움직이는 GIF — 줄이지 않고 그대로 (줄이면 움직임이 사라짐). 크기는 GIF 머리에서
+    try {
+      const head = Buffer.alloc(10);
+      const fd = fs.openSync(src, 'r');
+      fs.readSync(fd, head, 0, 10, 0);
+      fs.closeSync(fd);
+      if (head.toString('ascii', 0, 4) === 'GIF8') size = { width: head.readUInt16LE(6), height: head.readUInt16LE(8) };
+    } catch (_) {}
+  }
+  if (size && Math.max(size.width, size.height) > BG_MAX_EDGE) {
+    const k = BG_MAX_EDGE / Math.max(size.width, size.height);
+    image = image.resize({ width: Math.round(size.width * k), height: Math.round(size.height * k), quality: 'best' });
+    size = image.getSize();
+    dest = path.join(dir, base + (ext === '.png' ? '.png' : '.jpg'));
+    fs.writeFileSync(dest, ext === '.png' ? image.toPNG() : image.toJPEG(92));
+    logLine(`바탕 사진을 줄여 넣음: ${size.width}x${size.height}`);
+  } else {
+    fs.copyFileSync(src, dest);
+  }
+  let thumb = '';
+  if (image && !image.isEmpty()) {
+    try {
+      const small = image.resize({ width: 160, quality: 'good' });
+      const thumbFile = path.join(dir, `${base}.thumb.jpg`);
+      fs.writeFileSync(thumbFile, small.toJPEG(80));
+      thumb = pathToFileURL(thumbFile).href;
+    } catch (_) {}
+  }
+  return { url: pathToFileURL(dest).href, name: path.basename(src), width: size ? size.width : 0, height: size ? size.height : 0, thumb };
+}
+
 function copyImageToStore(src) {
   const dest = path.join(getImagesDir(), `${Date.now()}${path.extname(src).toLowerCase()}`);
   fs.copyFileSync(src, dest);
@@ -105,9 +153,13 @@ function screenArea() {
 
 // 캔버스 바탕색 — 창 바탕도 같게 (창을 옮기는 동안 한 장면이 비어도 바탕색만 보이게)
 const CANVAS_BG = { light: '#F5F5F5', dark: '#1F252C' };
+//   직접 고른 색 · 사진 바탕이면 그 바탕색 (renderer/background.js)
 function canvasBackground() {
   try {
-    return JSON.parse(fs.readFileSync(getSettingsFile(), 'utf-8')).theme === 'dark' ? CANVAS_BG.dark : CANVAS_BG.light;
+    const s = JSON.parse(fs.readFileSync(getSettingsFile(), 'utf-8'));
+    const photo = s.bgKind === 'image' && ((Array.isArray(s.bgImages) && s.bgImages.length) || s.bgImage);
+    if ((s.bgKind === 'color' || photo) && /^#[0-9a-f]{6}$/i.test(String(s.bgColor))) return s.bgColor;
+    return s.theme === 'dark' ? CANVAS_BG.dark : CANVAS_BG.light;
   } catch (_) {
     return CANVAS_BG.light;
   }
@@ -1354,10 +1406,29 @@ async function saveOriginalWallpaper() {
   return true;
 }
 
-// on: 켜기 · 끄기, color: 캔버스 바탕색 (#RRGGBB)
-function setDesktopBackground(on, color = null) {
+// on: 켜기 · 끄기, color: 캔버스 바탕색 (#RRGGBB), image: 사진 바탕 { url, fit } (renderer/background.js)
+//   사진이면 윈도우 배경 화면도 그 사진 · 같은 맞춤으로 (남는 곳은 바탕색). 캔버스와 함께 움직이는 사진은 바둑판식
+const WALL_FIT = { fill: ['10', '0'], fit: ['6', '0'], stretch: ['2', '0'], center: ['0', '0'], tile: ['0', '1'] };   // WallpaperStyle · TileWallpaper
+function setDesktopBackground(on, color = null, image = null) {
   desktopBg.chain = desktopBg.chain.then(async () => {
     if (process.platform !== 'win32' || !startBridge()) return;
+    let picture = '';
+    try { picture = image && image.url ? fileURLToPath(image.url) : ''; } catch (_) { picture = ''; }
+    if (on && picture && fs.existsSync(picture) && /^#[0-9a-f]{6}$/i.test(String(color))) {
+      const [style, tile] = WALL_FIT[image.fit] || WALL_FIT.fill;
+      const key = `${picture}|${style}|${tile}|${color.toUpperCase()}`;
+      if (desktopBg.applied === key) return;
+      if (!(await saveOriginalWallpaper())) {
+        logLine('원래 배경 화면을 못 읽어서 배경 화면을 바꾸지 않음');
+        return;
+      }
+      const rgb = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16)).join(' ');
+      const payload = Buffer.from([picture, style, tile, rgb].join('\n'), 'utf8').toString('base64');
+      const reply = await bridgeCall(`wallrestore ${payload}`, 8000);
+      logLine(`배경 화면을 캔버스 바탕 사진으로: ${path.basename(picture)} (${image.fit}) → ${reply}`);
+      if (reply.startsWith('ok')) desktopBg.applied = key;
+      return;
+    }
     if (on && /^#[0-9a-f]{6}$/i.test(String(color))) {
       if (desktopBg.applied === color.toUpperCase()) return;
       if (!(await saveOriginalWallpaper())) {
@@ -1387,7 +1458,40 @@ function setDesktopBackground(on, color = null) {
   return desktopBg.chain;
 }
 
-ipcMain.on('set-desktop-background', (event, on, color) => { setDesktopBackground(!!on, color); });
+ipcMain.on('set-desktop-background', (event, on, color, image) => { setDesktopBackground(!!on, color, image); });
+
+// 캔버스 바탕 사진 고르기 (설정 › 테마 › 캔버스 바탕 · 저장한 자리 — renderer/background.js) → [{ url, name, width, height, thumb }]
+//   multi: 여러 장 (슬라이드 쇼). 못 넣은 사진은 건너뜀
+ipcMain.handle('pick-background', async (event, title, multi) => {
+  const result = await openFileDialog({
+    title: title || '바탕 사진 고르기',
+    properties: multi ? ['openFile', 'multiSelections'] : ['openFile'],
+    filters: [{ name: 'Images', extensions: IMAGE_EXTENSIONS }],
+  });
+  if (result.canceled || !result.filePaths.length) return [];
+  const picked = [];
+  for (const file of result.filePaths) {
+    try {
+      const one = storeBackground(file);
+      logLine(`바탕 사진 넣음: ${one.name} (${one.width}x${one.height})`);
+      picked.push(one);
+    } catch (err) {
+      logLine(`바탕 사진 넣기 실패: ${path.basename(file)} — ${err && err.message}`);
+    }
+  }
+  if (!picked.length) throw new Error('사진을 읽지 못했어요');
+  return picked;
+});
+
+// 더 안 쓰는 바탕 사진 지우기 — backgrounds 폴더 안의 파일만 (작은 그림도)
+ipcMain.on('remove-background', (event, url) => {
+  let file = '';
+  try { file = fileURLToPath(String(url)); } catch (_) { return; }
+  if (path.dirname(file).toLowerCase() !== getBackgroundsDir().toLowerCase()) return;
+  const thumb = file.replace(/\.[^.\\/]+$/, '') + '.thumb.jpg';
+  [file, thumb].forEach(f => { try { fs.unlinkSync(f); } catch (_) {} });
+  logLine(`바탕 사진 지움: ${path.basename(file)}`);
+});
 
 // ---------------- 시작 앱 (윈도우에 로그인하면 켜기) ----------------
 // 설정 › 일반 › 시작 앱. 윈도우의 시작 앱 목록(작업 관리자 › 시작 앱 · 윈도우 설정 › 앱 › 시작 프로그램)에 올림

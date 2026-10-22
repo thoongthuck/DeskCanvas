@@ -270,6 +270,66 @@ body.theme-dark .settings-overlay { background: rgba(15, 20, 25, 0.35); }
 .set-update-button.ready { background: #3B82F6 !important; }
 .set-update-button.ready:hover { background: #4C8EF7 !important; }
 .set-update-button[hidden] { display: none; }
+/* 캔버스 바탕 사진 줄 — 넣은 사진의 작은 그림 (누르면 지금 바탕 · 마우스를 올리면 ✕) + '+' (renderer/settings-window.js buildBackgroundStrip) */
+.set-bg-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 372px;
+}
+.set-bg-thumb,
+.set-bg-add {
+  position: relative;
+  width: 64px;
+  height: 40px;
+  border-radius: 6px;
+  padding: 0 !important;
+}
+.set-bg-thumb {
+  background-size: cover;
+  background-position: center;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+.set-bg-thumb.current { outline-color: #4A99EB; }
+.set-bg-x {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #26313C;
+  color: #FFFFFF;
+  font-size: 13px;
+  line-height: 17px;
+  text-align: center;
+  display: none;
+}
+.set-bg-thumb:hover .set-bg-x { display: block; }
+.set-bg-x:hover { background: #E5484D; }
+.set-bg-add {
+  border: 1.5px dashed rgba(255, 255, 255, 0.35) !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 20px;
+}
+.set-bg-add:hover { border-color: rgba(255, 255, 255, 0.7) !important; color: #FFFFFF; }
+/* 저장한 자리 줄의 작은 단추들 (renderer/settings-window.js buildSpotButtons) */
+.set-spot-buttons { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.set-mini-button {
+  height: 30px;
+  padding: 0 10px !important;
+  border-radius: 7px;
+  background: #26313C !important;
+  color: #FFFFFF !important;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.set-mini-button:hover { background: #2C3845 !important; }
+/* 바탕색 점: 밝은 색도 보이게 얇은 테두리 */
+.set-dot.bg-dot { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }   /* 어두운 설정 창에서 어두운 색 점도 보이게 */
 
 /* 설정 창 위에 뜨는 목록 (드롭다운 · 초기화 확인) */
 .popup-menu.settings-popup { z-index: 3100; }

@@ -94,7 +94,15 @@ export const DEFAULT_SETTINGS = {
   theme: 'light',            // 'light' | 'dark'
   showGrid: false,
   gridGap: 36,
-  desktopBackground: true,   // 바탕화면 배경 색 맞추기 — 윈도우 배경 화면을 캔버스 바탕색 단색으로 (main.js, 끄거나 앱을 끄면 원래대로)
+  desktopBackground: true,   // 바탕화면 배경 맞추기 — 윈도우 배경 화면을 캔버스 바탕(색 · 사진)과 같게 (main.js, 끄거나 앱을 끄면 원래대로)
+  bgKind: 'theme',           // 캔버스 바탕 — 'theme'(테마 색) | 'color'(bgColor) | 'image'(bgImages) (background.js)
+  bgColor: '#E9EEF4',        // 직접 고른 바탕색 (사진의 남는 곳도)
+  bgImages: [],              // 바탕 사진들 [{ url, name, w, h, thumb }] (앱 데이터 폴더 backgrounds — main.js pick-background)
+  bgIndex: 0,                // 지금 바탕 사진 차례
+  bgInterval: 30,            // 슬라이드 쇼 — 다음 사진까지 (분, 0 = 바꾸지 않음 — BG_INTERVALS)
+  bgOrder: 'order',          // 'order'(차례대로) | 'shuffle'(섞어서)
+  bgFit: 'fill',             // 화면에 고정한 사진 맞춤 — BG_FITS (채우기 · 맞춤 · 늘이기 · 가운데 · 바둑판식)
+  bgMove: 'screen',          // 'screen'(화면에 고정) | 'canvas'(캔버스와 함께 — 바둑판식으로 이어 붙임)
   lockView: false,           // 화면 잠금 — 빈 곳 끌기 · 휠로 캔버스가 움직이거나 확대되지 않음 (view.js)
   zoomSpeed: 'normal',       // 확대 · 축소 감도 — ZOOM_SPEEDS 의 이름
   sleepAfter: 5,             // 가려져 있을 때 절전 — 다 가려진 채 이만큼(분) 지나면 캔버스 화면을 내려놓음, 0 = 끔 (main.js)

@@ -313,8 +313,9 @@ export const boardMethods = {
   },
 
   // ---- 어두운 배경일 때 — 캘린더 종이가 살짝 덜 흰색 (가이드 12-2. 종이라서 어두워지지는 않음. 막대 · 나사 · 걸이는 그대로) ----
+  //   캔버스 바탕이 어두우면 (어두운 테마 · 어두운 색 · 사진 — background.js) 바탕에 놓인 판 이름 · 막대 글자도 밝게
   boardTone() {
-    return this.settings && this.settings.theme === 'dark' ? 'dark' : 'light';
+    return this.canvasDark ? 'dark' : 'light';
   },
 
   // 배경 테마가 바뀌면 따라 바꿈 (settings.js applySettings)

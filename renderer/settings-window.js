@@ -4,6 +4,7 @@
 import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS, HOLIDAY_REGIONS, ZOOM_SPEEDS, CALENDAR_BANDS, LINK_WIDTH_ORDER } from './constants.js';
 import { PHOTO_FRAMES } from './photos.js';
 import { t } from './i18n.js';
+import { BG_COLORS, BG_FITS, BG_INTERVALS } from './background.js';
 
 const SIDEBAR = [
   { icon: 'set-general.svg', label: 'side.general', target: 'section-general' },
@@ -236,6 +237,15 @@ export const settingsWindowMethods = {
     row(canvas, 'row-zoomspeed', 'row.zoomSpeed', 'row.zoomSpeed.desc',
       this.buildDropdown(Object.keys(ZOOM_SPEEDS).map(k => ({ label: t(`zoomSpeed.${k}`), value: k })), s.zoomSpeed,
         (v) => this.updateSetting('zoomSpeed', v), 'zoomspeed'));
+    // 저장한 자리 (Ctrl + Alt + 숫자) — 자리마다 가기 · 바탕 사진 · 빼기 · 지우기 (background.js)
+    const spotIds = Object.keys(this.spots || {}).sort();
+    if (!spotIds.length) row(canvas, 'row-spots', 'row.spotsEmpty', 'row.spotsEmpty.desc', null);
+    spotIds.forEach(n => {
+      const spot = this.spots[n];
+      const el = row(canvas, `row-spot-${n}`, 'row.spot', 'row.spot.desc', this.buildSpotButtons(n));
+      el.querySelector('.settings-row-title').textContent = t('row.spot', { n });
+      el.querySelector('.settings-row-desc').textContent = t('row.spot.desc', { n, bg: (spot.bg && spot.bg.name) || t('spot.noBg') });
+    });
 
     // 쪽지
     const notes = section('section-notes', 'add-file.svg', 'sec.notes');
@@ -292,6 +302,27 @@ export const settingsWindowMethods = {
     // 테마
     const theme = section('section-theme', 'set-theme.svg', 'sec.theme');
     row(theme, 'row-theme', 'row.theme', 'row.theme.desc', this.buildThemeButtons(s.theme)).classList.add('tall');
+    // 캔버스 바탕 — 테마 색 · 직접 고른 색 · 사진 (background.js). 고른 것에 맞는 줄만 보임
+    const images = s.bgImages || [];
+    const bgKind = s.bgKind === 'image' && images.length ? 'image' : s.bgKind === 'color' ? 'color' : 'theme';
+    row(theme, 'row-bgkind', 'row.bgKind', 'row.bgKind.desc',
+      this.buildDropdown(['theme', 'color', 'image'].map(v => ({ label: t(`bgKind.${v}`), value: v })), bgKind,
+        (v) => this.setBackgroundKind(v), 'bgkind'));
+    row(theme, 'row-bgcolor', 'row.bgColor', bgKind === 'image' ? 'row.bgColor.photoDesc' : 'row.bgColor.desc',
+      this.buildBackgroundDots()).hidden = bgKind === 'theme';
+    row(theme, 'row-bgimage', 'row.bgImage', 'row.bgImage.desc', this.buildBackgroundStrip()).hidden = bgKind !== 'image';
+    row(theme, 'row-bginterval', 'row.bgInterval', 'row.bgInterval.desc',
+      this.buildDropdown(BG_INTERVALS.map(v => ({ label: t(`bgInterval.${v}`), value: v })), s.bgInterval,
+        (v) => this.updateSetting('bgInterval', Number(v)), 'bginterval')).hidden = bgKind !== 'image' || images.length < 2;
+    row(theme, 'row-bgorder', 'row.bgOrder', 'row.bgOrder.desc',
+      this.buildDropdown(['order', 'shuffle'].map(v => ({ label: t(`bgOrder.${v}`), value: v })), s.bgOrder,
+        (v) => this.updateSetting('bgOrder', v), 'bgorder')).hidden = bgKind !== 'image' || images.length < 2 || !s.bgInterval;
+    row(theme, 'row-bgmove', 'row.bgMove', 'row.bgMove.desc',
+      this.buildDropdown(['screen', 'canvas'].map(v => ({ label: t(`bgMove.${v}`), value: v })), s.bgMove,
+        (v) => this.updateSetting('bgMove', v), 'bgmove')).hidden = bgKind !== 'image';
+    row(theme, 'row-bgfit', 'row.bgFit', 'row.bgFit.desc',
+      this.buildDropdown(BG_FITS.map(v => ({ label: t(`bgFit.${v}`), value: v })), s.bgFit,
+        (v) => this.updateSetting('bgFit', v), 'bgfit')).hidden = bgKind !== 'image' || s.bgMove === 'canvas';
 
     // 언어
     const language = section('section-language', 'set-language.svg', 'sec.language');
@@ -500,6 +531,87 @@ export const settingsWindowMethods = {
       });
     });
     return btn;
+  },
+
+  // 캔버스 바탕색 점 — 고른 색 6가지 + 직접 고르기 (background.js BG_COLORS)
+  buildBackgroundDots() {
+    const box = document.createElement('div');
+    box.className = 'set-color-dots';
+    const s = this.settings;
+    const now = String(s.bgColor || '').toUpperCase();
+    BG_COLORS.forEach(hex => {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'set-dot bg-dot' + (now === hex ? ' current' : '');
+      dot.style.background = hex;
+      dot.title = hex;
+      dot.addEventListener('click', () => this.updateSetting('bgColor', hex));
+      box.appendChild(dot);
+    });
+    box.appendChild(this.createCustomColorDot({
+      className: 'set-dot',
+      current: !BG_COLORS.includes(now),
+      value: now || BG_COLORS[0],
+      onInput: (hex) => {
+        this.settings.bgColor = hex;
+        this.persistSettings();
+        this.applyBackground();                              // 고르는 동안 바로 보이게 (설정 창은 다 고른 뒤 다시 그림)
+      },
+      onDone: () => this.refreshSettingsWindow(),
+    }));
+    return box;
+  },
+
+  // 바탕 사진 줄 — 넣은 사진의 작은 그림들 (누르면 지금 바탕 · ✕ 로 빼기) + '+' (여러 장 넣기 — background.js)
+  buildBackgroundStrip() {
+    const s = this.settings;
+    const box = document.createElement('div');
+    box.className = 'set-bg-strip';
+    (s.bgImages || []).forEach((image, i) => {
+      const thumb = document.createElement('button');
+      thumb.type = 'button';
+      thumb.className = 'set-bg-thumb' + (s.bgKind === 'image' && (s.bgIndex | 0) === i ? ' current' : '');
+      thumb.style.backgroundImage = `url("${String(image.thumb || image.url).replace(/"/g, '%22')}")`;
+      thumb.title = image.name || '';
+      thumb.addEventListener('click', () => this.selectBackgroundImage(i));
+      const x = document.createElement('span');
+      x.className = 'set-bg-x';
+      x.textContent = '×';
+      x.title = t('bgImage.remove');
+      x.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.removeBackgroundImage(i);
+      });
+      thumb.appendChild(x);
+      box.appendChild(thumb);
+    });
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'set-bg-add';
+    add.textContent = '+';
+    add.title = t('bgImage.add');
+    add.addEventListener('click', () => this.addBackgroundImages());
+    box.appendChild(add);
+    return box;
+  },
+
+  // 저장한 자리 줄의 단추 — 가기 · 바탕 사진… · 사진 빼기(있으면) · 지우기
+  buildSpotButtons(n) {
+    const box = document.createElement('div');
+    box.className = 'set-spot-buttons';
+    const button = (key, onClick) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'set-mini-button';
+      btn.textContent = t(key);
+      btn.addEventListener('click', onClick);
+      box.appendChild(btn);
+    };
+    button('spot.go', () => { this.closeSettings(); this.goToSpot(n); });
+    button('spot.bg', () => this.pickSpotBackground(n));
+    if (this.spots[n] && this.spots[n].bg) button('spot.bgRemove', () => this.removeSpotBackground(n));
+    button('spot.remove', () => this.removeSpot(n));
+    return box;
   },
 
   // 기본 색상 점 — 쪽지: 랜덤 + 6색 + 직접 고르기(RGB), 파일 묶음: 6색 + 직접 고르기

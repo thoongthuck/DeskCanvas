@@ -20,10 +20,38 @@
   box-sizing: border-box;
 }
 
+/* 캔버스 바탕 — 테마 색 · 고른 색 · 사진 (renderer/background.js 가 --canvas-bg … 를 넣어 줌) */
 body {
   font-family: 'Segoe UI', 'Apple Color Emoji', Tahoma, Geneva, Verdana, sans-serif;
   overflow: hidden;
-  background: #f5f5f5;
+  background-color: var(--canvas-bg, #f5f5f5);
+}
+/* 바탕 사진 층 두 장 — 창 전체를 덮는 따로 둔 층 (body 바탕에 그리면 크기 기준이 창이 아니라 문서 크기라 아래가 비었음)
+   슬라이드 쇼: 새 사진을 뒤쪽 층에 넣고 0.6초 겹쳐 바꿈 (.on) — renderer/background.js showBackgroundImage */
+.canvas-bg-layer {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  background-size: var(--canvas-bg-size, cover);
+  background-repeat: var(--canvas-bg-repeat, no-repeat);
+  background-position: var(--canvas-bg-pos, center);
+}
+body.bg-photo .canvas-bg-layer { display: block; }
+.canvas-bg-layer.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .canvas-bg-layer { transition: none; } }
+
+/* 저장한 자리 바탕 사진 — 그 자리 넓이에만 (renderer/background.js updateSpotBackgrounds). 쪽지 · 사진 · 판 뒤, 누르기는 통과 */
+.spot-bg {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 #canvas-container {
@@ -35,12 +63,12 @@ body {
   background: transparent;
 }
 
-#infinite-canvas {
+#infinite-canvas {                     /* 격자만 그림 — 바탕은 body (사진이 비치게) */
   display: block;
   position: fixed;
   top: 0;
   left: 0;
-  background: #f5f5f5;
+  background: transparent;
 }
 
 #ui-layer {
@@ -52,11 +80,7 @@ body {
   pointer-events: none;
 }
 
-/* 배경 테마: 어둡게 (설정 → 캔버스 → 배경 테마) */
-body.theme-dark,
-body.theme-dark #infinite-canvas {
-  background: #1F252C;
-}
+/* 배경 테마: 어둡게 — 바탕색은 --canvas-bg (renderer/background.js) */
 
 /* ===== 쪽지 · 사진 · 파일 우클릭 메뉴 (디자인/팝업/팝업.png) ===== */
 #context-menu,
@@ -690,7 +714,8 @@ body.overflow-expand .check-text {
   overflow-x: hidden;
 }
 
-/* 시각: 왼쪽 아래, 12px, 잉크색 45% (글꼴·글자 색을 바꿔도 그대로) */
+/* 시각: 왼쪽 아래, 12px, 잉크색 45% (글꼴·글자 색을 바꿔도 그대로). 쪽지 우클릭 › 시각 숨기기면 숨김 (자리는 그대로 — 크기가 안 바뀌게) */
+.sticky-note.hide-time .note-time { display: none; }
 .note-time {
   position: absolute;
   left: calc(20px * var(--z));
@@ -748,8 +773,8 @@ body.overflow-expand .check-text {
   }
 }
 
-/* 어두운 바탕 위 (어두운 테마의 낱개 파일 · 어두운 색 묶음 속 파일 — 묶음 종이는 밝아서 밝은 테마 색 그대로) */
-body.theme-dark .file-icon:not(.in-group),
+/* 어두운 바탕 위 (어두운 캔버스 바탕의 낱개 파일 · 어두운 색 묶음 속 파일 — 묶음 종이는 밝아서 밝은 테마 색 그대로) */
+body.canvas-dark .file-icon:not(.in-group),
 .file-icon.on-dark {
   --file-hover: rgba(90, 170, 255, 0.18);
   --file-pick: rgba(90, 170, 255, 0.32);
@@ -781,6 +806,9 @@ body.theme-dark .file-icon:not(.in-group),
   max-height: none;
   margin-bottom: calc(var(--name-extra, 0) * -1px * var(--zoom));
 }
+
+/* 화면 밖 멀리 있는 쪽지 · 사진 · 파일 — 그리지 않음 (renderer/view.js cullItem) */
+.culled { display: none !important; }
 
 /* 끄는 동안 맨 앞 (renderer/drag.js) — 캘린더에서 펼친 쪽지 · 겹친 쪽지보다도 위 */
 .sticky-note.dragging,
@@ -857,9 +885,13 @@ body.theme-dark .file-icon:not(.in-group),
   text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
-body.theme-dark .file-icon-name {
+body.canvas-dark .file-icon-name {      /* 어두운 캔버스 바탕 (어두운 테마 · 어두운 색 · 사진 — renderer/background.js) */
   color: #E5E7EB;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+body.bg-photo .file-icon:not(.in-group) .file-icon-name {   /* 사진 위: 윈도우 바탕화면처럼 흰 글씨에 그림자 */
+  color: #FFFFFF;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 4px rgba(0, 0, 0, 0.55);
 }
 
 /* 네모로 여러 개 고르기 (Ctrl · Shift + 빈 곳 끌기 — renderer/selection.js) */

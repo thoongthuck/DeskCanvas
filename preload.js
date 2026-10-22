@@ -86,7 +86,9 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   colorDialog: () => ipcRenderer.send('color-dialog'),
   setBackground: (color) => ipcRenderer.send('set-background', color),
   // 윈도우 배경 화면을 캔버스 색 단색으로 · 원래대로 (설정 '바탕화면 배경 색 맞추기', main.js)
-  setDesktopBackground: (on, color) => ipcRenderer.send('set-desktop-background', !!on, color),
+  setDesktopBackground: (on, color, image) => ipcRenderer.send('set-desktop-background', !!on, color, image || null),   // image: { url, fit } — 사진 바탕
+  pickBackground: (title, multi) => ipcRenderer.invoke('pick-background', title, !!multi),   // 캔버스 바탕 사진 고르기 → [{ url, name, width, height, thumb }]
+  removeBackground: (url) => ipcRenderer.send('remove-background', url),     // 더 안 쓰는 바탕 사진 파일 지우기 (backgrounds 폴더 안만)
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),
   onApplySetting: (callback) => ipcRenderer.on('apply-setting', (event, key, value) => callback(key, value)),
   // 윈도우 우클릭 메뉴 · 파일 이름 바꾸기

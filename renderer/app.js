@@ -58,6 +58,7 @@ import { webNoteMethods } from './web-note.js';
 import { tableNoteMethods } from './table-note.js';
 import { layerOrderMethods } from './layer-order.js';
 import { alignMethods } from './align.js';
+import { backgroundMethods } from './background.js';
 
 // 휠을 확대·축소로 가로채지 않는 곳 (여기 안에서는 목록이 그대로 스크롤됨)
 const SCROLLABLE_UI = '.settings-overlay, .popup-menu, #style-panel, #text-color-bar, #search-box, #minimap';
@@ -312,4 +313,5 @@ Object.assign(
   selectionMethods,
   linkMethods,
   alignMethods,
+  backgroundMethods,
 );

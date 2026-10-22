@@ -3,6 +3,8 @@
 import { IS_MAC, ZOOM_SPEEDS } from './constants.js';
 import { t } from './i18n.js';
 
+const CULL_MARGIN = 1;          // 화면 밖 빼 두기: 창 크기만큼 바깥까지는 그대로 그림 (끌거나 줄여 볼 때 가장자리가 비어 보이지 않게)
+
 export const viewMethods = {
   handleCanvasMouseDown(e) {
     const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -114,14 +116,19 @@ export const viewMethods = {
   },
 
   // 지금 보이는 화면 — 화면 왼쪽 위에 오는 캔버스 자리 x · y 와 배율 (원점 · 저장한 자리가 이 모양)
+  //   vw · vh: 그 화면의 넓이 (월드 px — 저장한 자리 바탕 사진이 깔리는 넓이, background.js)
   currentView() {
     const round = (v, d) => Math.round(v * d) / d;
-    return { x: round(-this.panX / this.zoom, 10), y: round(-this.panY / this.zoom, 10), zoom: round(this.zoom, 100) };
+    return {
+      x: round(-this.panX / this.zoom, 10), y: round(-this.panY / this.zoom, 10), zoom: round(this.zoom, 100),
+      vw: round(this.viewWidth / this.zoom, 10), vh: round(this.viewHeight / this.zoom, 10),
+    };
   },
 
   // 지금 보이는 화면을 원점으로
   setHomeHere() {
-    this.home = this.currentView();
+    const { x, y, zoom } = this.currentView();
+    this.home = { x, y, zoom };
     this.scheduleSave();
     this.showToast(t('toast.homeSet'));
   },
@@ -138,18 +145,26 @@ export const viewMethods = {
   },
 
   saveSpot(n) {
-    this.spots = { ...this.spots, [n]: this.currentView() };
+    const bg = this.spots[n] && this.spots[n].bg;            // 다시 저장해도 그 자리 바탕 사진은 그대로 (background.js)
+    this.spots = { ...this.spots, [n]: { ...this.currentView(), ...(bg ? { bg } : {}) } };
+    this.updateSpotBackgrounds();
+    if (this.settingsOpen) this.refreshSettingsWindow();
     this.scheduleSave();
     this.showToast(t('toast.spotSaved', { n }));
   },
 
-  // 저장 파일의 자리들 — 1~9 번만, 모양이 맞는 것만 (normalizeHome)
+  // 저장 파일의 자리들 — 1~9 번만, 모양이 맞는 것만 (normalizeHome) · 넓이 vw · vh · 바탕 사진 bg 는 있으면 그대로
   normalizeSpots(spots) {
     const out = {};
     if (!spots || typeof spots !== 'object') return out;
     for (let n = 1; n <= 9; n++) {
-      const h = this.normalizeHome(spots[n]);
-      if (h) out[n] = h;
+      const raw = spots[n];
+      const h = this.normalizeHome(raw);
+      if (!h) continue;
+      if (raw.vw > 0 && raw.vh > 0) Object.assign(h, { vw: raw.vw, vh: raw.vh });
+      const bg = raw.bg;
+      if (bg && typeof bg.url === 'string' && bg.url) h.bg = { url: bg.url, name: String(bg.name || ''), w: +bg.w || 0, h: +bg.h || 0, thumb: typeof bg.thumb === 'string' ? bg.thumb : '' };
+      out[n] = h;
     }
     return out;
   },
@@ -170,11 +185,21 @@ export const viewMethods = {
   },
 
   // 움직이는 동안은 미리 보기, 끝나면 바로 다시 배치
+  //   화면 밖 빼 둔 것: 갈 곳(과 지나는 길)은 미리 그려 둠 — 미리 보기 동안은 다시 배치하지 않아서, 그대로면 도착할 때 갑자기 나타남
   animateView(target, ms = 280) {
     cancelAnimationFrame(this.viewAnim);
+    this.commitView();
+    {
+      const world = (v) => ({ x: -v.panX / v.zoom, y: -v.panY / v.zoom, width: this.viewWidth / v.zoom, height: this.viewHeight / v.zoom });
+      const a = world(this), b = world(target);
+      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      this.keepViewDrawn({ x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y });
+      this.updateUIPositions();
+    }
     const set = (zoom, panX, panY) => { this.zoom = zoom; this.panX = panX; this.panY = panY; };
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) {
+      this.keepViewDrawn(null);
       set(target.zoom, target.panX, target.panY);
       this.updateUIPositions();
       this.draw();
@@ -194,6 +219,7 @@ export const viewMethods = {
         this.viewAnim = requestAnimationFrame(step);
         return;
       }
+      this.keepViewDrawn(null);                         // 도착 — 다시 배치하며 멀어진 것은 다시 빼 둠
       this.commitView();
       this.scheduleSave({ system: true });
     };
@@ -214,6 +240,8 @@ export const viewMethods = {
       this.uiLayer.style.willChange = '';
     }
     this.laidView = { zoom: this.zoom, panX: this.panX, panY: this.panY };
+    this.updateSpotBackgrounds();                     // 저장한 자리 바탕 사진 (background.js)
+    this.requestLinks();                              // 연결선 — 이은 것이 다 화면 밖(빼 둔 것)이어도 선은 화면을 지날 수 있음
     this.boards.forEach(board => {
       const el = document.getElementById(board.id);
       if (el) this.updateBoardPosition(el, board);
@@ -243,8 +271,55 @@ export const viewMethods = {
     }, 150);
   },
 
+  // ---- 화면 밖 빼 두기 ----
+  // 창에서 멀리(창 크기만큼 넘게) 떨어진 쪽지 · 사진 · 파일은 그리지 않음 (.culled — display: none)
+  //   → 놓인 것이 많아도 화면을 끌고 확대하는 비용 · 그리는 데 드는 메모리가 보이는 것만큼만. 가까워지면 그 자리 · 크기로 다시 그림
+  //   (update…Position 이 빼 둔 동안은 자리를 적지 않고, 다시 보일 때 처음부터 다 적음. 데이터 · 연결선 · 미니맵 · 찾기는 그대로)
+  //   늘 그리는 것: 끄는 중 · 이름 바꾸는 중 · 글 쓰는 중 (웹 페이지 쪽지는 부르는 쪽에서 뺌 — 페이지는 web-note.js 가 따로 내려놓음)
+  //   움직이는 동안의 미리 보기(previewView)는 다시 배치하지 않음 → 갈 곳은 cullKeep(월드 네모)으로 미리 그려 둠 (animateView)
+  //   반환: 빼 두었는지 (그러면 부르는 쪽은 자리를 적지 않음)
+  cullItem(el, left, top, width, height) {
+    const mx = this.viewWidth * CULL_MARGIN;
+    const my = this.viewHeight * CULL_MARGIN;
+    let out = left > this.viewWidth + mx || top > this.viewHeight + my || left + width < -mx || top + height < -my;
+    const keep = this.cullKeep;
+    if (out && keep) {                               // 갈 곳 (월드 네모)
+      const z = this.zoom;
+      const x = (left - this.panX) / z, y = (top - this.panY) / z;
+      out = !(x < keep.x + keep.width && x + width / z > keep.x && y < keep.y + keep.height && y + height / z > keep.y);
+    }
+    if (out && (el.id === this.editingId || el.classList.contains('dragging') || el.classList.contains('renaming'))) out = false;
+    if (el.classList.contains('culled') !== out) {      // class 하나로만 봄 (다른 곳에서 class 를 다시 써도 어긋나지 않게)
+      el.classList.toggle('culled', out);
+      if (!out && this.refitPending && this.refitPending.has(el.id)) this.scheduleCulledRefit();   // 빼 둔 동안 못 잰 쪽지 크기 (fit.js)
+    }
+    return out;
+  },
+
+  // 빼 둔 동안 크기를 못 잰 쪽지가 다시 보이면 — 다음 장면에서 잼 (자리를 적는 중에 바로 재면 자리 적기가 겹침)
+  scheduleCulledRefit() {
+    if (this.refitFrame) return;
+    this.refitFrame = requestAnimationFrame(() => {
+      this.refitFrame = null;
+      const ids = [...(this.refitPending || [])];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        const note = el && !el.classList.contains('culled') && this.notes.find(n => n.id === id);
+        if (!note) return;
+        this.refitPending.delete(id);
+        this.fitNote(note, el);
+      });
+    });
+  },
+
+  // 갈 곳을 미리 그려 둠 (월드 네모 · 없으면 풂) — 움직이는 동안은 다시 배치하지 않아서 (animateView)
+  keepViewDrawn(rect) {
+    this.cullKeep = rect;
+  },
+
   updateNotePosition(el, note) {
     const r = this.noteRect(note);                  // 글이 넘쳐 늘어난 크기(fit.js) · 캘린더 칸 자리(calendar.js)
+    if (note.type !== 'web' && this.cullItem(el, r.x * this.zoom + this.panX, r.y * this.zoom + this.panY, r.width * this.zoom, r.height * this.zoom)) return;
     el.style.left = `${r.x * this.zoom + this.panX}px`;
     el.style.top = `${r.y * this.zoom + this.panY}px`;
     el.style.width = `${r.width * this.zoom}px`;
@@ -270,6 +345,8 @@ export const viewMethods = {
       file.x = slot.x;
       file.y = slot.y;
     }
+    const extraH = el.nameExtra || 0;
+    if (this.cullItem(el, file.x * this.zoom + this.panX, file.y * this.zoom + this.panY, file.width * this.zoom, (file.height + extraH) * this.zoom)) return;   // 화면 밖
     el.classList.toggle('group-hidden', !!(slot && slot.hidden));   // 접힌 묶음 속
     const onDark = !!(slot && this.groupIsDark(slot.group));        // 어두운 색 묶음 속 — 이름을 밝게 (groups.css)
     if (el.classList.contains('in-group') !== !!slot || el.classList.contains('on-dark') !== onDark) {
@@ -296,6 +373,7 @@ export const viewMethods = {
 
   // ---- 캔버스 그리기 ----
   draw() {
+    this.updateBackgroundPosition();                 // 캔버스와 함께 움직이는 바탕 사진 (background.js)
     this.ctx.clearRect(0, 0, this.viewWidth, this.viewHeight);
     if (this.settings && this.settings.showGrid) this.drawGrid();
     this.requestMinimap();
@@ -304,7 +382,7 @@ export const viewMethods = {
   drawGrid() {
     const gap = (this.settings.gridGap || 36) * this.zoom;
     if (gap < 6) return;                            // 너무 촘촘하면 그리지 않음
-    const dark = this.settings.theme === 'dark';
+    const dark = this.canvasDark ?? this.settings.theme === 'dark';   // 바탕이 어두우면 밝은 선 (background.js)
     this.ctx.strokeStyle = dark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(31, 47, 69, 0.08)';
     // 선을 실제 화면 픽셀 한 칸에 맞춰야 배율 화면에서도 1px 로 또렷함
     const dpr = this.dpr || 1;

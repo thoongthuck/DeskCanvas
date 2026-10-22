@@ -84,9 +84,10 @@ export const keyboardMethods = {
       this.toggleSelectionLock();
       return;
     }
-    if (ctrl && key === 'l' && !typing) {                 // 처음 고른 것에 나머지를 연결선으로 (links.js)
+    if (ctrl && key === 'l' && !typing) {                 // 고른 것끼리 이어져 있으면 끊고, 아니면 처음 고른 것에 나머지를 이음 (links.js)
       e.preventDefault();
-      this.connectSelection();
+      const n = this.selection.size > 1 ? this.disconnectSelection() : 0;   // 알림은 띄우지 않음 (선이 사라지는 게 보여서)
+      if (!n) this.connectSelection();
       return;
     }
     if (ctrl && key === 'm') {                            // 미니맵 켜기 · 끄기
