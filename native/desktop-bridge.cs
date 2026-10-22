@@ -577,7 +577,12 @@ public class DesktopBridge : Form {
       string from = Convert.ToString(item.ExtendedProperty("System.Recycle.DeletedFrom"));
       if (!string.Equals(from, dir, StringComparison.OrdinalIgnoreCase)) continue;
       string shown = Convert.ToString(item.Name);                         // 확장자 숨김 설정이면 확장자 없이 보임
-      if (!string.Equals(shown, name, StringComparison.OrdinalIgnoreCase) && !string.Equals(shown, stem, StringComparison.OrdinalIgnoreCase)) continue;
+      if (!string.Equals(shown, name, StringComparison.OrdinalIgnoreCase)) {
+        if (!string.Equals(shown, stem, StringComparison.OrdinalIgnoreCase)) continue;
+        // 확장자 없이 보이는 것: 휴지통 속 실제 파일($R….확장자)의 확장자까지 같아야 — 보고서.pdf 를 되살리려다 보고서.docx 를 되살리지 않게
+        string inBin = Convert.ToString(item.Path);
+        if (!string.Equals(System.IO.Path.GetExtension(inBin), System.IO.Path.GetExtension(path), StringComparison.OrdinalIgnoreCase)) continue;
+      }
       object at = item.ExtendedProperty("System.Recycle.DateDeleted");
       DateTime when = at is DateTime ? (DateTime)at : DateTime.MinValue;
       if (best == null || when > bestAt) { best = item; bestAt = when; }

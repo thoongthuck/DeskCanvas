@@ -64,9 +64,15 @@ export const storageMethods = {
       else localStorage.setItem('wallpaper-canvas-state', JSON.stringify(state));
       this.dirty = false;
       this.sendDirty(false);
+      this.saveFailed = false;
       return true;
     } catch (err) {
       console.error('쪽지 저장 실패:', err);
+      // 자동 저장: 알림은 한 번만 띄우고 5초 뒤 다시 (그대로 두면 다음에 무언가 바꿀 때까지 저장되지 않아 끄면 사라짐)
+      if (!this.saveFailed) this.showToast(t('toast.saveRetry'));
+      this.saveFailed = true;
+      this.markDirty();
+      if (this.settings.autoSave && !this.saveTimer) this.saveTimer = setTimeout(() => this.persist(), 5000);
       return false;
     }
   },

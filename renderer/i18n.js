@@ -126,6 +126,7 @@ const STRINGS = {
     'time.am': '오전',
     'time.pm': '오후',
     'toast.saved': '저장했어요',
+    'toast.saveRetry': '저장하지 못했어요 — 잠시 뒤 다시 저장해 볼게요',
     'toast.copied': '코드를 복사했어요',
 
     // 찾기 (Ctrl+F)
@@ -725,6 +726,7 @@ const STRINGS = {
     'time.am': 'AM',
     'time.pm': 'PM',
     'toast.saved': 'Saved',
+    'toast.saveRetry': "Couldn't save — trying again in a moment",
     'toast.copied': 'Code copied',
 
     'search.placeholder': 'Find notes and files  (Enter next · Esc close)',

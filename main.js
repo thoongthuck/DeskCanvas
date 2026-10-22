@@ -51,16 +51,57 @@ function readState() {
 }
 
 // 임시 파일에 먼저 쓰고 바꿔치기 → 저장 도중 꺼져도 기존 파일이 깨지지 않음
+//   윈도우에서는 백신 · 검색 색인이 파일을 잠깐 붙잡아 바꿔치기가 EPERM · EBUSY 로 실패하는 일이 있음 → 잠깐씩 기다리며 몇 번 더,
+//   그래도 안 되면 덮어쓰기로 (바꿔치기만 못 할 뿐 내용은 다 써 둔 상태라 저장을 놓치지 않게)
 function writeJsonAtomic(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tmp, file);
-  return true;
+  for (let tries = 0; ; tries++) {
+    try {
+      fs.renameSync(tmp, file);
+      return true;
+    } catch (err) {
+      if (!err || !['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
+      if (tries < 5) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40 * (tries + 1));   // 40 · 80 · … ms
+        continue;
+      }
+      logLine(`저장 파일 바꿔치기 안 됨 (${err.code}) → 덮어씀: ${path.basename(file)}`);
+      fs.copyFileSync(tmp, file);
+      try { fs.unlinkSync(tmp); } catch (_) {}
+      return true;
+    }
+  }
+}
+
+// 쪽지 저장 파일 백업: 앱을 켠 뒤 처음 저장할 때 · 날짜가 바뀐 뒤 처음 저장할 때, 덮어쓰기 전 파일을 backup 폴더에 (최근 20개)
+//   잘못 지웠거나 불러오기가 어긋나 빈 캔버스가 저장돼도 그 전 모습이 남게. 늘 켜 두는 앱이라 날짜마다도 하나씩
+let stateBackupDay = '';
+function backupState(file) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (stateBackupDay === day) return;
+  stateBackupDay = day;
+  try {
+    if (!fs.existsSync(file)) return;
+    const dir = path.join(app.getPath('userData'), 'backup');
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = `${day}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+    fs.copyFileSync(file, path.join(dir, `canvas-state_${stamp}.json`));
+    const kept = fs.readdirSync(dir).filter(n => /^canvas-state_.*\.json$/.test(n)).sort().reverse();
+    kept.slice(20).forEach(n => { try { fs.unlinkSync(path.join(dir, n)); } catch (_) {} });
+    logLine(`쪽지 저장 파일 백업: canvas-state_${stamp}.json`);
+  } catch (err) {
+    logLine(`쪽지 저장 파일 백업 못 함: ${err && err.message}`);
+  }
 }
 
 function writeState(state) {
-  return writeJsonAtomic(getStateFile(), state);
+  const file = getStateFile();
+  backupState(file);
+  return writeJsonAtomic(file, state);
 }
 
 // 설정 파일: C:\Users\<사용자>\AppData\Roaming\wallpaper-canvas\settings.json
