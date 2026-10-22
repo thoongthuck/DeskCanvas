@@ -30,6 +30,7 @@
       "**/*",
       "!native/desktop-pin/build/**",
       "!dist/**",
+      "!docs/**",
       "!icons/*_미리보기.png",
       "!icons/시안_*.png",
       "!icons/*.md",
