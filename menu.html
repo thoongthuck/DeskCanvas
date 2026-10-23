@@ -6,6 +6,8 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
+  <!-- 메뉴 창: 앱 스크립트 · 메뉴 안의 <style> · 아이콘 그림(앱 icons · 윈도우가 준 data:)만 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Wallpaper Canvas menu</title>
   <style>
     :root {

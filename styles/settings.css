@@ -232,6 +232,12 @@ body.theme-dark .settings-overlay { background: rgba(15, 20, 25, 0.35); }
 
 /* 단축키 안내 › */
 .set-link-arrow { width: 20px; height: 20px; opacity: 0.6; }
+/* 접었다 펴는 묶음 (테마 › 저장한 자리 바탕 사진) — 머리 줄을 누르면 아래 줄들이 보이고 › 가 ⌄ 로. 안쪽 줄은 조금 들여 씀 */
+.settings-row.fold-head .set-link-arrow { transition: transform 0.15s ease-out; }
+.settings-row.fold-head.open .set-link-arrow { transform: rotate(90deg); }
+.settings-row.sub { padding-left: 27px; }
+.settings-row[hidden] { display: none; }
+.set-bg-thumb.small { width: 48px; height: 30px; align-self: center; }
 
 /* 초기화 */
 .set-reset-button {
@@ -316,6 +322,34 @@ body.theme-dark .settings-overlay { background: rgba(15, 20, 25, 0.35); }
   font-size: 20px;
 }
 .set-bg-add:hover { border-color: rgba(255, 255, 255, 0.7) !important; color: #FFFFFF; }
+/* 단축키 화면 — 바꿀 수 있는 줄의 키 단추 · 처음 키로(↺) (renderer/settings-window.js buildShortcutScreen) */
+.set-key-chip {
+  min-width: 96px;
+  height: 30px;
+  padding: 0 12px !important;
+  border-radius: 7px;
+  border: 1px solid #3A4654 !important;
+  background: #26313C !important;
+  color: #E5E7EB !important;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.set-key-chip:hover { border-color: #4A99EB !important; }
+.set-key-chip.capturing { border-color: #4A99EB !important; background: #1E3A5C !important; color: #FFFFFF !important; }
+.set-key-reset {
+  width: 30px;
+  height: 30px;
+  padding: 0 !important;
+  border-radius: 7px;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  font-size: 16px;
+}
+.set-key-reset:hover { background: #26313C !important; color: #FFFFFF !important; }
+.settings-row.shortcut-editable .settings-row-control { display: flex; align-items: center; gap: 6px; }
+.set-mini-button:disabled { opacity: 0.4; cursor: default; }
+/* 캔버스 바탕 줄 — [윈도우 배경 화면 가져오기] + 바탕 종류 (renderer/settings-window.js) */
+.set-bg-kind { display: flex; align-items: center; gap: 8px; }
 /* 저장한 자리 줄의 작은 단추들 (renderer/settings-window.js buildSpotButtons) */
 .set-spot-buttons { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .set-mini-button {

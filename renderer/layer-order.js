@@ -219,10 +219,10 @@ export const layerOrderMethods = {
   //   id: 이 오브젝트의 메뉴 (여럿 고른 것 가운데 하나면 고른 것 모두)
   layerMenuItems(id = null) {
     if (!this.reorderEntries(id).length) return [];
-    const row = (op, key) => ({ label: t(`order.${op}`), key, action: () => this.reorderSelection(op, id) });
+    const row = (op) => ({ label: t(`order.${op}`), key: this.shortcutHint(op), action: () => this.reorderSelection(op, id) });   // 키는 바꾼 단축키 그대로 (shortcuts.js)
     return [{
       icon: 'menu-order.svg', label: t('menu.order'), arrow: true,
-      submenu: [row('front', 'Ctrl+Shift+]'), row('forward', 'Ctrl+]'), row('backward', 'Ctrl+['), row('back', 'Ctrl+Shift+[')],
+      submenu: [row('front'), row('forward'), row('backward'), row('back')],
     }];
   },
 };

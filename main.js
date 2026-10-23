@@ -17,6 +17,7 @@ try {
 // ── 문제 찾기용 기록 ──────────────────────────────────────────────
 // 무슨 일이 있었는지 앱 데이터 폴더의 debug-log.txt 에 남긴다 (%APPDATA%\wallpaper-canvas\debug-log.txt).
 // 코드 폴더에는 쓰지 않음 (git 기록에 섞이지 않게). 200KB 가 넘으면 새로 시작한다
+//   사용자 파일 이름 · 경로는 적지 않음 — 기록을 받아 봐도 무슨 파일인지 드러나지 않게 (logName · scrubLog)
 function logFile() {
   return path.join(app.getPath('userData'), 'debug-log.txt');
 }
@@ -27,8 +28,34 @@ function logLine(text) {
     const pad = (n) => String(n).padStart(2, '0');
     const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
     if (fs.existsSync(file) && fs.statSync(file).size > 200000) fs.unlinkSync(file);
-    fs.appendFileSync(file, `[${stamp}] ${text}\n`, 'utf-8');
+    fs.appendFileSync(file, `[${stamp}] ${scrubLog(text)}\n`, 'utf-8');
   } catch (_) {}
+}
+
+// 기록에 적는 사용자 파일 — 이름 대신 확장자 + 짧은 표 (같은 파일이면 같은 표라 기록 안에서 따라갈 수는 있음)
+function logName(p) {
+  const s = String(p || '');
+  if (!s) return '(없음)';
+  const tag = require('crypto').createHash('sha1').update(s.toLowerCase()).digest('hex').slice(0, 4);
+  return `[${path.extname(s).toLowerCase() || '파일'} #${tag}]`;
+}
+
+// 기록 글에서 가리기 — 따옴표 안의 경로 (파일 오류 글: rename 'C:\…\a.txt') · 홈 폴더 (윈도우 사용자 이름)
+//   앱 데이터 폴더 · 앱 폴더 안의 경로는 그대로 (문제 찾기에 필요 — 홈 폴더 부분만 ~)
+function scrubLog(text) {
+  let s = String(text);
+  const own = (p) => {
+    const k = p.toLowerCase();
+    return [app.getPath('userData'), __dirname].some(d => k.startsWith(String(d).toLowerCase()));
+  };
+  s = s.replace(/(['"])([A-Za-z]:\\[^'"\r\n]*)\1/g, (m, q, p) => (own(p) ? m : logName(p)));
+  const home = app.getPath('home');
+  if (home) {
+    [home, home.replace(/\\/g, '/')].forEach(h => {
+      s = s.replace(new RegExp(h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '~');
+    });
+  }
+  return s;
 }
 
 // 노트 저장 파일: C:\Users\<사용자>\AppData\Roaming\wallpaper-canvas\canvas-state.json
@@ -36,16 +63,41 @@ function getStateFile() {
   return path.join(app.getPath('userData'), 'canvas-state.json');
 }
 
+// 파일 글 읽기 — 백신 · 검색 색인이 잠깐 붙잡아 못 읽으면 (EPERM · EBUSY) 잠깐씩 기다리며 몇 번 더, 그래도 안 되면 오류를 그대로
+function readTextWithRetry(file) {
+  for (let tries = 0; ; tries++) {
+    try {
+      return fs.readFileSync(file, 'utf-8');
+    } catch (err) {
+      if (!err || !['EPERM', 'EBUSY', 'EACCES'].includes(err.code) || tries >= 5) throw err;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60 * (tries + 1));   // 60 · 120 · … ms
+    }
+  }
+}
+
+// 쪽지 저장 파일 읽기
+//   읽기가 안 되면 오류를 그대로 던짐 → 화면은 빈 캔버스로 시작하되 저장을 멈춤 (renderer/storage.js loadFailed — 멀쩡한 파일을 덮어쓰지 않게)
+//   내용이 깨졌으면 지우지 않고 옆에 보관하고 (.broken-…), 가장 최근의 멀쩡한 백업으로 불러옴 (_recovered: 백업 이름 — 화면이 알림)
 function readState() {
   const file = getStateFile();
   if (!fs.existsSync(file)) return null;
+  const text = readTextWithRetry(file);
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return JSON.parse(text);
   } catch (err) {
-    // 파일이 깨졌으면 지우지 않고 옆에 보관해 둔다 (다음 저장 때 덮어쓰지 않도록)
-    const backup = file.replace(/\.json$/, `.broken-${Date.now()}.json`);
-    try { fs.renameSync(file, backup); } catch (_) {}
-    console.error('노트 파일을 읽지 못해 백업했습니다:', backup, err);
+    const broken = file.replace(/\.json$/, `.broken-${Date.now()}.json`);
+    try { fs.renameSync(file, broken); } catch (_) {}
+    logLine(`쪽지 저장 파일이 깨져 옆에 보관함: ${path.basename(broken)}`);
+    const dir = path.join(app.getPath('userData'), 'backup');
+    let names = [];
+    try { names = fs.readdirSync(dir).filter(n => /^canvas-state_.*\.json$/.test(n)).sort().reverse(); } catch (_) {}
+    for (const n of names) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf-8'));
+        logLine(`가장 최근 백업으로 불러옴: ${n}`);
+        return { ...data, _recovered: n };
+      } catch (_) {}
+    }
     return null;
   }
 }
@@ -77,6 +129,8 @@ function writeJsonAtomic(file, data) {
 
 // 쪽지 저장 파일 백업: 앱을 켠 뒤 처음 저장할 때 · 날짜가 바뀐 뒤 처음 저장할 때, 덮어쓰기 전 파일을 backup 폴더에 (최근 20개)
 //   잘못 지웠거나 불러오기가 어긋나 빈 캔버스가 저장돼도 그 전 모습이 남게. 늘 켜 두는 앱이라 날짜마다도 하나씩
+//   바로 앞 백업과 내용이 같으면 만들지 않음 — 하루에 여러 번 다시 켜도 (업데이트 · 오류) 오래된 멀쩡한 백업이 밀려나지 않게
+const fileHash = (f) => require('crypto').createHash('sha1').update(fs.readFileSync(f)).digest('hex');
 let stateBackupDay = '';
 function backupState(file) {
   const d = new Date();
@@ -88,6 +142,8 @@ function backupState(file) {
     if (!fs.existsSync(file)) return;
     const dir = path.join(app.getPath('userData'), 'backup');
     fs.mkdirSync(dir, { recursive: true });
+    const [latest] = fs.readdirSync(dir).filter(n => /^canvas-state_.*\.json$/.test(n)).sort().reverse();
+    if (latest && fileHash(path.join(dir, latest)) === fileHash(file)) return;   // 바로 앞 백업과 같음
     const stamp = `${day}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
     fs.copyFileSync(file, path.join(dir, `canvas-state_${stamp}.json`));
     const kept = fs.readdirSync(dir).filter(n => /^canvas-state_.*\.json$/.test(n)).sort().reverse();
@@ -159,6 +215,9 @@ function storeBackground(src) {
     dest = path.join(dir, base + (ext === '.png' ? '.png' : '.jpg'));
     fs.writeFileSync(dest, ext === '.png' ? image.toPNG() : image.toJPEG(92));
     logLine(`바탕 사진을 줄여 넣음: ${size.width}x${size.height}`);
+  } else if (!IMAGE_EXTENSIONS.includes(ext.slice(1)) && image && !image.isEmpty()) {   // 확장자가 없는 그림 (윈도우가 바꿔 둔 배경 화면 TranscodedWallpaper 등) — JPG 로
+    dest = path.join(dir, base + '.jpg');
+    fs.writeFileSync(dest, image.toJPEG(92));
   } else {
     fs.copyFileSync(src, dest);
   }
@@ -1016,7 +1075,7 @@ const MENU_PREP_REFRESH = 10 * 60 * 1000;
 const menuPrep = { keys: new Set(), child: null, at: 0, busy: false, next: null, warm: [], warmChild: null };
 
 function menuPaths(paths) {
-  return (Array.isArray(paths) ? paths : []).map(p => String(p).replace(/[\r\n]/g, '')).filter(Boolean);
+  return (Array.isArray(paths) ? paths : []).map(p => String(p).replace(/[\r\n]/g, '')).filter(canvasPath);   // 캔버스에 있는 파일만
 }
 
 function menuKey(paths) {
@@ -1212,7 +1271,7 @@ ipcMain.handle('clipboard-files', () => clipboardFiles());
 // 캔버스 Ctrl+C (renderer/clipboard.js) — 파일은 탐색기처럼 파일로 · 쪽지 글은 글자로 윈도우 클립보드에. 반환: 클립보드 순번 (못 쓰면 null)
 //   순번은 클립보드가 바뀔 때마다 오름 → Ctrl+V 때 같으면 그 사이 다른 것을 복사하지 않은 것
 ipcMain.handle('canvas-clip-set', async (event, files, text) => {
-  const paths = (Array.isArray(files) ? files : []).map(p => String(p).replace(/[\r\n]/g, '')).filter(Boolean);
+  const paths = (Array.isArray(files) ? files : []).map(p => String(p).replace(/[\r\n]/g, '')).filter(canvasPath);   // 캔버스에 있는 파일만
   const body = String(text || '');
   if (process.platform !== 'win32' || !startBridge()) {
     if (body) clipboard.writeText(body);
@@ -1279,12 +1338,14 @@ ipcMain.handle('rename-path', async (event, filePath, newName) => {
   const src = String(filePath || '');
   const name = String(newName || '').trim();
   if (!src || !name || /[\\/:*?"<>|]/.test(name) || name === '.' || name === '..') return { ok: false, reason: 'name' };
+  if (!canvasPath(src)) return { ok: false, reason: 'denied' };                 // 캔버스에 있는 파일만 (canvasPath)
   const dest = path.join(path.dirname(src), name);
   if (dest === src) return { ok: true, path: src };
   if (dest.toLowerCase() !== src.toLowerCase() && fs.existsSync(dest)) return { ok: false, reason: 'exists' };
   try {
     await fs.promises.rename(src, dest);
-    logLine(`이름 바꿈: ${path.basename(src)} → ${name}`);
+    canvasFiles.added.add(pathKey(dest));
+    logLine(`이름 바꿈: ${logName(src)} → ${logName(dest)}`);
     return { ok: true, path: dest };
   } catch (err) {
     logLine(`이름 바꾸기 실패: ${err && err.message}`);
@@ -1450,8 +1511,22 @@ async function saveOriginalWallpaper() {
     try { fs.copyFileSync(image, keep); } catch (_) { keep = image; }
   }
   fs.writeFileSync(file, JSON.stringify({ image: keep, style, tile, color }, null, 2));
-  logLine(`원래 배경 화면을 적어 둠: ${path.basename(image) || '(그림 없음)'} · 배경색 ${color}`);
+  logLine(`원래 배경 화면을 적어 둠: ${image ? logName(image) : '(그림 없음)'} · 배경색 ${color}`);
   return true;
+}
+
+// 지금 윈도우 배경 화면이 앱이 바꿔 둔 그대로인지 (applied: setDesktopBackground 가 적어 둔 것 — '사진|맞춤|바둑판|색' · '#색')
+//   못 읽으면 그대로라고 봄 (예전처럼 되돌림)
+async function wallpaperIsOurs(applied) {
+  const reply = await bridgeCall('wallget', 5000);
+  if (!reply.startsWith('ok ')) return true;
+  const [image = '', , , color = ''] = Buffer.from(reply.slice(3), 'base64').toString('utf8').split('\n');
+  if (String(applied).startsWith('#')) {
+    const rgb = [1, 3, 5].map(i => parseInt(applied.slice(i, i + 2), 16)).join(' ');
+    return !image.trim() && color.trim().split(/\s+/).join(' ') === rgb;
+  }
+  const picture = String(applied).split('|')[0];
+  return !!image && pathKey(image) === pathKey(picture);
 }
 
 // on: 켜기 · 끄기, color: 캔버스 바탕색 (#RRGGBB), image: 사진 바탕 { url, fit } (renderer/background.js)
@@ -1494,6 +1569,13 @@ function setDesktopBackground(on, color = null, image = null) {
       let saved = null;
       try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
       if (!saved) return;
+      // 그동안 윈도우 설정에서 배경 화면을 직접 바꿨으면 그대로 둠 — 되돌리면 새로 고른 배경을 옛것으로 덮어써서
+      if (desktopBg.applied && !(await wallpaperIsOurs(desktopBg.applied))) {
+        logLine('윈도우 배경 화면을 그동안 직접 바꿈 → 원래대로 되돌리지 않음');
+        desktopBg.applied = null;
+        try { fs.unlinkSync(file); } catch (_) {}
+        return;
+      }
       const payload = Buffer.from([saved.image || '', saved.style || '', saved.tile || '', saved.color || ''].join('\n'), 'utf8').toString('base64');
       const reply = await bridgeCall(`wallrestore ${payload}`, 8000);
       logLine(`배경 화면을 원래대로: ${reply}`);
@@ -1521,14 +1603,58 @@ ipcMain.handle('pick-background', async (event, title, multi) => {
   for (const file of result.filePaths) {
     try {
       const one = storeBackground(file);
-      logLine(`바탕 사진 넣음: ${one.name} (${one.width}x${one.height})`);
+      logLine(`바탕 사진 넣음: ${logName(file)} (${one.width}x${one.height})`);
       picked.push(one);
     } catch (err) {
-      logLine(`바탕 사진 넣기 실패: ${path.basename(file)} — ${err && err.message}`);
+      logLine(`바탕 사진 넣기 실패: ${logName(file)} — ${err && err.message}`);
     }
   }
   if (!picked.length) throw new Error('사진을 읽지 못했어요');
   return picked;
+});
+
+// 지금 윈도우 배경 화면 → 캔버스 바탕 (renderer/background.js importWindowsWallpaper — 설정 단추 · 처음 켤 때)
+//   '바탕화면 배경 맞추기'로 바꿔 둔 동안이면 적어 둔 원래 배경 화면을 (캔버스 바탕을 도로 가져오지 않게). 배경 바꾸기와 겹치지 않게 차례로
+//   known: 이미 넣어 둔 윈도우 배경 화면의 표시(from) — 같은 그림이면 다시 넣지 않음
+//   반환: { image: 넣은 사진 | null, from, known: 이미 있음, fit, color: '#RRGGBB' | '' } · 못 읽으면 null
+const WALL_STYLE_FIT = { 10: 'fill', 6: 'fit', 2: 'stretch', 0: 'center', 22: 'fill' };   // WallpaperStyle → 캔버스 맞춤 (22 = 모니터 여러 대에 걸치기)
+ipcMain.handle('import-windows-wallpaper', async (event, known) => {
+  if (process.platform !== 'win32' || !startBridge()) return null;
+  const job = desktopBg.chain.then(async () => {
+    let wall = null;
+    try { wall = JSON.parse(fs.readFileSync(wallpaperBackupFile(), 'utf8')); } catch (_) {}
+    if (!wall) {
+      const reply = await bridgeCall('wallget', 15000);
+      if (!reply.startsWith('ok ')) return null;
+      const [image = '', style = '', tile = '', color = ''] = Buffer.from(reply.slice(3), 'base64').toString('utf8').split('\n');
+      wall = { image, style, tile, color };
+    }
+    const fit = String(wall.tile) === '1' ? 'tile' : WALL_STYLE_FIT[String(wall.style).trim()] || 'fill';
+    const rgb = String(wall.color || '').trim().split(/\s+/).map(Number);
+    const color = rgb.length === 3 && rgb.every(n => Number.isInteger(n) && n >= 0 && n <= 255)
+      ? `#${rgb.map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase()}` : '';
+    let image = null;
+    let from = '';
+    if (wall.image && fs.existsSync(wall.image)) {
+      // 같은 그림인지는 내용으로 (원래 배경 화면은 맞추기 동안 앱 데이터 폴더에 복사해 둬서 경로가 바뀜 — saveOriginalWallpaper)
+      from = `sha1:${require('crypto').createHash('sha1').update(fs.readFileSync(wall.image)).digest('hex').slice(0, 16)}`;
+      if (Array.isArray(known) && known.includes(from)) return { image: null, from, known: true, fit, color };
+      try {
+        image = storeBackground(wall.image);
+      } catch (err) {
+        logLine(`윈도우 배경 화면을 못 가져옴: ${err && err.message}`);
+      }
+    }
+    logLine(`윈도우 배경 화면 가져옴: ${image ? `사진 ${image.width}x${image.height} (${fit})` : '사진 없음'} · 배경색 ${color || '-'}`);
+    return { image, from, known: false, fit, color };
+  });
+  desktopBg.chain = job.catch(() => {});
+  try {
+    return await job;
+  } catch (err) {
+    logLine(`윈도우 배경 화면을 못 가져옴: ${err && err.message}`);
+    return null;
+  }
 });
 
 // 더 안 쓰는 바탕 사진 지우기 — backgrounds 폴더 안의 파일만 (작은 그림도)
@@ -1753,6 +1879,7 @@ function createWindow() {
 // IPC Handlers
 ipcMain.handle('get-canvas-state', async () => {
   const state = readState();
+  rememberCanvasFiles(state);                       // 화면이 다룰 수 있는 파일 (canvasPath)
   // 예전에 저장된 파일 항목에 '윈도우 기본 그림'이 남아 있으면 지움 → 화면이 기본 그림(code/icons/file-*.svg)을 씀
   if (state && Array.isArray(state.files)) {
     const generic = await genericIcons();
@@ -1767,6 +1894,7 @@ ipcMain.handle('get-canvas-state', async () => {
 
 ipcMain.handle('save-canvas-state', async (event, state) => {
   scheduleMirror();                                 // 바탕화면 층 사진도 새로 (저장은 바뀐 뒤 · 화면을 옮긴 뒤 옴)
+  rememberCanvasFiles(state);
   return writeState(state);
 });
 
@@ -1802,7 +1930,7 @@ async function openFileDialog(options) {
   try {
     logLine(`파일 고르기 창 띄움: ${options.title}`);
     const result = await dialog.showOpenDialog(options);
-    logLine(`파일 고르기 결과: ${result.canceled ? '취소' : (result.filePaths[0] || '없음')}`);
+    logLine(`파일 고르기 결과: ${result.canceled ? '취소' : result.filePaths[0] ? logName(result.filePaths[0]) : '없음'}`);
     return result;
   } catch (err) {
     logLine(`파일 고르기 실패: ${err && err.message}`);
@@ -1842,7 +1970,7 @@ ipcMain.handle('pick-video', async (event, title) => {
   try {
     const size = fs.statSync(src).size;
     if (size > VIDEO_COPY_LIMIT) {
-      logLine(`영상이 커서 원본 자리를 씀 (${Math.round(size / 1048576)}MB): ${src}`);
+      logLine(`영상이 커서 원본 자리를 씀 (${Math.round(size / 1048576)}MB): ${logName(src)}`);
       return pathToFileURL(src).href;
     }
     const dest = path.join(getVideosDir(), `${Date.now()}${path.extname(src).toLowerCase()}`);
@@ -1886,10 +2014,10 @@ ipcMain.handle('download-gif', async (event, address) => {
     if (bytes.subarray(0, 4).toString('latin1') !== 'GIF8') throw new Error('GIF 가 아님');
     const dest = path.join(getImagesDir(), `${Date.now()}.gif`);
     fs.writeFileSync(dest, bytes);
-    logLine(`붙여넣은 GIF 원본 받음: ${url.host} (${Math.round(bytes.length / 1024)}KB)`);
+    logLine(`붙여넣은 GIF 원본 받음 (${Math.round(bytes.length / 1024)}KB)`);
     return pathToFileURL(dest).href;
   } catch (err) {
-    logLine(`붙여넣은 GIF 원본 못 받음 (${url.host}): ${err && err.message}`);
+    logLine(`붙여넣은 GIF 원본 못 받음: ${err && err.message}`);
     return null;
   } finally {
     clearTimeout(timer);
@@ -1915,7 +2043,7 @@ ipcMain.handle('import-media', async (event, filePath) => {
   const dest = path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`);
   try {
     await fs.promises.copyFile(src, dest);
-    logLine(`쪽지로 바꾸려고 복사: ${path.basename(src)} → ${dest}`);
+    logLine(`쪽지로 바꾸려고 복사: ${logName(src)} → ${path.basename(dest)}`);
     return { url: pathToFileURL(dest).href, media };
   } catch (err) {
     logLine(`쪽지로 바꾸기 복사 실패: ${err && err.message}`);
@@ -1930,15 +2058,32 @@ ipcMain.handle('copy-text', async (event, text) => {
 });
 
 // ================ 설정 ================
+// 설정 읽기 — 없으면 null (처음 켬). 깨졌으면 옆에 보관하고 (.broken-…) null → 기본값으로
+//   읽기 자체가 안 되면 (잠깐 붙잡힘이 길어짐) 기본값으로 쓰되 이번에는 덮어쓰지 않음 (settingsReadFailed — 멀쩡한 설정을 지우지 않게)
+let settingsReadFailed = false;
 ipcMain.handle('get-settings', () => {
+  const file = getSettingsFile();
+  if (!fs.existsSync(file)) return null;
+  let text;
   try {
-    return JSON.parse(fs.readFileSync(getSettingsFile(), 'utf-8'));
+    text = readTextWithRetry(file);
+  } catch (err) {
+    settingsReadFailed = true;
+    logLine(`설정 파일을 못 읽음 — 기본값으로 쓰고 덮어쓰지 않음: ${err && err.code}`);
+    return null;
+  }
+  try {
+    return JSON.parse(text);
   } catch (_) {
+    const broken = file.replace(/\.json$/, `.broken-${Date.now()}.json`);
+    try { fs.renameSync(file, broken); } catch (_) {}
+    logLine(`설정 파일이 깨져 옆에 보관함: ${path.basename(broken)}`);
     return null;
   }
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
+  if (settingsReadFailed) return false;             // 못 읽은 설정 파일은 그대로 둠 (다시 켜면 읽힘)
   const ok = writeJsonAtomic(getSettingsFile(), settings);
   refreshTray();                                    // 언어 · 바탕화면에 넣기가 바뀌었을 수 있음
   return ok;
@@ -2161,7 +2306,7 @@ async function shortcutIcon(filePath) {
       if (link && link.icon) icon = { path: link.icon, index: link.iconIndex || 0 };
       target = (link && link.target) || null;
     } catch (err) {
-      logLine(`바로가기 못 읽음: ${path.basename(filePath)} — ${err && err.message}`);
+      logLine(`바로가기 못 읽음: ${logName(filePath)} — ${err && err.message}`);
     }
   } else if (ext === '.url') {
     icon = iconFileFromUrlShortcut(filePath);
@@ -2243,7 +2388,7 @@ async function shellIcon(filePath, index = 0) {
       const url = toDataUrl(await app.getFileIcon(filePath, { size }));
       if (url) return url;
     } catch (err) {
-      logLine(`아이콘(${size}) 실패: ${path.basename(filePath)} — ${err && err.message}`);
+      logLine(`아이콘(${size}) 실패: ${logName(filePath)} — ${err && err.message}`);
     }
   }
   return null;
@@ -2456,7 +2601,7 @@ async function filePreview(filePath, isDir = false) {
     if (thumb) { iconStats.thumb++; return thumb; }
   }
   iconStats.none++;
-  logLine(`그림 없음 → 기본 그림: ${path.basename(filePath)}`);
+  logLine(`그림 없음 → 기본 그림: ${logName(filePath)}`);
   return null;
 }
 
@@ -2496,9 +2641,15 @@ function allowYouTubeEmbeds() {
 //   <webview> = 캔버스 창 안에서 따로 도는 페이지. 앱과 떨어진 저장소(persist:web) — 로그인 · 쿠키는 여기 남음
 //   붙기 전에 조임: preload 없음 · node 없음 · 격리 · http(s) 주소만
 //   새 탭으로 여는 링크 → 그 쪽지 안에서, 로그인 창처럼 따로 뜨는 작은 창 → 보통 창으로 (맨 위 — 캔버스 뒤에 숨지 않게)
-//   내려받기 → 묻지 않고 '다운로드' 폴더에 (묻는 창이 캔버스 뒤에 숨는 일이 있어서)
+//   내려받기 → 묻지 않고 '다운로드' 폴더에 (묻는 창이 캔버스 뒤에 숨는 일이 있어서) · 캔버스에 알림.
+//     실행 파일 · 스크립트 · 디스크 그림은 막음 (악성 페이지가 몰래 떨구지 못하게 — 그런 파일은 브라우저에서 받게)
 //   권한(카메라 · 위치 · 알림 …)은 주지 않음 — 전체 화면 · 복사만
 const WEB_PARTITION = 'persist:web';
+const RISKY_DOWNLOADS = new Set([
+  'exe', 'msi', 'msix', 'msixbundle', 'appx', 'appxbundle', 'appinstaller', 'msp', 'mst', 'com', 'scr', 'pif', 'cpl', 'dll', 'sys', 'drv', 'ocx',
+  'bat', 'cmd', 'ps1', 'psm1', 'psd1', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh', 'hta', 'jar', 'reg', 'inf', 'lnk', 'url', 'scf', 'application', 'gadget',
+  'iso', 'img', 'vhd', 'vhdx', 'xll',
+]);
 function setupWebNotes() {
   app.on('web-contents-created', (event, contents) => {
     contents.on('will-attach-webview', (e, webPreferences, params) => {
@@ -2508,7 +2659,7 @@ function setupWebNotes() {
       webPreferences.contextIsolation = true;
       webPreferences.sandbox = true;
       if (params.partition !== WEB_PARTITION || !/^https?:\/\//i.test(params.src || '')) {
-        logLine(`웹 페이지 쪽지: 막음 (${params.partition} ${String(params.src).slice(0, 80)})`);
+        logLine(`웹 페이지 쪽지: 막음 (${params.partition} · ${String(params.src || '').split(':')[0] || '주소 없음'})`);   // 주소는 적지 않음
         e.preventDefault();
       }
     });
@@ -2525,13 +2676,21 @@ function setupWebNotes() {
   const ses = session.fromPartition(WEB_PARTITION);
   ses.setPermissionRequestHandler((wc, permission, callback) => callback(permission === 'fullscreen' || permission === 'clipboard-sanitized-write'));
   ses.on('will-download', (e, item) => {
-    const dir = app.getPath('downloads');
+    const notify = (info) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('web-download', info); };
     const ext = path.extname(item.getFilename());
+    if (RISKY_DOWNLOADS.has(ext.slice(1).toLowerCase())) {
+      e.preventDefault();
+      logLine(`웹 페이지 쪽지: 실행 파일 내려받기 막음 (${ext.toLowerCase()})`);
+      notify({ name: item.getFilename(), blocked: true });
+      return;
+    }
+    const dir = app.getPath('downloads');
     const base = path.basename(item.getFilename(), ext) || 'download';
     let dest = path.join(dir, base + ext);
     for (let i = 2; fs.existsSync(dest); i++) dest = path.join(dir, `${base} (${i})${ext}`);
     item.setSavePath(dest);
-    logLine(`웹 페이지 쪽지: 내려받기 → ${dest}`);
+    logLine(`웹 페이지 쪽지: 내려받기 → ${logName(dest)}`);
+    item.once('done', (ev, state) => notify({ name: path.basename(dest), blocked: false, done: state === 'completed' }));
   });
 }
 
@@ -2552,9 +2711,38 @@ ipcMain.handle('web-snapshot', async (event, id) => {
 });
 
 ipcMain.handle('open-path', async (event, filePath) => {
+  if (!canvasPath(filePath)) {                     // 캔버스에 없는 파일은 열지 않음 (canvasPath)
+    logLine('열기 막음: 캔버스에 없는 파일');
+    return 'not on canvas';
+  }
   const error = await shell.openPath(filePath);   // 성공하면 빈 문자열
   return error === '' ? true : error;
 });
+
+// ================ 화면이 다룰 수 있는 파일 ================
+// 열기 · 이름 바꾸기 · 옮기기 · 윈도우 우클릭 메뉴 · 클립보드에 넣기는 이 파일만 — 화면(renderer)이 뚫려도 아무 파일이나 실행 · 조작하지 못하게
+//   바탕화면 폴더(와 그 안) · 캔버스에 놓인 파일 (저장한 쪽지 파일의 files · 이번에 끌어다 놓은 것 · 이름을 바꾼 것)
+const canvasFiles = { saved: new Set(), added: new Set() };
+const pathKey = (p) => path.resolve(String(p || '')).toLowerCase();
+
+function rememberCanvasFiles(state) {
+  if (!state || !Array.isArray(state.files)) return;
+  canvasFiles.saved = new Set(state.files.filter(f => f && typeof f.path === 'string' && f.path).map(f => pathKey(f.path)));
+}
+
+function inDesktopTree(p) {
+  const k = pathKey(p);
+  return getDesktopDirs().some(d => {
+    const dk = d.toLowerCase();
+    return k === dk || k.startsWith(dk + path.sep);
+  });
+}
+
+function canvasPath(p) {
+  if (!p || typeof p !== 'string' || /^[a-z][a-z0-9+.-]+:\/\//i.test(p)) return false;   // 인터넷 주소 등은 아님
+  const k = pathKey(p);
+  return inDesktopTree(k) || inKeepDir(k) || canvasFiles.saved.has(k) || canvasFiles.added.has(k);   // inKeepDir: 쪽지로 바꾼 원본 (keep-originals)
+}
 
 // ================ 바탕화면 폴더 (내 바탕화면 + 모든 사용자 바탕화면) ================
 function getDesktopDirs() {
@@ -2583,12 +2771,18 @@ async function describePath(filePath) {
   return { path: filePath, name, icon, isDir: stat.isDirectory() };
 }
 
+// 바탕화면 폴더의 파일들 — 폴더를 못 읽으면 null (빈 목록이 아님 — 화면이 아이콘 배치를 다 지우지 않게, renderer/files.js syncDesktop)
 async function listDesktop() {
   const items = [];
   iconStats.icon = iconStats.thumb = iconStats.link = iconStats.none = 0;
   for (const dir of getDesktopDirs()) {
     let names = [];
-    try { names = fs.readdirSync(dir); } catch (_) { continue; }
+    try {
+      names = fs.readdirSync(dir);
+    } catch (err) {
+      logLine(`바탕화면 폴더를 못 읽음 — 아이콘을 그대로 둠: ${err && err.code}`);
+      return null;
+    }
     for (const n of names) {
       if (SKIP_NAMES.has(n.toLowerCase()) || n.startsWith('~$') || n.startsWith('.')) continue;
       const info = await describePath(path.join(dir, n));
@@ -2610,7 +2804,8 @@ function watchDesktop() {
     clearTimeout(timer);
     timer = setTimeout(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('desktop-changed', await listDesktop());
+        const list = await listDesktop();
+        if (list) mainWindow.webContents.send('desktop-changed', list);
       }
     }, 400);
   };
@@ -2647,20 +2842,15 @@ ipcMain.handle('move-paths', async (event, pairs) => {
     const from = path.resolve(String((pair && pair.from) || ''));
     const to = path.resolve(String((pair && pair.to) || ''));
     let reason = '';
-    if (!onDesktop(from) && !onDesktop(to)) reason = 'denied';
+    // 넣기: 바탕화면 파일 → 캔버스에 있는 폴더 / 되돌리기: 그 폴더 안 → 바탕화면 (canvasPath)
+    if (!(onDesktop(from) && canvasPath(path.dirname(to))) && !(onDesktop(to) && canvasPath(path.dirname(from)))) reason = 'denied';
     else if (!fs.existsSync(from)) reason = 'missing';
     else if (fs.existsSync(to)) reason = 'exists';
     else if ((to.toLowerCase() + path.sep).startsWith(from.toLowerCase() + path.sep)) reason = 'inside';   // 폴더를 자기 안으로
     else {
       try {
         if (!fs.statSync(path.dirname(to)).isDirectory()) throw new Error('not a folder');
-        try {
-          await fs.promises.rename(from, to);
-        } catch (err) {
-          if (!err || err.code !== 'EXDEV') throw err;       // 다른 드라이브의 폴더: 복사한 뒤 지움
-          await fs.promises.cp(from, to, { recursive: true, errorOnExist: true, force: false });
-          await fs.promises.rm(from, { recursive: true, force: true });
-        }
+        if (await moveOne(from, to)) reason = 'copied';
       } catch (err) {
         reason = (err && err.message) || 'error';
       }
@@ -2672,14 +2862,80 @@ ipcMain.handle('move-paths', async (event, pairs) => {
   return { done, failed };
 });
 
+// 파일 · 폴더 하나 옮기기 — 같은 드라이브면 이름만 바꿈, 다른 드라이브면 복사한 뒤 원본을 지움
+//   반환: '' (옮김) · 'copied' (사본은 다 만들었는데 원본을 다 지우지 못함 — 원본 일부가 남음, 사본은 그대로 둠). 그 밖의 실패는 던짐
+async function moveOne(from, to) {
+  try {
+    await fs.promises.rename(from, to);
+    return '';
+  } catch (err) {
+    if (!err || err.code !== 'EXDEV') throw err;
+  }
+  await fs.promises.cp(from, to, { recursive: true, errorOnExist: true, force: false });
+  try {
+    await fs.promises.rm(from, { recursive: true, force: true });
+    return '';
+  } catch (err) {
+    logLine(`다른 드라이브로 옮긴 뒤 원본을 다 지우지 못함: ${err && err.code}`);
+    return 'copied';
+  }
+}
+
+// 파일 › 이미지 · 영상 쪽지로 바꾸기 (renderer/file-media.js) — 바탕화면의 원본은 휴지통 대신 사진 · 동영상 › DeskCanvas 폴더로
+//   쪽지는 앱 데이터 폴더의 사본을 쓰므로, 앱을 지우거나 휴지통을 비워도 원본이 남게. 되돌리기는 move-paths 로 다시 바탕화면에
+//   반환: { done: [{ from, to }], failed: [{ from, reason }] }
+const KEEP_FOLDER = 'DeskCanvas';
+function keepDirFor(file) {
+  const ext = path.extname(file).slice(1).toLowerCase();
+  return path.join(app.getPath(VIDEO_EXTENSIONS.includes(ext) ? 'videos' : 'pictures'), KEEP_FOLDER);
+}
+function inKeepDir(p) {
+  const k = pathKey(p);
+  return ['pictures', 'videos'].some(n => {
+    const d = pathKey(path.join(app.getPath(n), KEEP_FOLDER));
+    return k === d || k.startsWith(d + path.sep);
+  });
+}
+ipcMain.handle('keep-originals', async (event, paths) => {
+  const desktops = getDesktopDirs().map(d => d.toLowerCase());
+  const done = [];
+  const failed = [];
+  for (const raw of (Array.isArray(paths) ? paths : []).slice(0, 200)) {
+    const from = path.resolve(String(raw || ''));
+    if (!desktops.includes(path.dirname(from).toLowerCase()) || !fs.existsSync(from)) {
+      failed.push({ from, reason: 'denied' });
+      continue;
+    }
+    try {
+      const dir = keepDirFor(from);
+      fs.mkdirSync(dir, { recursive: true });
+      const ext = path.extname(from);
+      const base = path.basename(from, ext);
+      let to = path.join(dir, base + ext);
+      for (let i = 2; fs.existsSync(to); i++) to = path.join(dir, `${base} (${i})${ext}`);
+      if (await moveOne(from, to)) failed.push({ from, reason: 'copied' });
+      else done.push({ from, to });
+    } catch (err) {
+      failed.push({ from, reason: (err && err.message) || 'error' });
+    }
+  }
+  logLine(`쪽지로 바꾼 원본을 사진 · 동영상 › ${KEEP_FOLDER} 로 옮김: ${done.length}개` + (failed.length ? ` · 못 옮김 ${failed.length}개` : ''));
+  return { done, failed };
+});
+
 // 휴지통으로 보낸 바탕화면 파일 되살리기 (화면의 되돌리기, native/desktop-bridge.ps1 restore) — 반환: { failed: [못 되살린 경로] }
 ipcMain.handle('restore-trashed', async (event, paths) => {
   const list = (Array.isArray(paths) ? paths : []).map(String);
   if (process.platform !== 'win32') return { failed: list };
+  const desktops = getDesktopDirs().map(d => d.toLowerCase());
   const failed = [];
   for (const p of list) {
+    if (!desktops.includes(path.dirname(pathKey(p)))) {                // 바탕화면 폴더 바로 안의 것만 (trash-path 와 같이)
+      failed.push(p);
+      continue;
+    }
     const reply = await bridgeCall(`restore ${Buffer.from(p, 'utf8').toString('base64')}`, 30000);
-    logLine(`휴지통에서 되살리기: ${path.basename(p)} → ${reply}`);
+    logLine(`휴지통에서 되살리기: ${logName(p)} → ${reply}`);
     if (!reply.startsWith('ok')) failed.push(p);
   }
   return { failed };
@@ -2690,13 +2946,16 @@ ipcMain.handle('describe-paths', async (event, paths) => {
   const items = [];
   for (const p of Array.isArray(paths) ? paths : []) {
     const info = await describePath(String(p));
-    if (info) items.push(info);
+    if (!info) continue;
+    items.push(info);
+    canvasFiles.added.add(pathKey(info.path));      // 끌어다 놓은 파일 — 열기 · 이름 바꾸기를 할 수 있게 (canvasPath)
   }
   return items;
 });
 
 // 창이 닫힐 때 마지막 내용을 확실히 저장하기 위한 동기 저장
 ipcMain.on('save-canvas-state-sync', (event, state) => {
+  rememberCanvasFiles(state);
   try {
     event.returnValue = writeState(state);
   } catch (err) {

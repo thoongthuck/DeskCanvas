@@ -3,6 +3,7 @@
 import { DEFAULT_SETTINGS, NEW_NOTE_SIZES, GRID_GAPS, NOTE_COLORS, HOLIDAY_REGIONS, ZOOM_SPEEDS, CALENDAR_BANDS, LINK_WIDTHS } from './constants.js';
 import { setLanguage } from './i18n.js';
 import { isHexColor } from './color.js';
+import { normalizeShortcuts } from './shortcuts.js';
 
 export const settingsMethods = {
   async loadSettings() {
@@ -13,6 +14,9 @@ export const settingsMethods = {
       console.error('설정을 읽지 못했어요:', err);
     }
     this.settings = this.normalizeSettings(saved);
+    // 처음 켤 때 (저장된 설정이 없음 — 처음 설치했거나 데이터를 지우고 다시 설치): 캔버스 바탕을 지금 윈도우 배경 화면으로
+    //   (background.js importWindowsWallpaper). 적용하기 전에 — '바탕화면 배경 맞추기'가 윈도우 배경 화면을 테마 색으로 바꾸기 전에 읽음
+    if (!saved && await this.importWindowsWallpaper({ quiet: true })) this.persistSettings();
     this.applySettings();
   },
 
@@ -30,6 +34,7 @@ export const settingsMethods = {
     s.showGrid = !!s.showGrid;
     s.lockView = !!s.lockView;
     s.desktopBackground = s.desktopBackground !== false;
+    s.shortcuts = normalizeShortcuts(s.shortcuts);                       // 바꾼 단축키 (shortcuts.js)
     if (!ZOOM_SPEEDS[s.zoomSpeed]) s.zoomSpeed = 'normal';
     if (![0, 1, 5, 15, 30].includes(s.sleepAfter)) s.sleepAfter = 5;
     s.gridSnap = !!s.gridSnap;
@@ -62,7 +67,10 @@ export const settingsMethods = {
     ['bgImage', 'bgImageName', 'bgImageW', 'bgImageH'].forEach(k => delete s[k]);
     s.bgImages = (Array.isArray(s.bgImages) ? s.bgImages : [])
       .filter(i => i && typeof i.url === 'string' && i.url)
-      .map(i => ({ url: i.url, name: String(i.name || ''), w: +i.w || 0, h: +i.h || 0, thumb: typeof i.thumb === 'string' ? i.thumb : '' }));
+      .map(i => ({
+        url: i.url, name: String(i.name || ''), w: +i.w || 0, h: +i.h || 0, thumb: typeof i.thumb === 'string' ? i.thumb : '',
+        ...(typeof i.from === 'string' && i.from ? { from: i.from } : {}),   // 윈도우 배경 화면에서 가져온 것 (background.js importWindowsWallpaper)
+      }));
     s.bgIndex = Math.min(Math.max(0, s.bgIndex | 0), Math.max(0, s.bgImages.length - 1));
     if (![0, 1, 10, 30, 60, 1440].includes(s.bgInterval)) s.bgInterval = DEFAULT_SETTINGS.bgInterval;
     if (s.bgOrder !== 'shuffle') s.bgOrder = 'order';

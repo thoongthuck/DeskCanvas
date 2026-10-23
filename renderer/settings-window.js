@@ -5,6 +5,7 @@ import { ICON_DIR, NOTE_COLORS, SETTINGS_COLOR_ORDER, NEW_NOTE_SIZES, GRID_GAPS,
 import { PHOTO_FRAMES } from './photos.js';
 import { t } from './i18n.js';
 import { BG_COLORS, BG_FITS, BG_INTERVALS } from './background.js';
+import { SHORTCUT_ACTIONS, comboOf, comboLabel } from './shortcuts.js';
 
 const SIDEBAR = [
   { icon: 'set-general.svg', label: 'side.general', target: 'section-general' },
@@ -18,26 +19,21 @@ const SIDEBAR = [
   { icon: 'set-reset.svg', label: 'side.reset', target: 'row-reset' },
 ];
 
+// 설정 › 단축키 목록 — 할 일 이름(문자열)은 바꿀 수 있는 단축키 (shortcuts.js — 줄을 누르고 새 키), [이름, 키] 는 그대로인 것
 const SHORTCUTS = [
-  ['sc.undo', 'Ctrl + Z'],
-  ['sc.redo', 'Ctrl + Shift + Z'],
-  ['sc.save', 'Ctrl + S'],
+  'undo', 'redo', 'save',
   ['sc.paste', 'Ctrl + V'],
-  ['sc.delete', 'Delete'],
+  'delete',
   ['sc.multiSelect', 'key.ctrlClick'],
   ['sc.marquee', 'key.ctrlDrag'],
-  ['sc.selectAll', 'Ctrl + A'],
-  ['sc.groupFiles', 'Ctrl + G'],
-  ['sc.orderStep', 'Ctrl + ]  /  Ctrl + ['],
-  ['sc.orderEnd', 'Ctrl + Shift + ]  /  ['],
+  'selectAll', 'groupFiles', 'forward', 'backward', 'front', 'back',
   ['sc.canvasMenu', 'key.dblclickEmpty'],
   ['sc.windowsMenu', 'key.rightClick'],
   ['sc.connect', 'key.altDrag'],
   ['sc.noSnap', 'key.altWhileDrag'],
-  ['sc.connectSelected', 'Ctrl + L'],
-  ['sc.lockSelected', 'Ctrl + Shift + L'],
+  'connect', 'lock',
   ['sc.deselect', 'Esc'],
-  ['sc.rename', 'F2'],
+  'rename',
   ['sc.popOut', 'popOutKey'],               // main.js 가 잡은 단축키 (못 잡았으면 줄을 뺌)
   ['sc.finishEdit', 'Shift + Enter'],
   ['sc.editNote', 'key.dblclick'],
@@ -46,12 +42,12 @@ const SHORTCUTS = [
   ['sc.tableNewline', 'key.altEnterTable'],
   ['sc.textStyle', 'key.ctrlBIU'],
   ['sc.zoom', 'key.wheel'],
-  ['sc.goHome', 'Ctrl + 0'],
+  'home', 'setHome',
   ['sc.goSpot', 'Ctrl + 1 ~ 9'],
   ['sc.saveSpot', 'Ctrl + Alt + 1 ~ 9'],
-  ['sc.search', 'Ctrl + F'],
-  ['sc.minimap', 'Ctrl + M'],
+  'search', 'minimap',
   ['sc.pan', 'key.dragEmpty'],
+  'settings',
   ['sc.closeSettings', 'Esc'],
 ];
 
@@ -87,6 +83,7 @@ export const settingsWindowMethods = {
   },
 
   closeSettings() {
+    this.stopShortcutCapture();                           // 단축키 바꾸기 기다리는 중이었으면 그만
     const overlay = document.querySelector('.settings-overlay');
     if (overlay) overlay.remove();
     this.closeMenus();
@@ -158,6 +155,7 @@ export const settingsWindowMethods = {
     const content = document.querySelector('.settings-content');
     if (!content) return;
     const s = this.settings;
+    const keepScroll = content.scrollTop;            // 다시 그려도 보던 자리 그대로 (사진을 넣거나 설정을 바꾼 뒤)
     content.innerHTML = '';
     content.onscroll = () => this.syncSettingsNav();
 
@@ -237,14 +235,13 @@ export const settingsWindowMethods = {
     row(canvas, 'row-zoomspeed', 'row.zoomSpeed', 'row.zoomSpeed.desc',
       this.buildDropdown(Object.keys(ZOOM_SPEEDS).map(k => ({ label: t(`zoomSpeed.${k}`), value: k })), s.zoomSpeed,
         (v) => this.updateSetting('zoomSpeed', v), 'zoomspeed'));
-    // 저장한 자리 (Ctrl + Alt + 숫자) — 자리마다 가기 · 바탕 사진 · 빼기 · 지우기 (background.js)
-    const spotIds = Object.keys(this.spots || {}).sort();
-    if (!spotIds.length) row(canvas, 'row-spots', 'row.spotsEmpty', 'row.spotsEmpty.desc', null);
-    spotIds.forEach(n => {
-      const spot = this.spots[n];
+    // 저장한 자리 (Ctrl + Alt + 숫자) — 자리마다 가기 · 지우기 (바탕 사진은 테마 칸 — 저장한 자리 바탕 사진)
+    const savedSpots = Object.keys(this.spots || {}).sort();
+    if (!savedSpots.length) row(canvas, 'row-spots', 'row.spotsEmpty', 'row.spotsEmpty.desc', null);
+    savedSpots.forEach(n => {
       const el = row(canvas, `row-spot-${n}`, 'row.spot', 'row.spot.desc', this.buildSpotButtons(n));
       el.querySelector('.settings-row-title').textContent = t('row.spot', { n });
-      el.querySelector('.settings-row-desc').textContent = t('row.spot.desc', { n, bg: (spot.bg && spot.bg.name) || t('spot.noBg') });
+      el.querySelector('.settings-row-desc').textContent = t('row.spot.desc', { n });
     });
 
     // 쪽지
@@ -305,9 +302,17 @@ export const settingsWindowMethods = {
     // 캔버스 바탕 — 테마 색 · 직접 고른 색 · 사진 (background.js). 고른 것에 맞는 줄만 보임
     const images = s.bgImages || [];
     const bgKind = s.bgKind === 'image' && images.length ? 'image' : s.bgKind === 'color' ? 'color' : 'theme';
-    row(theme, 'row-bgkind', 'row.bgKind', 'row.bgKind.desc',
-      this.buildDropdown(['theme', 'color', 'image'].map(v => ({ label: t(`bgKind.${v}`), value: v })), bgKind,
-        (v) => this.setBackgroundKind(v), 'bgkind'));
+    const kindBox = document.createElement('div');                   // [윈도우 배경 화면 가져오기] [테마 색 ⌄]
+    kindBox.className = 'set-bg-kind';
+    const fromWindows = document.createElement('button');
+    fromWindows.type = 'button';
+    fromWindows.className = 'set-mini-button';
+    fromWindows.textContent = t('bgKind.fromWindows');
+    fromWindows.title = t('bgKind.fromWindows.title');
+    fromWindows.addEventListener('click', () => this.importWindowsWallpaper());
+    kindBox.append(fromWindows, this.buildDropdown(['theme', 'color', 'image'].map(v => ({ label: t(`bgKind.${v}`), value: v })), bgKind,
+      (v) => this.setBackgroundKind(v), 'bgkind'));
+    row(theme, 'row-bgkind', 'row.bgKind', 'row.bgKind.desc', kindBox);
     row(theme, 'row-bgcolor', 'row.bgColor', bgKind === 'image' ? 'row.bgColor.photoDesc' : 'row.bgColor.desc',
       this.buildBackgroundDots()).hidden = bgKind === 'theme';
     row(theme, 'row-bgimage', 'row.bgImage', 'row.bgImage.desc', this.buildBackgroundStrip()).hidden = bgKind !== 'image';
@@ -323,6 +328,33 @@ export const settingsWindowMethods = {
     row(theme, 'row-bgfit', 'row.bgFit', 'row.bgFit.desc',
       this.buildDropdown(BG_FITS.map(v => ({ label: t(`bgFit.${v}`), value: v })), s.bgFit,
         (v) => this.updateSetting('bgFit', v), 'bgfit')).hidden = bgKind !== 'image' || s.bgMove === 'canvas';
+    // 저장한 자리 바탕 사진 — 머리 줄을 누르면 접었다 폄 (펼친 채인지는 창을 다시 그려도 그대로 — spotBgOpen)
+    //   자리마다 사진 고르기 · 윈도우 배경 화면 · 빼기 (background.js). 가기 · 지우기는 캔버스 칸의 저장한 자리 목록에
+    const spotIds = Object.keys(this.spots || {}).sort();
+    const foldArrow = document.createElement('img');
+    foldArrow.className = 'set-link-arrow';
+    foldArrow.src = `${ICON_DIR}chevron.svg`;
+    foldArrow.alt = '';
+    foldArrow.draggable = false;
+    const fold = row(theme, 'row-spotbg', 'row.spotBg', 'row.spotBg.desc', foldArrow);
+    fold.classList.add('link', 'fold-head');
+    fold.classList.toggle('open', !!this.spotBgOpen);
+    fold.querySelector('.settings-row-desc').textContent = t('row.spotBg.desc', { n: spotIds.length, m: spotIds.filter(n => this.spots[n].bg).length });
+    const subRows = [];
+    if (!spotIds.length) subRows.push(row(theme, 'row-spotbg-empty', 'row.spotsEmpty', 'row.spotBgEmpty.desc', null));
+    spotIds.forEach(n => {
+      const spot = this.spots[n];
+      const el = row(theme, `row-spotbg-${n}`, 'row.spot', 'row.spotBgItem.desc', this.buildSpotBgButtons(n));
+      el.querySelector('.settings-row-title').textContent = t('row.spot', { n });
+      el.querySelector('.settings-row-desc').textContent = t('row.spotBgItem.desc', { bg: (spot.bg && spot.bg.name) || t('spot.noBg') });
+      subRows.push(el);
+    });
+    subRows.forEach(el => { el.classList.add('sub'); el.hidden = !this.spotBgOpen; });
+    fold.addEventListener('click', () => {
+      this.spotBgOpen = !this.spotBgOpen;
+      fold.classList.toggle('open', this.spotBgOpen);
+      subRows.forEach(el => { el.hidden = !this.spotBgOpen; });
+    });
 
     // 언어
     const language = section('section-language', 'set-language.svg', 'sec.language');
@@ -378,9 +410,11 @@ export const settingsWindowMethods = {
     const spacer = document.createElement('div');
     spacer.className = 'settings-spacer';
     content.appendChild(spacer);
+    content.scrollTop = keepScroll;
     requestAnimationFrame(() => {
       const last = etc.offsetHeight;
       spacer.style.height = `${Math.max(0, content.clientHeight - last - 24)}px`;
+      content.scrollTop = keepScroll;
     });
   },
 
@@ -407,10 +441,13 @@ export const settingsWindowMethods = {
     btn.textContent = t(status === 'ready' ? 'update.install' : 'update.check');
   },
 
-  // 단축키 안내 화면 (시안에 없어 같은 모양으로 만듦)
+  // 단축키 화면 (시안에 없어 같은 모양으로 만듦) — 바꿀 수 있는 줄은 키 단추를 누르고 새 키를 누르면 바뀜 (shortcuts.js)
+  //   바꾼 줄에는 ↺ (처음 키로), 맨 위에 '모두 처음대로'. 그대로인 줄(마우스 · Esc · 붙여넣기 …)은 키 글자만
   buildShortcutScreen() {
     const content = document.querySelector('.settings-content');
     if (!content) return;
+    this.stopShortcutCapture();
+    const keepScroll = content.scrollTop;            // 키를 바꿔 다시 그려도 보던 자리 그대로
     content.innerHTML = '';
     content.onscroll = null;
 
@@ -425,13 +462,9 @@ export const settingsWindowMethods = {
     });
     content.appendChild(back);
 
-    SHORTCUTS.forEach(([labelKey, keys]) => {
-      if (keys === 'popOutKey') {
-        if (!this.popOutKey) return;
-        keys = this.popOutKey;
-      }
-      const line = document.createElement('div');
-      line.className = 'settings-row';
+    const line = (labelKey, control) => {
+      const el = document.createElement('div');
+      el.className = 'settings-row';
       const text = document.createElement('div');
       text.className = 'settings-row-text';
       const title = document.createElement('div');
@@ -440,13 +473,103 @@ export const settingsWindowMethods = {
       text.appendChild(title);
       const box = document.createElement('div');
       box.className = 'settings-row-control';
+      box.append(...[].concat(control));
+      el.append(text, box);
+      content.appendChild(el);
+      return el;
+    };
+
+    // 안내 · 모두 처음대로
+    const resetAll = document.createElement('button');
+    resetAll.type = 'button';
+    resetAll.className = 'set-mini-button';
+    resetAll.textContent = t('shortcut.resetAll');
+    resetAll.disabled = !Object.keys(this.settings.shortcuts || {}).length;
+    resetAll.addEventListener('click', () => this.resetShortcut());
+    const intro = line('shortcut.intro', resetAll);
+    intro.classList.add('shortcut-intro');
+    const introDesc = document.createElement('div');
+    introDesc.className = 'settings-row-desc';
+    introDesc.textContent = t('shortcut.intro.desc');
+    intro.querySelector('.settings-row-text').appendChild(introDesc);
+
+    SHORTCUTS.forEach(entry => {
+      if (typeof entry === 'string') {                               // 바꿀 수 있는 것
+        const action = SHORTCUT_ACTIONS[entry];
+        const keys = this.shortcutKeys(entry);
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'set-key-chip';
+        chip.textContent = keys.length ? keys.map(comboLabel).join('  /  ') : t('shortcut.none');
+        chip.title = t('shortcut.change');
+        chip.addEventListener('click', () => this.startShortcutCapture(entry, chip));
+        const parts = [chip];
+        if (Array.isArray((this.settings.shortcuts || {})[entry])) {   // 바꾼 것 — 처음 키로
+          const undo = document.createElement('button');
+          undo.type = 'button';
+          undo.className = 'set-key-reset';
+          undo.textContent = '↺';
+          undo.title = t('shortcut.reset', { keys: action.keys.map(comboLabel).join(' / ') });
+          undo.addEventListener('click', () => this.resetShortcut(entry));
+          parts.unshift(undo);
+        }
+        line(action.label, parts).classList.add('shortcut-editable');
+        return;
+      }
+      let [labelKey, keys] = entry;                                 // 그대로인 것
+      if (keys === 'popOutKey') {
+        if (!this.popOutKey) return;
+        keys = this.popOutKey;
+      }
       const value = document.createElement('div');
       value.className = 'settings-row-desc';
       value.textContent = keys.includes('.') ? t(keys) : keys;
-      box.appendChild(value);
-      line.append(text, box);
-      content.appendChild(line);
+      line(labelKey, value);
     });
+    content.scrollTop = keepScroll;
+  },
+
+  // 키 단추를 누름 — 다음에 누르는 키로 바꿈 (Esc: 그만 · 꾸밈 키만 누르면 마저 기다림). 안 되는 키면 알리고 계속 기다림
+  //   문서 전체의 키를 먼저 받아서 (잡기 단계) 캔버스 단축키 · 설정 창 닫기(Esc)로 가지 않게
+  startShortcutCapture(id, chip) {
+    this.stopShortcutCapture();
+    const before = chip.textContent;
+    chip.classList.add('capturing');
+    chip.textContent = t('shortcut.press');
+    const onKey = (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+      if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        this.buildShortcutScreen();                                  // 그만 — 원래 키 글자로
+        return;
+      }
+      const result = this.setShortcut(id, comboOf(e));
+      if (result.error) {
+        this.showToast(t(result.error, { key: comboLabel(comboOf(e)) }));
+        return;
+      }
+      if (result.other) this.showToast(t('shortcut.moved', { key: comboLabel(comboOf(e)), other: t(SHORTCUT_ACTIONS[result.other].label) }));
+      // 설정이 바뀌어 화면을 다시 그림 (settings.js applySettings → refreshSettingsWindow) — 기다리기도 거기서 끝남
+    };
+    const stopOutside = (e) => {                                      // 다른 곳을 누르면 그만 (다른 키 단추면 그 단추가 이어서 기다림)
+      if (e.target === chip) return;
+      this.stopShortcutCapture();
+      chip.classList.remove('capturing');
+      chip.textContent = before;
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('mousedown', stopOutside, true);
+    this.shortcutCapture = { onKey, stopOutside };
+  },
+
+  stopShortcutCapture() {
+    const c = this.shortcutCapture;
+    if (!c) return;
+    document.removeEventListener('keydown', c.onKey, true);
+    document.removeEventListener('mousedown', c.stopOutside, true);
+    this.shortcutCapture = null;
   },
 
   // ---- 시작 앱 (윈도우에 로그인하면 켜기, main.js) — settings.json 이 아니라 윈도우에 등록된 것을 그대로 보여 줌 ----
@@ -608,9 +731,33 @@ export const settingsWindowMethods = {
       box.appendChild(btn);
     };
     button('spot.go', () => { this.closeSettings(); this.goToSpot(n); });
-    button('spot.bg', () => this.pickSpotBackground(n));
-    if (this.spots[n] && this.spots[n].bg) button('spot.bgRemove', () => this.removeSpotBackground(n));
     button('spot.remove', () => this.removeSpot(n));
+    return box;
+  },
+
+  // 테마 › 저장한 자리 바탕 사진의 한 줄 — [지금 사진 작은 그림] 사진 고르기… · 윈도우 배경 화면 · 빼기(있으면)
+  buildSpotBgButtons(n) {
+    const box = document.createElement('div');
+    box.className = 'set-spot-buttons';
+    const bg = this.spots[n] && this.spots[n].bg;
+    if (bg) {
+      const thumb = document.createElement('div');
+      thumb.className = 'set-bg-thumb small';
+      thumb.style.backgroundImage = `url("${String(bg.thumb || bg.url).replace(/"/g, '%22')}")`;
+      thumb.title = bg.name || '';
+      box.appendChild(thumb);
+    }
+    const button = (key, onClick) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'set-mini-button';
+      btn.textContent = t(key);
+      btn.addEventListener('click', onClick);
+      box.appendChild(btn);
+    };
+    button('spot.bg', () => this.pickSpotBackground(n));
+    button('spot.bgWindows', () => this.importSpotWindowsWallpaper(n));
+    if (bg) button('spot.bgRemove', () => this.removeSpotBackground(n));
     return box;
   },
 

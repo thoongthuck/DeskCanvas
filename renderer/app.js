@@ -23,6 +23,7 @@
 //   links.js            연결선 (쪽지 · 사진 · 파일 · 파일 묶음 사이 곡선 · 직선 — 마인드맵처럼)
 //   align.js            자 (끌 때 다른 것에 맞춰 붙기) · 고른 것 정렬
 import { DEFAULT_SETTINGS, ICON_DIR, PRELOAD_ICONS } from './constants.js';
+import { t } from './i18n.js';
 import { viewMethods } from './view.js';
 import { menuMethods } from './menus.js';
 import { noteMethods } from './notes.js';
@@ -59,6 +60,7 @@ import { tableNoteMethods } from './table-note.js';
 import { layerOrderMethods } from './layer-order.js';
 import { alignMethods } from './align.js';
 import { backgroundMethods } from './background.js';
+import { shortcutMethods } from './shortcuts.js';
 
 // 휠을 확대·축소로 가로채지 않는 곳 (여기 안에서는 목록이 그대로 스크롤됨)
 const SCROLLABLE_UI = '.settings-overlay, .popup-menu, #style-panel, #text-color-bar, #search-box, #minimap';
@@ -241,6 +243,15 @@ export class InfiniteCanvas {
       window.canvasAPI.updateState().then((state) => { this.updateInfo = state; }).catch(() => {});
     }
 
+    // 웹 페이지 쪽지에서 받은 파일 · 막은 실행 파일 (main.js setupWebNotes) — 알림으로
+    if (window.canvasAPI && window.canvasAPI.onWebDownload) {
+      window.canvasAPI.onWebDownload((info) => {
+        if (!info) return;
+        if (info.blocked) this.showToast(t('toast.webDownloadBlocked', { name: info.name }));
+        else this.showToast(t(info.done ? 'toast.webDownloaded' : 'toast.webDownloadFail', { name: info.name }));
+      });
+    }
+
     // 탐색기에서 파일 끌어다 놓기 (그냥 두면 창이 그 파일로 넘어가 버리므로 막고 아이콘으로 만듦)
     document.addEventListener('dragover', (e) => {
       if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
@@ -314,4 +325,5 @@ Object.assign(
   linkMethods,
   alignMethods,
   backgroundMethods,
+  shortcutMethods,
 );

@@ -45,7 +45,7 @@ export const menuMethods = {
       },
       { role: 'refresh', label: t('menu.refresh'), action: () => this.refreshDesktop() },
       { role: 'pastelink', label: t('menu.pasteShortcut'), disabled: !hasFiles, action: () => this.pasteDesktopFiles(true, at) },
-      { role: 'undo', label: t('menu.undo'), key: 'Ctrl+Z', disabled: !this.undoStack.length, action: () => this.undo() },
+      { role: 'undo', label: t('menu.undo'), key: this.shortcutHint('undo'), disabled: !this.undoStack.length, action: () => this.undo() },
     ], { at, waited });
     if (!shown) this.openDesktopMenu(x, y);
   },
@@ -74,7 +74,7 @@ export const menuMethods = {
   // 원점 줄 — 원점으로 · 지금 화면을 원점으로 · (정해 두었으면) 원점 처음대로 (view.js)
   homeMenuItems() {
     const items = [
-      { icon: 'style-reset.svg', label: t('menu.goHome'), key: 'Ctrl+0', action: () => this.goHome() },
+      { icon: 'style-reset.svg', label: t('menu.goHome'), key: this.shortcutHint('home'), action: () => this.goHome() },
       { icon: 'pin.svg', label: t('menu.setHome'), action: () => this.setHomeHere() },
     ];
     if (this.home) items.push({ icon: 'set-reset.svg', label: t('menu.resetHome'), action: () => this.resetHome() });
@@ -243,7 +243,7 @@ export const menuMethods = {
   //   잠근 파일: 쪽지로 바꾸기(파일이 휴지통으로 감) · 묶음 · 지우기 줄은 빼고 잠금 풀기만
   fileMenuItems(file, { fallback = false } = {}) {
     const items = [...(file.pinned ? [] : this.fileMediaMenuItems([file])), ...this.fileGroupMenuItems(file),   // 이미지 · 영상 쪽지로 (file-media.js)
-      { icon: 'pin.svg', label: t(file.pinned ? 'menu.unlockFile' : 'menu.lockFile'), key: 'Ctrl+Shift+L', action: () => this.toggleFileLock(file) },
+      { icon: 'pin.svg', label: t(file.pinned ? 'menu.unlockFile' : 'menu.lockFile'), key: this.shortcutHint('lock'), action: () => this.toggleFileLock(file) },
       ...this.linkMenuItems(file.id), ...this.layerMenuItems(file.id)];                                                    // 순서 › (layer-order.js)
     if (file.pinned) return items;
     const remove = file.source !== 'desktop'

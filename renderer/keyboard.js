@@ -1,8 +1,10 @@
-// 단축키와 붙여넣기 — Ctrl+Z · Ctrl+Shift+Z · Ctrl+S · Ctrl+F · Ctrl+M · Ctrl+A · Ctrl+G · Ctrl+L · F2 · Delete · Shift+Enter(글자칸에서) · Ctrl+C · Ctrl+V · Esc
+// 단축키와 붙여넣기 — 바꿀 수 있는 단축키는 shortcuts.js (Ctrl+Z · Ctrl+S · Ctrl+F · Ctrl+L · F2 · Delete …, 설정 › 단축키)
+//   그대로인 것: Esc · Ctrl+C · Ctrl+V · Ctrl (+ Alt) + 1~9 · Shift+Enter(글자칸에서)
 //   캔버스 오브젝트 복사 · 붙여넣기는 clipboard.js
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
 import { t } from './i18n.js';
 import { IS_MAC } from './constants.js';
+import { comboOf } from './shortcuts.js';
 
 export const keyboardMethods = {
   setupKeyboard() {
@@ -32,97 +34,67 @@ export const keyboardMethods = {
       if (this.clearSelection()) e.preventDefault();                // 고른 것 풀기
       return;
     }
+    // 바꿀 수 있는 단축키 (shortcuts.js — 설정 › 단축키). 설정 창 열기 · 닫기는 설정 창이 떠 있어도
+    const action = this.shortcutAction(comboOf(e));
+    if (action === 'settings') {
+      e.preventDefault();
+      if (this.settingsOpen) this.closeSettings();
+      else this.openSettings();
+      return;
+    }
     if (this.settingsOpen) return;
 
     const typing = this.isTyping(e.target);
+    if (action) {                                          // 하지 않았으면(글자칸 안 등) 브라우저 기본 동작 그대로
+      if (this.runShortcut(action, typing)) e.preventDefault();
+      return;
+    }
 
-    if (ctrl && key === 'z') {
-      if (typing) return;                        // 글자칸 안에서는 글자 되돌리기(브라우저 기본)
-      e.preventDefault();
-      if (e.shiftKey) this.redo(); else this.undo();
-      return;
-    }
-    if (ctrl && key === 'y') {
-      if (typing) return;
-      e.preventDefault();
-      this.redo();
-      return;
-    }
-    if (ctrl && key === 's') {
-      e.preventDefault();
-      this.saveNow();
-      return;
-    }
-    if (ctrl && key === 'f') {                            // 찾기 (쪽지 · 파일 이름)
-      e.preventDefault();
-      this.openSearch();
-      return;
-    }
-    if (ctrl && key === 'a' && !typing) {                 // 모두 고르기 (글자칸에서는 글자 전체 고르기)
-      e.preventDefault();
-      this.selectAll();
-      return;
-    }
     if (ctrl && key === 'c' && !typing && this.selection.size) {   // 고른 것 복사 (clipboard.js) — 고른 글자가 있으면 글자 복사
       const picked = window.getSelection && String(window.getSelection() || '');
       if (!picked && this.copySelection()) e.preventDefault();
       return;
     }
-    if (ctrl && !typing && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {   // 순서: ] 앞으로 · [ 뒤로, Shift 는 맨 끝까지 (layer-order.js)
-      e.preventDefault();
-      const up = e.code === 'BracketRight';
-      this.reorderSelection(e.shiftKey ? (up ? 'front' : 'back') : (up ? 'forward' : 'backward'));
-      return;
-    }
-    if (ctrl && key === 'g' && !typing) {                 // 고른 파일을 새 묶음으로
-      e.preventDefault();
-      this.groupSelectedFiles();
-      return;
-    }
-    if (ctrl && key === 'l' && e.shiftKey && !typing) {   // 고른 것 고정 · 잠금 / 풀기 (selection.js)
-      e.preventDefault();
-      this.toggleSelectionLock();
-      return;
-    }
-    if (ctrl && key === 'l' && !typing) {                 // 고른 것끼리 이어져 있으면 끊고, 아니면 처음 고른 것에 나머지를 이음 (links.js)
-      e.preventDefault();
-      const n = this.selection.size > 1 ? this.disconnectSelection() : 0;   // 알림은 띄우지 않음 (선이 사라지는 게 보여서)
-      if (!n) this.connectSelection();
-      return;
-    }
-    if (ctrl && key === 'm') {                            // 미니맵 켜기 · 끄기
-      e.preventDefault();
-      this.toggleMinimap();
-      return;
-    }
     // 숫자: Ctrl + 1~9 저장한 자리로 (비어 있으면 알림만) · Ctrl + Alt + 1~9 지금 화면을 그 번호에 저장 (view.js)
-    //   0 은 원점 — Ctrl + 0 원점으로 · Ctrl + Alt + 0 지금 화면을 원점으로. 키 자리 이름(code)으로 봄 (배열에 따라 글자가 달라도)
-    const digit = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
+    //   키 자리 이름(code)으로 봄 (배열에 따라 글자가 달라도). 0 (원점) 은 바꿀 수 있는 단축키 (home · setHome)
+    const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || '');
     if (ctrl && digit && !e.shiftKey) {
       e.preventDefault();
-      const n = digit[1];
-      if (n === '0') {
-        if (e.altKey) this.setHomeHere();
-        else this.goHome();
-      } else if (e.altKey) {
-        this.saveSpot(n);
-      } else {
-        this.goToSpot(n);
-      }
-      return;
+      if (e.altKey) this.saveSpot(digit[1]);
+      else this.goToSpot(digit[1]);
     }
-    if (ctrl && (key === '0' || key === 'home')) {        // 원점으로 (정해 둔 화면 · 없으면 처음 자리 100%, view.js)
-      e.preventDefault();
-      this.goHome();
-      return;
-    }
-    if (key === 'f2' && !typing) {                         // 고른 것 이름 바꾸기 (윈도우 바탕화면처럼)
-      if (this.renameSelected()) e.preventDefault();
-      return;
-    }
-    if (key === 'delete' && !typing) {
-      if (this.deleteSelectedItem()) e.preventDefault();
-    }
+  },
+
+  // 단축키가 하는 일 (shortcuts.js SHORTCUT_ACTIONS) — 반환: 했는지 (안 했으면 브라우저 기본 동작 그대로)
+  //   typing: 글자칸 안 — 되돌리기 · 모두 고르기 · 지우기 같은 것은 글자에 맡김
+  runShortcut(action, typing) {
+    const notTyping = (fn) => () => {
+      if (typing) return false;
+      return fn() !== false;
+    };
+    const run = {
+      undo: notTyping(() => { this.undo(); }),               // 글자칸 안에서는 글자 되돌리기(브라우저 기본)
+      redo: notTyping(() => { this.redo(); }),
+      save: () => { this.saveNow(); return true; },
+      search: () => { this.openSearch(); return true; },                       // 찾기 (쪽지 · 파일 이름)
+      selectAll: notTyping(() => { this.selectAll(); }),     // 글자칸에서는 글자 전체 고르기
+      groupFiles: notTyping(() => { this.groupSelectedFiles(); }),             // 고른 파일을 새 묶음으로
+      forward: notTyping(() => { this.reorderSelection('forward'); }),         // 순서 (layer-order.js)
+      backward: notTyping(() => { this.reorderSelection('backward'); }),
+      front: notTyping(() => { this.reorderSelection('front'); }),
+      back: notTyping(() => { this.reorderSelection('back'); }),
+      lock: notTyping(() => { this.toggleSelectionLock(); }),                  // 고른 것 고정 · 잠금 / 풀기 (selection.js)
+      connect: notTyping(() => {                             // 고른 것끼리 이어져 있으면 끊고, 아니면 처음 고른 것에 나머지를 이음 (links.js)
+        const n = this.selection.size > 1 ? this.disconnectSelection() : 0;    // 알림은 띄우지 않음 (선이 사라지는 게 보여서)
+        if (!n) this.connectSelection();
+      }),
+      minimap: () => { this.toggleMinimap(); return true; },
+      home: () => { this.goHome(); return true; },          // 원점으로 (정해 둔 화면 · 없으면 처음 자리 100%, view.js)
+      setHome: () => { this.setHomeHere(); return true; },  // 지금 화면을 원점으로
+      rename: notTyping(() => this.renameSelected()),       // 고른 것 이름 바꾸기 (윈도우 바탕화면처럼)
+      delete: notTyping(() => this.deleteSelectedItem()),
+    }[action];
+    return run ? run() : false;
   },
 
   // F2: 마지막으로 고른 것 이름 바꾸기 — 파일은 이름 칸, 파일 묶음은 이름, 쪽지는 제목 고치기, 사진 · 영상은 캡션

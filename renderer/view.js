@@ -163,7 +163,10 @@ export const viewMethods = {
       if (!h) continue;
       if (raw.vw > 0 && raw.vh > 0) Object.assign(h, { vw: raw.vw, vh: raw.vh });
       const bg = raw.bg;
-      if (bg && typeof bg.url === 'string' && bg.url) h.bg = { url: bg.url, name: String(bg.name || ''), w: +bg.w || 0, h: +bg.h || 0, thumb: typeof bg.thumb === 'string' ? bg.thumb : '' };
+      if (bg && typeof bg.url === 'string' && bg.url) {
+        h.bg = { url: bg.url, name: String(bg.name || ''), w: +bg.w || 0, h: +bg.h || 0, thumb: typeof bg.thumb === 'string' ? bg.thumb : '' };
+        if (typeof bg.from === 'string' && bg.from) h.bg.from = bg.from;   // 윈도우 배경 화면에서 가져온 것 (background.js readWindowsWallpaper)
+      }
       out[n] = h;
     }
     return out;

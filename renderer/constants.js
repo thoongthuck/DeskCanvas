@@ -87,6 +87,7 @@ export const NOTE_MAX_AUTO_WIDTH = 720;   // '자동 확장'으로 넓어질 수
 
 // 설정 기본값 — '지금 동작대로' (사용자 확인)
 export const DEFAULT_SETTINGS = {
+  shortcuts: {},             // 바꾼 단축키만 { 할 일: ['Ctrl+Shift+L'] } (renderer/shortcuts.js)
   autoSave: true,
   openLastWorkspace: true,
   autoUpdate: true,          // 새 버전을 스스로 확인하고 받아 둠 (main.js updater.js)

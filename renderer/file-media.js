@@ -1,7 +1,8 @@
 // 파일 → 이미지 · 영상 쪽지 (파일 우클릭 › 이미지 쪽지로 바꾸기 · 영상 쪽지로 바꾸기)
 //   사진 · 영상 파일을 앱 데이터 폴더로 복사해 (main.js import-media) 아이콘 자리에 사진 · 영상으로 (photos.js)
 //     틀 · 소리 · 바로 재생은 새로 넣는 사진 · 영상과 같게 (설정 › 사진 · 영상)
-//   바탕화면 파일은 휴지통으로 — Ctrl+Z 한 번이면 쪽지가 빠지고 파일이 휴지통에서 돌아옴 (history.js)
+//   바탕화면 파일의 원본은 사진 · 동영상 › DeskCanvas 폴더로 (휴지통이 아니라 — 앱을 지워도 원본이 남게)
+//     Ctrl+Z 한 번이면 쪽지가 빠지고 원본이 바탕화면으로 돌아옴 (history.js moved)
 //   탐색기에서 끌어다 놓은 아이콘은 아이콘만 뗌 (파일은 그 자리 그대로)
 //   여럿 고른 채로 우클릭하면 고른 것 가운데 사진 · 영상 파일을 한꺼번에
 // (InfiniteCanvas 에 붙는 메서드 모음 — renderer/app.js 에서 합쳐짐)
@@ -60,9 +61,27 @@ export const fileMediaMethods = {
       if (file.source === 'desktop') desktop.push(file);
       else this.deleteFile(file.id, { undoable: false });
     }
-    if (desktop.length) await this.trashDesktopFiles(desktop, { undoEntry: entry });
+    if (desktop.length) await this.keepDesktopOriginals(desktop, entry);
     this.selection.clear();
     made.forEach(id => this.selection.add(id));
     this.updateSelection();
+  },
+
+  // 쪽지로 바꾼 바탕화면 파일의 원본 — 휴지통 대신 사진 · 동영상 › DeskCanvas 폴더로 (main.js keep-originals)
+  //   쪽지는 앱 데이터 폴더의 사본을 써서, 앱을 지우거나 휴지통을 비워도 원본이 남게. Ctrl+Z 로 바탕화면에 다시 꺼냄 (history.js moved)
+  //   못 옮긴 것은 바탕화면에 그대로 둠 (쪽지와 원본이 둘 다 남음 — 지우지는 않음)
+  async keepDesktopOriginals(files, undoEntry) {
+    const api = window.canvasAPI;
+    const key = (p) => String(p || '').toLowerCase();
+    let result = { done: [], failed: files.map(f => ({ from: f.path, reason: 'error' })) };
+    try {
+      if (api && api.keepOriginals) result = await api.keepOriginals(files.map(f => f.path));
+    } catch (_) {}
+    const moved = new Set((result.done || []).map(d => key(d.from)));
+    files.forEach(f => { if (moved.has(key(f.path))) this.deleteFile(f.id, { undoable: false }); });
+    this.markMoveStep(undoEntry, result.done || []);
+    if (moved.size) this.showToast(t('toast.keptOriginals', { n: moved.size }));
+    if ((result.failed || []).length) this.showToast(t('toast.keepFail', { name: files.filter(f => !moved.has(key(f.path))).map(f => f.name).join(', ') }));
+    this.scheduleSave();
   },
 };

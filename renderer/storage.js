@@ -55,7 +55,7 @@ export const storageMethods = {
   },
 
   async persist() {
-    if (!this.ready) return false;
+    if (!this.ready || this.loadFailed) return false;   // loadFailed: 불러오지 못함 — 저장을 멈춤 (restore)
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
     const state = this.getState();
@@ -79,7 +79,7 @@ export const storageMethods = {
 
   // 창이 닫히기 직전: 기다리던 저장이 있으면 바로 저장 (자동 저장이 켜져 있을 때만)
   flushSave() {
-    if (!this.ready || !this.settings.autoSave || !this.saveTimer) return;
+    if (!this.ready || this.loadFailed || !this.settings.autoSave || !this.saveTimer) return;
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
     try {
@@ -164,6 +164,7 @@ export const storageMethods = {
       ({ data, fromLegacy } = await this.readSavedState());
     } catch (err) {
       console.error('쪽지 불러오기 실패:', err);
+      this.loadFailed = true;                       // 저장 파일을 못 읽음 — 빈 캔버스로 멀쩡한 파일을 덮어쓰지 않게 이번에는 저장하지 않음 (persist)
     }
 
     // '시작 시 마지막 작업 공간 열기'가 꺼져 있으면: 전 작업 공간을 보관 파일로 옮기고 빈 캔버스로 시작
@@ -181,6 +182,11 @@ export const storageMethods = {
 
     this.applyState(data || {});
     this.ready = true;
+    if (this.loadFailed) this.showToast(t('toast.loadFail'));
+    if (data && data._recovered) {                  // 저장 파일이 깨져 가장 최근 백업으로 불러옴 (main.js readState) — 바로 새로 저장
+      this.showToast(t('toast.recovered', { name: String(data._recovered).replace(/^canvas-state_|\.json$/g, '') }));
+      this.persist();
+    }
     if (fromLegacy) {
       localStorage.setItem('wallpaper-canvas-migrated', '1');
       this.persist();

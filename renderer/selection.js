@@ -274,17 +274,17 @@ export const selectionMethods = {
     }
     // 한꺼번에 고정 · 잠금 / 풀기 — 섞여 있으면 두 줄 다
     //   단축키 Ctrl + Shift + L 은 하나라도 안 잠겼으면 잠그기 쪽 (toggleSelectionLock)
-    if (unlocked) items.push({ icon: 'pin.svg', label: t('menu.pinSelected', { n: unlocked }), key: 'Ctrl+Shift+L', action: () => this.setSelectionPinned(true) });
+    if (unlocked) items.push({ icon: 'pin.svg', label: t('menu.pinSelected', { n: unlocked }), key: this.shortcutHint('lock'), action: () => this.setSelectionPinned(true) });
     if (lockable.length - unlocked) {
-      items.push({ icon: 'pin.svg', label: t('menu.unpinSelected', { n: lockable.length - unlocked }), key: unlocked ? '' : 'Ctrl+Shift+L', action: () => this.setSelectionPinned(false) });
+      items.push({ icon: 'pin.svg', label: t('menu.unpinSelected', { n: lockable.length - unlocked }), key: unlocked ? '' : this.shortcutHint('lock'), action: () => this.setSelectionPinned(false) });
     }
     const linkable = [...this.selection].filter(id => this.linkEntry(id)).length;   // 캘린더 · 연대표도 (links.js)
     const among = this.linksAmongSelection().length;        // 고른 것끼리 이미 이은 선
     if (linkable > 1) {                                     // 처음 고른 것에 나머지를 잇기
-      items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: linkable }), key: among ? '' : 'Ctrl+L', action: () => this.connectSelection() });
+      items.push({ icon: 'menu-connect.svg', label: t('menu.connectSelected', { n: linkable }), key: among ? '' : this.shortcutHint('connect'), action: () => this.connectSelection() });
     }
     if (among) {                                            // 고른 것끼리 이은 선 끊기 — 이어져 있으면 Ctrl+L 이 이쪽
-      items.push({ icon: 'menu-disconnect.svg', label: t('menu.disconnectSelected', { n: among }), key: 'Ctrl+L', action: () => this.disconnectSelection() });
+      items.push({ icon: 'menu-disconnect.svg', label: t('menu.disconnectSelected', { n: among }), key: this.shortcutHint('connect'), action: () => this.disconnectSelection() });
     }
     items.push(...this.alignMenuItems());                   // 정렬 › (align.js)
     items.push(...this.layerMenuItems());                   // 순서 › (layer-order.js)

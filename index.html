@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 이 화면에서 도는 스크립트는 앱 파일만 (쪽지 글 · 파일 이름 · 웹에서 온 글이 스크립트로 돌 수 없게 — 화면은 파일 열기 · 옮기기를 부를 수 있어서)
+       그림 · 영상: 앱 데이터 폴더(file:) · 아이콘(data:) · 쪽지 속 인터넷 주소(http · https). 프레임: 유튜브 · 비메오 재생기 · 웹 페이지 쪽지 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: blob: https: http:; media-src 'self' file: data: blob: https: http:; font-src 'self' file: data:; frame-src https: http:; connect-src 'self' file: data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Wallpaper Canvas</title>
   <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="styles.css">

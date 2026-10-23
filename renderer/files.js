@@ -18,7 +18,7 @@ export const fileMethods = {
     let picked;
     try {
       picked = await window.canvasAPI.pickFile(t('dialog.pickFile'));
-      this.log(`파일 고르기 끝: ${picked ? picked.path : '취소'}`);
+      this.log(`파일 고르기 끝: ${picked ? '고름' : '취소'}`);   // 경로는 적지 않음 (main.js logName)
     } catch (err) {
       this.log(`파일 추가 실패: ${err && err.message}`);
       this.showToast(`파일을 넣지 못했어요: ${err && err.message}`);
@@ -291,20 +291,60 @@ export const fileMethods = {
   },
 
   // 바탕화면 폴더 내용에 맞춰 아이콘을 더하고 빼기 (옮겨 둔 자리는 유지)
-  syncDesktop(list) {
+  //   list 가 없으면 (폴더를 못 읽음 — main.js listDesktop) 아무것도 하지 않음 — 빈 목록으로 보고 아이콘 배치를 다 지우지 않게
+  //   목록에서 사라진 파일은 바로 빼지 않고 2초 뒤 다시 읽어 그때도 없을 때만 뺌 (confirm) — 다른 프로그램이 저장하는 순간 등
+  //     잠깐 안 보인 파일의 자리 · 묶음 · 잠금 · 연결선이 날아가지 않게
+  //   그때 같은 종류의 파일이 막 새로 생겼으면 (하나씩) 이름만 바뀐 것으로 보고 원래 아이콘이 이어받음 (탐색기에서 이름 바꾸기 등)
+  syncDesktop(list, { confirm = false } = {}) {
+    if (!Array.isArray(list)) return;
     const key = (p) => String(p || '').toLowerCase();
     const current = new Map(list.map(item => [key(item.path), item]));
     let changed = false;
 
     const restoring = this.restoringPaths || new Set();              // 휴지통에서 되살리는 중 (history.js)
-    this.files = this.files.filter(f => {
-      if (f.source !== 'desktop' || current.has(key(f.path)) || restoring.has(key(f.path))) return true;
-      const el = document.getElementById(f.id);
-      if (el) el.remove();
-      this.selection.delete(f.id);
+    const gone = this.files.filter(f => f.source === 'desktop' && !current.has(key(f.path)) && !restoring.has(key(f.path)));
+    if (gone.length && !confirm) {
+      clearTimeout(this.desktopRecheck);
+      this.desktopRecheck = setTimeout(async () => {
+        try {
+          this.syncDesktop(await window.canvasAPI.listDesktop(), { confirm: true });
+        } catch (_) {}
+      }, 2000);
+    }
+    if (gone.length && confirm) {
+      const adds = this.recentDesktopAdds || new Map();
+      const extOf = (p) => {
+        const name = String(p || '').split(/[\\/]/).pop();
+        const i = name.lastIndexOf('.');
+        return i > 0 ? name.slice(i).toLowerCase() : '';
+      };
+      const kindOf = (f) => (f.isDir ? 'dir' : `file${extOf(f.path)}`);
+      const fresh = this.files.filter(f => f.source === 'desktop' && current.has(key(f.path)) && Date.now() - (adds.get(f.id) || 0) < 15000);
+      const renamed = new Set();
+      gone.forEach(old => {
+        const kind = kindOf(old);
+        const same = fresh.filter(f => kindOf(f) === kind);
+        if (same.length !== 1 || gone.filter(g => kindOf(g) === kind).length !== 1) return;
+        const f = same[0];
+        old.path = f.path;                                         // 원래 아이콘이 새 이름을 맡음 — 자리 · 묶음 · 잠금 · 연결선 · 순서 그대로
+        old.name = f.name;
+        if (f.icon) old.icon = f.icon;
+        this.files = this.files.filter(x => x !== f);
+        const el = document.getElementById(f.id);
+        if (el) el.remove();
+        this.selection.delete(f.id);
+        renamed.add(old);
+        this.rerenderFile(old);
+      });
+      this.files = this.files.filter(f => {
+        if (!gone.includes(f) || renamed.has(f)) return true;
+        const el = document.getElementById(f.id);
+        if (el) el.remove();
+        this.selection.delete(f.id);
+        return false;
+      });
       changed = true;
-      return false;
-    });
+    }
 
     const pending = this.pendingNewAt && Date.now() < this.pendingNewAt.until ? this.pendingNewAt : null;
     const created = [];
@@ -339,6 +379,7 @@ export const fileMethods = {
       };
       this.files.push(file);
       this.createFileElement(file);
+      (this.recentDesktopAdds = this.recentDesktopAdds || new Map()).set(file.id, Date.now());   // 이름만 바뀐 파일 알아보기 (위 confirm)
       if (pending) created.push(file);
       changed = true;
     });
@@ -641,8 +682,10 @@ export const fileMethods = {
     if (stayed.length) {
       this.refreshGroups();
       const reasons = new Map((result.failed || []).map(x => [key(x.from), x.reason]));
-      const exists = stayed.every(f => reasons.get(key(f.path)) === 'exists');
-      this.showToast(t(exists ? 'toast.moveExists' : 'toast.moveFail', { name: stayed.map(f => f.name).join(', '), folder: folder.name }));
+      const all = (r) => stayed.every(f => reasons.get(key(f.path)) === r);
+      // copied: 다른 드라이브의 폴더로 사본은 다 옮겼는데 원본을 다 지우지 못함 (main.js moveOne) — 사본이 있다고 알려 줌
+      const msg = all('exists') ? 'toast.moveExists' : all('copied') ? 'toast.moveCopied' : 'toast.moveFail';
+      this.showToast(t(msg, { name: stayed.map(f => f.name).join(', '), folder: folder.name }));
     }
     this.markMoveStep(undoEntry, result.done || []);
     this.scheduleSave();

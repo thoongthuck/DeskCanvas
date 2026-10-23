@@ -5,6 +5,7 @@
 //     화면에 고정: 윈도우 배경 화면처럼 — 맞춤 bgFit (채우기 · 맞춤 · 늘이기 · 가운데 · 바둑판식). 남는 곳은 바탕색
 //     캔버스와 함께: 바둑판식으로 이어 붙여 화면을 끌거나 확대하면 같이 움직임 (그리기마다 자리 · 크기 — view.js draw)
 //     바꿀 때는 두 층(.canvas-bg-layer)을 0.6초 겹쳐 바꾸고 앞 사진은 내려놓음. 캔버스가 다 가려진 동안은 바꾸지 않음
+//   윈도우 배경 화면 가져오기 (importWindowsWallpaper): 처음 켤 때 (저장된 설정이 없을 때) 자동으로 · 설정 단추로 — 사진 · 맞춤 · 색 그대로
 //   저장한 자리 바탕 사진 (spots[n].bg — view.js 저장한 자리): 그 자리 넓이에만 깔리는 사진 (이미지 쪽지처럼 캔버스에 붙음)
 //     그 자리로 가면 화면을 꽉 채움. 쪽지 · 사진 · 판보다 뒤 (#ui-layer 안 맨 아래 층). 빈 곳 우클릭 › 보기 › · 설정 › 저장한 자리
 //   바탕이 어두우면 (어두운 테마 · 어두운 색 · 사진) 바탕에 바로 놓인 파일 이름 · 격자 · 연결선 · 판 이름을 밝게 (body.canvas-dark)
@@ -208,6 +209,68 @@ export const backgroundMethods = {
     return true;
   },
 
+  // 지금 윈도우 배경 화면 그림 (main.js import-windows-wallpaper) — 이미 넣어 둔 그 그림(바탕 사진 목록 · 저장한 자리)이 있으면 그 파일을 같이 씀
+  //   반환: { entry: 바탕 사진 { url, name, w, h, thumb, from } | null (사진이 아닌 단색 배경), fit, color } · 못 읽으면 null
+  async readWindowsWallpaper() {
+    const api = window.canvasAPI;
+    const known = [...(this.settings.bgImages || []), ...Object.values(this.spots || {}).map(sp => sp && sp.bg)].filter(i => i && i.from);
+    let got = null;
+    try {
+      got = api && api.importWindowsWallpaper ? await api.importWindowsWallpaper(known.map(i => i.from)) : null;
+    } catch (_) {
+      got = null;
+    }
+    if (!got) return null;
+    let entry = null;
+    const same = got.known && known.find(i => i.from === got.from);
+    if (same) entry = { url: same.url, name: same.name, w: same.w, h: same.h, thumb: same.thumb, from: same.from };
+    else if (got.image) {
+      const p = got.image;
+      entry = { url: p.url, name: t('bgImage.windows'), w: p.width || 0, h: p.height || 0, thumb: p.thumb || '', from: got.from };
+    }
+    return { entry, fit: got.fit, color: got.color };
+  },
+
+  // 지금 윈도우 배경 화면을 캔버스 바탕으로 (main.js import-windows-wallpaper)
+  //   설정 › 테마 › 캔버스 바탕의 '윈도우 배경 화면 가져오기' · 처음 켤 때 (저장된 설정이 없을 때 — settings.js loadSettings)
+  //   사진이면 바탕 사진 목록 뒤에 넣고 그 사진으로 — 맞춤도 윈도우와 같게, 남는 곳이 보이는 맞춤(맞춤 · 가운데)이면 바탕색도.
+  //   이미 넣어 둔 그 그림이면 다시 넣지 않고 그것으로. 단색 배경이면 그 색을 바탕색으로
+  //   quiet: 처음 켤 때 — 알림 없이, 설정은 부르는 쪽이 한꺼번에 적용. 반환: 바꿨는지
+  async importWindowsWallpaper({ quiet = false } = {}) {
+    const s = this.settings;
+    const list = Array.isArray(s.bgImages) ? s.bgImages : [];
+    const got = await this.readWindowsWallpaper();
+    const done = (key) => {
+      if (quiet) return true;
+      this.persistSettings();
+      this.applySettings(key);
+      this.showToast(t('toast.wallImported'));
+      return true;
+    };
+    if (got && got.entry) {
+      const at = list.findIndex(i => i.from === got.entry.from);
+      if (at < 0 && list.length >= BG_MAX_IMAGES) {
+        this.releaseBackgroundFile(got.entry);                           // 넣을 자리가 없음 — 방금 넣어 둔 파일은 (다른 데서 안 쓰면) 지움
+        if (!quiet) this.showToast(t('toast.bgTooMany', { n: BG_MAX_IMAGES }));
+        return false;
+      }
+      if (at < 0) s.bgImages = [...list, got.entry];
+      s.bgKind = 'image';
+      s.bgIndex = at < 0 ? s.bgImages.length - 1 : at;
+      s.bgMove = 'screen';                                              // 윈도우 배경 화면처럼 화면에 고정
+      if (BG_FITS.includes(got.fit)) s.bgFit = got.fit;
+      if (got.color && (got.fit === 'fit' || got.fit === 'center')) s.bgColor = got.color;
+      return done('bgImages');
+    }
+    if (got && got.color) {
+      s.bgKind = 'color';
+      s.bgColor = got.color;
+      return done('bgColor');
+    }
+    if (!quiet) this.showToast(t('toast.wallImportFail'));
+    return false;
+  },
+
   // 그림 누르기 — 그 사진을 지금 바탕으로 (슬라이드 쇼는 거기서부터)
   selectBackgroundImage(index) {
     this.settings.bgKind = 'image';
@@ -284,13 +347,33 @@ export const backgroundMethods = {
   async pickSpotBackground(n) {
     if (!this.spots[n]) return;
     const [picked] = await this.pickBackgroundFiles(false);
-    if (!picked || !this.spots[n]) return;
+    if (picked) this.setSpotBackground(n, picked);
+  },
+
+  // 그 자리 바탕 사진을 지금 윈도우 배경 화면으로 (설정 › 테마 › 저장한 자리 바탕 사진) — 단색 배경이면 사진이 없어 못 씀
+  async importSpotWindowsWallpaper(n) {
+    if (!this.spots[n]) return;
+    const got = await this.readWindowsWallpaper();
+    if (!got || !got.entry) {
+      this.showToast(t(got ? 'toast.wallNoPicture' : 'toast.wallImportFail'));
+      return;
+    }
+    if (this.setSpotBackground(n, got.entry)) this.showToast(t('toast.spotWallImported', { n }));
+  },
+
+  // 그 자리 바탕 사진 바꾸기 — 앞의 사진 파일은 다른 데서 안 쓰면 지움. 반환: 바꿨는지
+  setSpotBackground(n, image) {
+    if (!this.spots[n]) {
+      this.releaseBackgroundFile(image);
+      return false;
+    }
     const old = this.spots[n].bg;
-    this.spots = { ...this.spots, [n]: { ...this.spots[n], bg: picked } };
+    this.spots = { ...this.spots, [n]: { ...this.spots[n], bg: image } };
     this.scheduleSave();
     this.updateSpotBackgrounds();
-    this.releaseBackgroundFile(old);
+    if (old && old.url !== image.url) this.releaseBackgroundFile(old);
     if (this.settingsOpen) this.refreshSettingsWindow();
+    return true;
   },
 
   removeSpotBackground(n) {

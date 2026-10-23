@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   checkUpdate: () => ipcRenderer.invoke('update-check'),
   installUpdate: () => ipcRenderer.send('update-install'),
   onUpdateState: (callback) => ipcRenderer.on('update-state', (event, state) => callback(state)),
+  onWebDownload: (callback) => ipcRenderer.on('web-download', (event, info) => callback(info)),   // 웹 페이지 쪽지에서 받음 · 막음 { name, blocked, done }
   requestQuit: () => ipcRenderer.send('request-quit'),
   quitNow: () => ipcRenderer.send('quit-now'),
   // 사진 · 파일 고르기
@@ -75,6 +76,7 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   onDesktopChanged: (callback) => ipcRenderer.on('desktop-changed', (event, list) => callback(list)),
   trashPath: (filePath) => ipcRenderer.invoke('trash-path', filePath),
   restoreTrashed: (paths) => ipcRenderer.invoke('restore-trashed', paths),
+  keepOriginals: (paths) => ipcRenderer.invoke('keep-originals', paths),   // 쪽지로 바꾼 파일의 원본 → 사진 · 동영상 › DeskCanvas
   movePaths: (pairs) => ipcRenderer.invoke('move-paths', pairs),               // 폴더에 넣기 · 그 되돌리기 (진짜 파일을 옮김)
   // 바탕화면 층에 넣기 (Phase 5) · 트레이에서 온 부탁 (설정 창 열기 · 설정 바꾸기)
   setWallpaperMode: (on) => ipcRenderer.invoke('set-wallpaper-mode', !!on),
@@ -89,6 +91,7 @@ contextBridge.exposeInMainWorld('canvasAPI', {
   setDesktopBackground: (on, color, image) => ipcRenderer.send('set-desktop-background', !!on, color, image || null),   // image: { url, fit } — 사진 바탕
   pickBackground: (title, multi) => ipcRenderer.invoke('pick-background', title, !!multi),   // 캔버스 바탕 사진 고르기 → [{ url, name, width, height, thumb }]
   removeBackground: (url) => ipcRenderer.send('remove-background', url),     // 더 안 쓰는 바탕 사진 파일 지우기 (backgrounds 폴더 안만)
+  importWindowsWallpaper: (known) => ipcRenderer.invoke('import-windows-wallpaper', known),   // 지금 윈도우 배경 화면 → 캔버스 바탕 { image, from, known, fit, color }
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),
   onApplySetting: (callback) => ipcRenderer.on('apply-setting', (event, key, value) => callback(key, value)),
   // 윈도우 우클릭 메뉴 · 파일 이름 바꾸기
