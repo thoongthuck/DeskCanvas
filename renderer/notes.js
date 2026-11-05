@@ -241,10 +241,15 @@ export const noteMethods = {
     });
 
     // 더블클릭 → 바로 수정 (누른 글자칸에 커서)
+    //   머리 줄(맨 위 아이콘 · 접기 화살표가 있는 줄)을 두 번 누르면 접기 — 파일 묶음 머리처럼. 글 칸을 두 번 누르면 그대로 수정
     el.addEventListener('dblclick', (e) => {
       if (e.target.closest('.check-box, .md-check, .note-state-icon, .note-resize, .code-copy, .code-lang, .table-add, .note-fold')) return;
       if (this.editingId === note.id) return;
       e.preventDefault();
+      if (e.target.closest('.note-header')) {
+        if (!note.folded && !this.justUnfolded(note.id)) this.toggleNoteFold(note);   // 첫 번 누르기로 막 펼친 것은 다시 접지 않음
+        return;
+      }
       const td = e.target.closest('.note-table td');
       const cell = e.target.closest('.table-cell') || (td && td.querySelector('.table-cell'));   // 표: 누른 칸에 커서 (table-note.js)
       if (cell) {
